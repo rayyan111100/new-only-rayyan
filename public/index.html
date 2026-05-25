@@ -660,16 +660,14 @@ function dFilterKey(f){return f.field+'|'+f.value+'|'+f.negate+'|'+(f.type||'phr
 function dRemoveFilter(i){
   dFilters.splice(i,1);renderFilterChips();discoverSearch()
 }
-function dFilterFor(field,value){
-  const n={field,value:String(value??''),negate:false,type:'phrase'}
+function dToggleFilter(field,value,negate){
+  const n={field,value:String(value??''),negate,type:'phrase'}
   if(dFilters.some(f=>dFilterKey(f)===dFilterKey(n)))return
+  dFilters=dFilters.filter(f=>!(f.field===n.field&&f.value===n.value&&f.type==='phrase'))
   dFilters.push(n);renderFilterChips();discoverSearch()
 }
-function dFilterOut(field,value){
-  const n={field,value:String(value??''),negate:true,type:'phrase'}
-  if(dFilters.some(f=>dFilterKey(f)===dFilterKey(n)))return
-  dFilters.push(n);renderFilterChips();discoverSearch()
-}
+function dFilterFor(field,value){dToggleFilter(field,value,false)}
+function dFilterOut(field,value){dToggleFilter(field,value,true)}
 function dFilterExists(field){
   const n={field,value:'',negate:false,type:'exists'}
   if(dFilters.some(f=>f.field===n.field&&f.type==='exists'))return
