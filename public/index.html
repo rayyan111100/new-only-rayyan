@@ -102,6 +102,12 @@ h1{color:var(--accent);font-weight:300;letter-spacing:1px;display:inline-block}
 .doc-chip{display:inline-flex;align-items:center;gap:4px;background:var(--bg2);border:1px solid var(--accent);color:var(--accent);padding:2px 10px;border-radius:12px;font-size:11px}
 .doc-chip .remove{cursor:pointer;font-weight:700;margin-left:4px;color:var(--text2)}
 .doc-chip .remove:hover{color:#f44336}
+.cell-val{vertical-align:middle}
+.cell-filters{display:none;white-space:nowrap;margin-left:3px;vertical-align:middle}
+td:hover .cell-filters{display:inline-flex;gap:1px}
+.cell-filter-btn{padding:1px 2px;opacity:.5}
+.cell-filter-btn:hover{opacity:1}
+.cell-filter-btn svg{width:12px;height:12px;display:block;fill:currentColor}
 [data-theme="light"] .crit,[data-theme="system"] .crit{background:#d32f2f}
 
 @media(max-width:700px){.grid-2{grid-template-columns:1fr}.disc-layout{flex-direction:column}.disc-fields{width:100%;max-height:200px}}
@@ -502,11 +508,19 @@ function discoverRenderTable(results){
     h+=`<tr onclick="toggleDocRow('${rowId}')" style="cursor:pointer">`
     h+=`<td style="color:var(--text2);font-size:12px" id="${rowId}-icon">▶</td>`
     h+=dColumns.map(c=>{
-      let v=resolveField(a,c),td=''
-      if(c==='rule.level'){const l=parseInt(v)||0;td=`<span class="level-badge ${l>=15?'lvl-15':l>=12?'lvl-12':l>=7?'lvl-7':'lvl-0'}">${v}</span>`}
-      else if(c==='@timestamp'||c==='timestamp')td=`<span style="white-space:nowrap;color:var(--text2);font-size:12px">${(v||'').substring(0,19)}</span>`
-      else{if(v&&String(v).length>80)v=String(v).substring(0,80)+'…';td=v||'—'}
-      return `<td>${td}</td>`
+      let v=resolveField(a,c)
+      const raw=String(v??'')
+      const fldAttr=c.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
+      const valAttr=raw.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
+      let disp=''
+      if(c==='rule.level'){const l=parseInt(v)||0;disp=`<span class="level-badge ${l>=15?'lvl-15':l>=12?'lvl-12':l>=7?'lvl-7':'lvl-0'}">${v}</span>`}
+      else if(c==='@timestamp'||c==='timestamp')disp=`<span style="white-space:nowrap;color:var(--text2);font-size:12px">${raw.substring(0,19)}</span>`
+      else{let x=raw;if(x.length>80)x=x.substring(0,80)+'…';disp=x||'—'}
+      const btns=raw?`<span class="cell-filters">
+        <button class="doc-action-btn cell-filter-btn" data-act="filterFor" data-field="${fldAttr}" data-value="${valAttr}" title="Filter for value"><svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 7h3.5a.5.5 0 1 1 0 1H8v3.5a.5.5 0 1 1-1 0V8H3.5a.5.5 0 0 1 0-1H7V3.5a.5.5 0 0 1 1 0V7Z"/></svg></button>
+        <button class="doc-action-btn cell-filter-btn" data-act="filterOut" data-field="${fldAttr}" data-value="${valAttr}" title="Filter out value"><svg viewBox="0 0 16 16"><path d="M3.5 7h8a.5.5 0 1 1 0 1h-8a.5.5 0 0 1 0-1Z"/></svg></button>
+      </span>`:''
+      return `<td><span class="cell-val">${disp}</span>${btns}</td>`
     }).join('')+'</tr>'
     h+=`<tr id="${rowId}" style="display:none"><td colspan="${dColumns.length+1}" style="padding:0">${renderDocViewer(a)}</td></tr>`
   })
