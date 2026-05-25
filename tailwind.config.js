@@ -4,35 +4,17 @@ export default {
   darkMode: ['class', '[data-theme="dark"]'],
   theme: {
     extend: {
-      fontFamily: {
-        sans: ['"Google Sans"', '"Product Sans"', 'Roboto', '"Segoe UI"', 'Arial', 'sans-serif']
-      },
+      fontFamily: { sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'] },
       colors: {
         soc: {
-          bg: '#f6f8fc',
-          panel: '#ffffff',
-          sidebar: '#f6f8fc',
-          blue: '#1a73e8',
-          hover: '#1557b0',
-          border: '#dadce0',
-          text: '#202124',
-          stext: '#5f6368',
-          green: '#188038',
-          darkbg: '#1a1a1a',
-          darkpanel: '#2d2d2d',
-          darkside: '#1a1a1a',
-          darkborder: '#3c4043',
-          darktext: '#e8eaed',
-          darkstext: '#9aa0a6',
+          bg: '#f0f2f5', panel: '#ffffff', sidebar: '#ffffff', blue: '#3b82f6', hover: '#2563eb',
+          border: '#e5e7eb', text: '#1a1c23', stext: '#6b7280', green: '#10b981', blue2: '#60a5fa',
+          darkbg: '#0f1117', darkpanel: '#1a1d27', darkside: '#0f1117',
+          darkborder: '#2d3140', darktext: '#e4e6eb', darkstext: '#9ca3af',
         }
       },
-      fontSize: {
-        xxs: ['11px', '14px'],
-      },
-      borderRadius: {
-        'gm': '8px',
-        'gm-sm': '4px',
-      }
+      fontSize: { xxs: ['10px', '13px'] },
+      borderRadius: { 'gm': '8px', 'gm-sm': '4px' }
     }
   },
   plugins: []

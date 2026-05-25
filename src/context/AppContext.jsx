@@ -27,6 +27,10 @@ export function AppProvider({ children }) {
   const [fields, setFields] = useState([])
   const [histogram, setHistogram] = useState([])
   const [error, setError] = useState(null)
+  const [refreshValue, setRefreshValue] = useState(0)
+  const [refreshUnit, setRefreshUnit] = useState('s')
+  const [refreshActive, setRefreshActive] = useState(false)
+  const refreshRef = useRef(null)
 
   const setTheme = useCallback(t => {
     setThemeRaw(t)
@@ -135,6 +139,22 @@ export function AppProvider({ children }) {
     })
   }, [])
 
+  const doSearchRef = useRef(doSearch)
+  useEffect(() => { doSearchRef.current = doSearch }, [doSearch])
+
+  useEffect(() => {
+    if (refreshRef.current) { clearInterval(refreshRef.current); refreshRef.current = null }
+    if (!refreshActive || refreshValue <= 0) return
+    const ms = refreshUnit === 'h' ? refreshValue * 3600000 : refreshUnit === 'm' ? refreshValue * 60000 : refreshValue * 1000
+    refreshRef.current = setInterval(() => doSearchRef.current({ noHistogram: false }), ms)
+    return () => { if (refreshRef.current) clearInterval(refreshRef.current) }
+  }, [refreshActive, refreshValue, refreshUnit])
+
+  const toggleRefresh = useCallback(() => {
+    if (refreshActive) { setRefreshActive(false); if (refreshRef.current) { clearInterval(refreshRef.current); refreshRef.current = null } }
+    else if (refreshValue > 0) { doSearch(); setRefreshActive(true) }
+  }, [refreshActive, refreshValue, doSearch])
+
   const value = {
     theme, setTheme, isDark, tab, setTab,
     dql, setDql, filters, setFilters, addFilter, removeFilter,
@@ -144,7 +164,8 @@ export function AppProvider({ children }) {
     toggleColumn, moveColumn, doSort,
     results, total, loading, error,
     fields, setFields, histogram,
-    doSearch, loadFields, resolveTimeRange
+    doSearch, loadFields, resolveTimeRange,
+    refreshValue, setRefreshValue, refreshUnit, setRefreshUnit, refreshActive, toggleRefresh
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

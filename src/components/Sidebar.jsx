@@ -14,24 +14,26 @@ const NAV_ITEMS = [
 export default function Sidebar({ active, onSelect, collapsed, onToggle }) {
   return (
     <motion.aside
-      animate={{ width: collapsed ? 48 : 200 }}
-      className="h-full bg-soc-sidebar dark:bg-soc-darkside border-r border-soc-border dark:border-soc-darkborder flex flex-col overflow-hidden shrink-0"
+      animate={{ width: collapsed ? 52 : 210 }}
+      className="h-full bg-white dark:bg-[#0f1117] border-r border-[#e5e7eb] dark:border-[#2d3140] flex flex-col overflow-hidden shrink-0"
     >
-      <div className="flex items-center justify-between px-3 h-11 border-b border-soc-border dark:border-soc-darkborder">
-        {!collapsed && <span className="text-xs font-medium text-[#5f6368] dark:text-[#9aa0a6] uppercase tracking-wide">Navigate</span>}
-        <button onClick={onToggle} className="p-1 hover:bg-soc-border/50 dark:hover:bg-soc-darkborder/50 text-soc-stext dark:text-soc-darkstext text-xs">
-          {collapsed ? '\u25B6' : '\u25C0'}
+      <div className="flex items-center justify-between px-3 h-11 border-b border-[#e5e7eb] dark:border-[#2d3140]">
+        {!collapsed && <span className="text-[10px] font-semibold text-[#9ca3af] dark:text-[#6b7280] uppercase tracking-widest">Navigate</span>}
+        <button onClick={onToggle} className="p-1.5 rounded-lg hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140] text-[#6b7280] dark:text-[#9ca3af] transition-colors">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            {collapsed ? <path d="M9 18l6-6-6-6"/> : <path d="M15 18l-6-6 6-6"/>}
+          </svg>
         </button>
       </div>
-      <nav className="flex-1 py-2 space-y-0.5 px-1.5">
+      <nav className="flex-1 py-3 space-y-0.5 px-2">
         {NAV_ITEMS.map(item => (
           <button
             key={item.key}
             onClick={() => onSelect(item.key)}
-            className={`w-full flex items-center gap-2.5 px-2 py-1.5 text-xs font-medium transition-all duration-150 ${
+            className={`w-full flex items-center gap-3 px-2.5 py-2 text-xs font-medium rounded-lg transition-all duration-150 ${
               active === item.key
-                ? 'bg-[#1a73e8]/10 text-[#1a73e8] dark:text-[#8ab4f8] dark:bg-[#8ab4f8]/10'
-                : 'text-soc-stext dark:text-soc-darkstext hover:bg-soc-border/30 dark:hover:bg-soc-darkborder/30'
+                ? 'bg-[#3b82f6]/10 text-[#3b82f6] dark:text-[#60a5fa] dark:bg-[#60a5fa]/10'
+                : 'text-[#6b7280] dark:text-[#9ca3af] hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140] hover:text-[#1a1c23] dark:hover:text-[#e4e6eb]'
             }`}
             title={collapsed ? item.label : undefined}
           >
@@ -40,8 +42,8 @@ export default function Sidebar({ active, onSelect, collapsed, onToggle }) {
           </button>
         ))}
       </nav>
-      <div className="p-2 border-t border-soc-border dark:border-soc-darkborder text-center">
-        {!collapsed && <span className="text-[10px] text-soc-stext dark:text-soc-darkstext">SOC v2.0</span>}
+      <div className="p-3 border-t border-[#e5e7eb] dark:border-[#2d3140]">
+        {!collapsed && <span className="text-[10px] text-[#9ca3af] dark:text-[#6b7280] font-medium">SOC v2.0</span>}
       </div>
     </motion.aside>
   )

@@ -9,7 +9,7 @@ export default function Navbar() {
   return (
     <header className="gcard rounded-none flex items-center justify-between px-4 h-10 shrink-0">
       <div className="flex items-center gap-3">
-        <h1 className="text-sm font-semibold text-[#1a73e8] dark:text-[#8ab4f8] tracking-tight">Wazuh SOC</h1>
+        <h1 className="text-sm font-semibold text-soc-blue tracking-tight">Wazuh SOC</h1>
         <span className="text-[10px] text-soc-stext dark:text-soc-darkstext bg-soc-bg dark:bg-soc-darkbg px-1.5 py-0.5 rounded">SECURITY</span>
         <span className="text-xs text-soc-stext dark:text-soc-darkstext capitalize">{tab}</span>
       </div>

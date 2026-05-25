@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const client = axios.create({ baseURL: '/api', timeout: 30000 })
+const client = axios.create({ baseURL: '/api', timeout: 120000 })
 
 export async function api(endpoint, params) {
   const { data } = await client.get('/' + endpoint, { params })

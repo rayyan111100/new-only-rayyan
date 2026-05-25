@@ -5,29 +5,32 @@
 @layer base {
   html { @apply antialiased; }
   body { @apply font-sans transition-colors duration-200 text-sm; }
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { @apply bg-[#dadce0] dark:bg-[#3c4043] rounded-full; }
-  ::-webkit-scrollbar-thumb:hover { @apply bg-[#9aa0a6] dark:bg-[#9aa0a6]; }
+  ::-webkit-scrollbar-thumb { @apply bg-[#d1d5db] dark:bg-[#374151] rounded-full border-[2px] border-solid border-transparent bg-clip-content; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-[#9ca3af] dark:bg-[#6b7280]; }
+  ::-webkit-scrollbar-corner { background: transparent; }
+  * { scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }
+  .dark * { scrollbar-color: #374151 transparent; }
   input, select, textarea, button { font-family: inherit; }
 }
 @layer components {
-  .gcard { @apply bg-white dark:bg-[#2d2d2d] border border-[#dadce0] dark:border-[#3c4043] rounded-lg shadow-sm; }
-  .ginput { @apply bg-white dark:bg-[#1a1a1a] border border-[#dadce0] dark:border-[#3c4043] rounded text-xs text-[#202124] dark:text-[#e8eaed] placeholder-[#5f6368] dark:placeholder-[#9aa0a6] outline-none focus:border-[#1a73e8] dark:focus:border-[#8ab4f8] transition-colors; }
-  .gbtn { @apply px-3 py-1.5 text-xs font-medium rounded transition-all duration-150 select-none; }
-  .gbtn-primary { @apply gbtn bg-[#1a73e8] text-white hover:bg-[#1557b0] active:bg-[#174ea6]; }
-  .gbtn-ghost { @apply gbtn text-[#5f6368] dark:text-[#9aa0a6] hover:bg-[#f1f3f4] dark:hover:bg-[#3c4043] active:bg-[#e8eaed] dark:active:bg-[#4a4d51]; }
+  .gcard { @apply bg-white dark:bg-[#1a1d27] border border-[#e5e7eb] dark:border-[#2d3140] rounded-lg shadow-sm; }
+  .ginput { @apply bg-white dark:bg-[#0f1117] border border-[#e5e7eb] dark:border-[#2d3140] rounded text-xs text-[#1a1c23] dark:text-[#e4e6eb] placeholder-[#9ca3af] dark:placeholder-[#6b7280] outline-none focus:border-[#3b82f6] dark:focus:border-[#60a5fa] transition-colors; }
+  .gbtn { @apply px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-150 select-none; }
+  .gbtn-primary { @apply gbtn bg-[#3b82f6] text-white hover:bg-[#2563eb] active:bg-[#1d4ed8]; }
+  .gbtn-ghost { @apply gbtn text-[#6b7280] dark:text-[#9ca3af] hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140]; }
   .gchip { @apply inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border transition-all; }
-  .th-act { @apply inline-flex items-center justify-center w-4 h-4 rounded cursor-pointer opacity-0 transition-all duration-150 hover:scale-110; }
-  .th-wrap:hover .th-act { opacity: .6; }
-  .th-act:hover { opacity: 1 !important; @apply text-[#1a73e8] dark:text-[#8ab4f8]; }
-  .th-act-danger:hover { @apply text-[#d93025] !important; }
-  .cell-filters { @apply hidden absolute top-0 right-0 bg-white dark:bg-[#2d2d2d] border border-[#dadce0] dark:border-[#3c4043] rounded shadow-sm; }
+  .th-act { @apply inline-flex items-center justify-center w-5 h-5 rounded cursor-pointer opacity-0 transition-all duration-150 hover:scale-110; }
+  .th-wrap:hover .th-act { opacity: .5; }
+  .th-act:hover { opacity: 1 !important; @apply text-[#3b82f6] dark:text-[#60a5fa]; }
+  .th-act-danger:hover { @apply text-[#dc2626] !important; }
+  .cell-filters { @apply hidden absolute top-0 right-0 bg-white dark:bg-[#1a1d27] border border-[#e5e7eb] dark:border-[#2d3140] rounded shadow-sm; }
   .cell-val-wrap:hover .cell-filters { @apply flex; }
   .badge { @apply inline-flex items-center px-1.5 py-0.5 rounded text-xxs font-medium; }
-  .badge-critical { @apply bg-[#fce8e6] text-[#d93025] dark:bg-[#d9302533] dark:text-[#f28b82]; }
-  .badge-high { @apply bg-[#feefe3] text-[#e37400] dark:bg-[#e3740033] dark:text-[#ffb366]; }
-  .badge-medium { @apply bg-[#fef7e0] text-[#b06000] dark:bg-[#b0600033] dark:text-[#fdd663]; }
-  .badge-low { @apply bg-[#e6f4ea] text-[#188038] dark:bg-[#18803833] dark:text-[#81c995]; }
-  .badge-info { @apply bg-[#e8f0fe] text-[#1a73e8] dark:bg-[#1a73e833] dark:text-[#8ab4f8]; }
+  .badge-critical { @apply bg-[#fef2f2] text-[#dc2626] dark:bg-[#dc26261a] dark:text-[#fca5a5]; }
+  .badge-high { @apply bg-[#fff7ed] text-[#ea580c] dark:bg-[#ea580c1a] dark:text-[#fdba74]; }
+  .badge-medium { @apply bg-[#fefce8] text-[#ca8a04] dark:bg-[#ca8a041a] dark:text-[#fde047]; }
+  .badge-low { @apply bg-[#f0fdf4] text-[#16a34a] dark:bg-[#16a34a1a] dark:text-[#86efac]; }
+  .badge-info { @apply bg-[#eff6ff] text-[#2563eb] dark:bg-[#3b82f61a] dark:text-[#93c5fd]; }
 }

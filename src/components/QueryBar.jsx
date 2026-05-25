@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useApp } from '../context/AppContext'
 import DateRangePicker from './DateRangePicker'
+import RefreshInterval from './RefreshInterval'
 
 const COMMON = [
   { label: 'Today', start: 'now/d', end: 'now' },
@@ -78,6 +79,7 @@ export default function QueryBar() {
         </div>
 
         <DateRangePicker />
+        <RefreshInterval />
         <select value={limit} onChange={e => setLimit(parseInt(e.target.value))} className={`ginput px-1.5 py-1 text-xs w-14`}>
           <option>20</option><option>50</option><option>100</option><option>200</option><option>500</option>
         </select>

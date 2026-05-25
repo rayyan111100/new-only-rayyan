@@ -17,7 +17,7 @@ const publicPath = path.join(__dirname, '..', 'public');
 app.use(express.static(distPath));
 app.use(express.static(publicPath));
 
-const api = axios.create({ baseURL: API, timeout: 30000 });
+const api = axios.create({ baseURL: API, timeout: 120000 });
 
 async function proxy(endpoint, params, res) {
   try {
@@ -46,6 +46,7 @@ app.get('*', (req, res) => {
   res.status(404).send('Not found');
 });
 
+app.use((req, res, next) => { res.setTimeout(120000); next(); });
 app.listen(PORT, () => {
   console.log(`✔ Wazuh Dashboard at http://localhost:${PORT}`);
   console.log(`✔ Proxy → ${API}`);
