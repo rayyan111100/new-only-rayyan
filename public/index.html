@@ -605,8 +605,8 @@ function buildDql(){
   dFilters.forEach(f=>{
     const v=String(f.value??'').replace(/"/g,'\\"')
     if(f.type==='exists')parts.push(`_exists_:${f.field}`)
-    else if(f.negate)parts.push(`NOT ${f.field}: "${v}"`)
-    else parts.push(`${f.field}: "${v}"`)
+    else if(f.negate)parts.push(`NOT ${f.field}:"${v}"`)
+    else parts.push(`${f.field}:"${v}"`)
   })
   const userQ=document.getElementById('dqlInput').value.trim()
   if(userQ)parts.push(`(${userQ})`)
