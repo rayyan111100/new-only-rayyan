@@ -29,7 +29,8 @@ export default function DiscoverTab() {
         if (evalResult.matched) {
           const top = evalResult.matches[0]; const action = top.actions?.[0]
           const rName = top.rule.name; const sev = action?.params?.severity || 'info'
-          matchMap[idx] = { ruleName: rName, severity: sev, message: interpolateMessage(action?.params?.message || '', doc), priority: top.rule.priority, overwritten: evalResult.overwritten }
+          const msg = interpolateMessage(action?.params?.message || '', doc)
+          matchMap[idx] = { ruleName: rName, severity: sev, level: action?.params?.level || null, message: msg, priority: top.rule.priority, overwritten: evalResult.overwritten }
           breakdown[rName] = (breakdown[rName] || 0) + 1; sevMap[rName] = sev; mCount++
         }
       })

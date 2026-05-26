@@ -215,8 +215,13 @@ export default function ResultsTable({ ruleMatches = null }) {
                       let v = resolveField(row, c)
                       const raw = String(v ?? '')
                       let disp
-                      if (c === 'rule.level') disp = <LevelBadge level={v} />
-                      else if (c === '@timestamp' || c === 'timestamp') disp = <span className="text-soc-stext dark:text-soc-darkstext text-xxs">{raw.slice(0, 19)}</span>
+                      if (c === 'rule.level') {
+                        const ov = match?.level
+                        disp = <span className="inline-flex items-center gap-1">{ov ? <><span className="w-1.5 h-1.5 rounded-full bg-purple-500 shrink-0" title={`Rule override: ${ov}`} /><LevelBadge level={ov} /></> : null}<LevelBadge level={v} />
+                          {match?.level ? <span className="text-[9px] text-soc-stext/40 dark:text-soc-darkstext/40 line-through">{v}</span> : null}</span>
+                      } else if (c === 'rule.description' && match?.message) {
+                        disp = <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-500 shrink-0" title="Rule override" />{match.message}</span>
+                      } else if (c === '@timestamp' || c === 'timestamp') disp = <span className="text-soc-stext dark:text-soc-darkstext text-xxs">{raw.slice(0, 19)}</span>
                       else { let x = raw; if (x.length > 100) x = x.slice(0, 100) + '\u2026'; disp = x || '\u2014' }
                       return (
                         <td key={c} className="px-1.5 py-1 relative max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap">

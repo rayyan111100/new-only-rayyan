@@ -610,6 +610,7 @@ export default function RuleBuilder() {
                                 Level {`\u2192`} {act.params?.severity || 'high'} (dynamic)
                               </span>
                             )}
+                            <input type="number" className="ginput w-16" placeholder="Lvl" min="0" max="15" value={act.params?.level ?? ''} onChange={e => updateAction(idx, { params: { ...act.params, level: e.target.value ? parseInt(e.target.value) : undefined } })} title="Override Wazuh level (0-15)" />
                             <input className="ginput flex-1 min-w-0" placeholder='Alert message ({{field}} for interpolation)' value={act.params?.message || ''} onChange={e => updateAction(idx, { params: { ...act.params, message: e.target.value } })} />
                           </>
                         )}
