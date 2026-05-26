@@ -61,6 +61,7 @@ export default function RuleBuilder() {
   const [testLoading, setTestLoading] = useState(false)
   const [testResults, setTestResults] = useState(null)
   const [showTest, setShowTest] = useState(false)
+  const [showOverview, setShowOverview] = useState(false)
 
   const refresh = useCallback(() => {
     setGroups(getGroups())
@@ -184,6 +185,17 @@ export default function RuleBuilder() {
     setDirty(true)
   }
 
+  function computeSeverity(act, doc) {
+    if (!act.useEventLevel) return act.params?.severity || 'high'
+    const lvl = parseInt(resolveField(doc, 'rule.level'))
+    if (isNaN(lvl)) return act.params?.severity || 'high'
+    if (lvl >= 12) return 'critical'
+    if (lvl >= 8) return 'high'
+    if (lvl >= 5) return 'medium'
+    if (lvl >= 3) return 'low'
+    return 'info'
+  }
+
   async function runTest() {
     if (!editing) return
     setTestLoading(true)
@@ -193,8 +205,10 @@ export default function RuleBuilder() {
       setTestData(d.results || [])
       const results = (d.results || []).map(doc => {
         const result = evalRule(editing, doc)
+        const eventLevel = resolveField(doc, 'rule.level')
         const actions = result.matched ? (editing.actions || []).map(a => ({
           ...a,
+          computedSeverity: a.type === 'alert' ? computeSeverity(a, doc) : null,
           interpolated: a.type === 'alert' ? interpolateMessage(a.params?.message || '', doc) : null
         })) : []
         return {
@@ -224,7 +238,44 @@ export default function RuleBuilder() {
       <div className="flex items-center gap-3 px-1 py-2 text-xs border-b border-[#e5e7eb] dark:border-[#2d3140]">
         <span className="font-semibold text-soc-stext dark:text-soc-darkstext">Rules Engine</span>
         <span className="text-[#9ca3af] dark:text-[#6b7280]">{allRules.length} rules, {allRules.filter(r => r.enabled).length} enabled</span>
+        <button
+          onClick={() => setShowOverview(!showOverview)}
+          className={`gbtn text-xs ml-auto ${showOverview ? 'gbtn-primary' : ''}`}
+        >
+          {showOverview ? '\u270E Editor' : '\uD83D\uDCCB All Rules'}
+        </button>
       </div>
+      {showOverview && (
+        <div className="border-b border-[#e5e7eb] dark:border-[#2d3140] p-2 bg-[#f9fafb] dark:bg-[#1a1c23]">
+          <div className="max-h-48 overflow-y-auto space-y-0.5 text-xs">
+            {allRules.length === 0 && <div className="text-[#9ca3af] text-center py-4">No rules yet</div>}
+            {allRules.map(r => {
+              const g = groups.find(x => x.id === r.groupId)
+              return (
+                <div key={r.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white dark:hover:bg-[#2d3140]">
+                  <button
+                    onClick={() => { toggleRuleEnabled(r.id); refresh(); if (editing?.id === r.id) patchEditing({ enabled: !r.enabled }) }}
+                    className={`w-2 h-2 rounded-full shrink-0 ${r.enabled ? 'bg-green-500' : 'bg-[#9ca3af]'}`}
+                    title={r.enabled ? 'Disable' : 'Enable'}
+                  />
+                  <span className="w-14 text-[10px] text-[#6b7280] truncate">{g?.name || '?'}</span>
+                  <button
+                    onClick={() => { setOpenGroupId(r.groupId); setSelectedRuleId(r.id); setEditing(cleanRule(JSON.parse(JSON.stringify(r)))); setShowOverview(false); setDirty(false) }}
+                    className="flex-1 text-left truncate text-soc-stext dark:text-soc-darkstext hover:text-soc-blue"
+                  >
+                    {r.name}
+                  </button>
+                  <span className="text-[#9ca3af] shrink-0 text-[10px]">P:{r.priority}</span>
+                  {r.overwrite && <span className="text-[9px] text-amber-500 font-bold uppercase shrink-0">OV</span>}
+                  <span className="shrink-0 text-[10px]">{r.conditions?.length || 0} cond</span>
+                  <span className="shrink-0 text-[10px] uppercase">{r.actions?.[0]?.type || '-'}</span>
+                  <button onClick={() => { deleteRule(r.id); refresh(); if (selectedRuleId === r.id) { setSelectedRuleId(null); setEditing(null) } }} className="text-[#9ca3af] hover:text-red-500 shrink-0" title="Delete">✕</button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-56 shrink-0 border-r border-[#e5e7eb] dark:border-[#2d3140] overflow-y-auto">
@@ -413,10 +464,19 @@ export default function RuleBuilder() {
                         </select>
                         {act.type === 'alert' && (
                           <>
-                            <select className="ginput w-24" value={act.params?.severity || 'high'} onChange={e => updateAction(idx, { params: { ...act.params, severity: e.target.value } })}>
+                            <select className="ginput w-24" value={act.useEventLevel ? 'event-level' : (act.params?.severity || 'high')} onChange={e => {
+                              if (e.target.value === 'event-level') updateAction(idx, { useEventLevel: true, params: { ...act.params, severity: 'high' } })
+                              else { updateAction(idx, { useEventLevel: false, params: { ...act.params, severity: e.target.value } }) }
+                            }}>
                               {SEVERITIES.map(s => <option key={s} value={s}>{s}</option>)}
+                              <option value="event-level">{'From Event ({{rule.level}})'}</option>
                             </select>
-                            <input className="ginput flex-1 min-w-0" placeholder="Alert message ({{field}} for interpolation)" value={act.params?.message || ''} onChange={e => updateAction(idx, { params: { ...act.params, message: e.target.value } })} />
+                            {act.useEventLevel && (
+                              <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                                Level {`\u2192`} {act.params?.severity || 'high'} (dynamic)
+                              </span>
+                            )}
+                            <input className="ginput flex-1 min-w-0" placeholder='Alert message ({{field}} for interpolation)' value={act.params?.message || ''} onChange={e => updateAction(idx, { params: { ...act.params, message: e.target.value } })} />
                           </>
                         )}
                         {act.type === 'tag' && (
@@ -466,11 +526,11 @@ export default function RuleBuilder() {
                           <div className="truncate text-soc-stext dark:text-soc-darkstext">{r.ruleDesc}</div>
                           {r.matched && r.actions.length > 0 && r.actions.map((a, ai) => (
                             <div key={ai} className="flex items-center gap-1.5 mt-0.5">
-                              <span className={`badge badge-${a.type === 'alert' ? a.params?.severity || 'high' : a.type === 'tag' ? 'medium' : 'low'} text-[9px]`}>
+                              <span className={`badge badge-${a.type === 'alert' ? a.computedSeverity || a.params?.severity || 'high' : a.type === 'tag' ? 'medium' : 'low'} text-[9px]`}>
                                 {a.type.toUpperCase()}
                               </span>
                               <span className="text-[10px] text-soc-stext dark:text-soc-darkstext truncate">
-                                {a.type === 'alert' && (a.params?.severity || 'high')}
+                                {a.type === 'alert' && (a.computedSeverity || a.params?.severity || 'high')}
                                 {a.type === 'alert' && a.interpolated ? ': ' + a.interpolated : ''}
                                 {a.type === 'tag' && (a.params?.tag || '')}
                                 {a.type === 'ignore' && 'silent ignore'}
