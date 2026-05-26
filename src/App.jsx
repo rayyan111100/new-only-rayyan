@@ -12,6 +12,7 @@ import AnalyticsTab from './tabs/AnalyticsTab'
 import IndicesTab from './tabs/IndicesTab'
 import GeoTab from './tabs/GeoTab'
 import HealthTab from './tabs/HealthTab'
+import RulesTab from './tabs/RulesTab'
 
 const TABS = {
   discover: DiscoverTab,
@@ -21,7 +22,8 @@ const TABS = {
   analytics: AnalyticsTab,
   indices: IndicesTab,
   geo: GeoTab,
-  health: HealthTab
+  health: HealthTab,
+  rules: RulesTab
 }
 
 function DashboardShell() {

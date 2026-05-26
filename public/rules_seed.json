@@ -1,0 +1,108 @@
+{
+  "groups": [
+    { "id": "g_firewall", "name": "Firewall", "description": "pfSense firewall rules", "order": 0, "createdAt": "2026-05-25T23:00:00Z", "updatedAt": "2026-05-25T23:00:00Z" },
+    { "id": "g_auth", "name": "Authentication", "description": "Login & auth rules", "order": 1, "createdAt": "2026-05-25T23:00:00Z", "updatedAt": "2026-05-25T23:00:00Z" },
+    { "id": "g_sysmon", "name": "Sysmon", "description": "Sysmon process/file alerts", "order": 2, "createdAt": "2026-05-25T23:00:00Z", "updatedAt": "2026-05-25T23:00:00Z" },
+    { "id": "g_critical", "name": "Critical", "description": "Critical+high severity", "order": 3, "createdAt": "2026-05-25T23:00:00Z", "updatedAt": "2026-05-25T23:00:00Z" },
+    { "id": "g_threat", "name": "Threat Intel", "description": "MISP/VirusTotal matches", "order": 4, "createdAt": "2026-05-25T23:00:00Z", "updatedAt": "2026-05-25T23:00:00Z" }
+  ],
+  "rules": [
+    {
+      "id": "r_pfsense_block", "groupId": "g_firewall",
+      "name": "pfSense Firewall Block", "description": "Matches pfSense blocks from internal IPs to external",
+      "enabled": true, "priority": 200, "overwrite": false, "conditionLogic": "AND",
+      "conditions": [
+        { "id": "c1", "field": "rule.description", "operator": "contains", "value": "pfSense firewall blocks", "negate": false },
+        { "id": "c2", "field": "data.action", "operator": "equals", "value": "block", "negate": false },
+        { "id": "c3", "field": "rule.level", "operator": "gt", "value": "8", "negate": false }
+      ],
+      "ignoreIps": ["10.0.0.0/8","172.16.0.0/12"],
+      "actions": [{ "type": "alert", "params": { "severity": "high", "message": "Firewall block: {{data.srcip}} -> {{data.dstip}}:{{data.dstport}} ({{data.protocol}})" } }],
+      "createdAt": "2026-05-25T23:00:00Z", "updatedAt": "2026-05-25T23:00:00Z"
+    },
+    {
+      "id": "r_critical_logon", "groupId": "g_critical",
+      "name": "Critical Logon Detection", "description": "CRITICAL logon events level 12+",
+      "enabled": true, "priority": 300, "overwrite": true, "conditionLogic": "AND",
+      "conditions": [
+        { "id": "c1", "field": "rule.description", "operator": "contains", "value": "CRITICAL: Successful logon", "negate": false },
+        { "id": "c2", "field": "rule.level", "operator": "gt", "value": "11", "negate": false }
+      ],
+      "ignoreIps": [],
+      "actions": [{ "type": "alert", "params": { "severity": "critical", "message": "CRITICAL LOGON from {{agent.name}} ({{agent.ip}})!" } }],
+      "createdAt": "2026-05-25T23:00:00Z", "updatedAt": "2026-05-25T23:00:00Z"
+    },
+    {
+      "id": "r_auth_fail", "groupId": "g_auth",
+      "name": "Postfix Auth Failure", "description": "Postfix SASL authentication failures",
+      "enabled": true, "priority": 150, "overwrite": false, "conditionLogic": "AND",
+      "conditions": [
+        { "id": "c1", "field": "rule.description", "operator": "contains", "value": "Postfix SASL authentication failure", "negate": false },
+        { "id": "c2", "field": "rule.level", "operator": "gt", "value": "4", "negate": false }
+      ],
+      "ignoreIps": ["192.168.1.0/24"],
+      "actions": [{ "type": "alert", "params": { "severity": "medium", "message": "Auth failure on {{agent.name}}" } }],
+      "createdAt": "2026-05-25T23:00:00Z", "updatedAt": "2026-05-25T23:00:00Z"
+    },
+    {
+      "id": "r_sysmon_proc", "groupId": "g_sysmon",
+      "name": "Sysmon Process Create", "description": "New process created on Windows",
+      "enabled": true, "priority": 100, "overwrite": false, "conditionLogic": "OR",
+      "conditions": [
+        { "id": "c1", "field": "rule.description", "operator": "contains", "value": "Sysmon - Event 1: Process creation", "negate": false },
+        { "id": "c2", "field": "rule.description", "operator": "contains", "value": "A process was created", "negate": false }
+      ],
+      "ignoreIps": [],
+      "actions": [{ "type": "tag", "params": { "tag": "process-creation" } }],
+      "createdAt": "2026-05-25T23:00:00Z", "updatedAt": "2026-05-25T23:00:00Z"
+    },
+    {
+      "id": "r_threat_intel", "groupId": "g_threat",
+      "name": "MISP Threat Match", "description": "Real MISP IoC hits (not errors)",
+      "enabled": true, "priority": 500, "overwrite": true, "conditionLogic": "AND",
+      "conditions": [
+        { "id": "c1", "field": "rule.description", "operator": "contains", "value": "MISP - IoC found", "negate": false },
+        { "id": "c2", "field": "rule.description", "operator": "contains", "value": "MISP - Error", "negate": true }
+      ],
+      "ignoreIps": [],
+      "actions": [{ "type": "alert", "params": { "severity": "critical", "message": "THREAT: {{rule.description}}" } }],
+      "createdAt": "2026-05-25T23:00:00Z", "updatedAt": "2026-05-25T23:00:00Z"
+    },
+    {
+      "id": "r_virustotal", "groupId": "g_threat",
+      "name": "VirusTotal Alert", "description": "VT rate limit OR hash match alerts",
+      "enabled": true, "priority": 400, "overwrite": false, "conditionLogic": "OR",
+      "conditions": [
+        { "id": "c1", "field": "rule.description", "operator": "contains", "value": "VirusTotal: Error", "negate": false },
+        { "id": "c2", "field": "rule.description", "operator": "startsWith", "value": "MISP:", "negate": false }
+      ],
+      "ignoreIps": [],
+      "actions": [{ "type": "alert", "params": { "severity": "high", "message": "VT/MISP: {{rule.description}}" } }],
+      "createdAt": "2026-05-25T23:00:00Z", "updatedAt": "2026-05-25T23:00:00Z"
+    },
+    {
+      "id": "r_sysmon_net", "groupId": "g_sysmon",
+      "name": "Sysmon Network Connection", "description": "Outbound network connections detected by Sysmon",
+      "enabled": true, "priority": 110, "overwrite": false, "conditionLogic": "OR",
+      "conditions": [
+        { "id": "c1", "field": "rule.description", "operator": "contains", "value": "Sysmon - Event 3: Network connection", "negate": false },
+        { "id": "c2", "field": "rule.description", "operator": "contains", "value": "Sysmon - Event 22: DNS Query", "negate": false }
+      ],
+      "ignoreIps": ["127.0.0.0/8"],
+      "actions": [{ "type": "tag", "params": { "tag": "network-activity" } }],
+      "createdAt": "2026-05-25T23:00:00Z", "updatedAt": "2026-05-25T23:00:00Z"
+    },
+    {
+      "id": "r_service_fail", "groupId": "g_auth",
+      "name": "Systemd Service Failure", "description": "Non-chat-bot systemd failures",
+      "enabled": true, "priority": 80, "overwrite": false, "conditionLogic": "AND",
+      "conditions": [
+        { "id": "c1", "field": "rule.description", "operator": "equals", "value": "Systemd: Service exited due to a failure.", "negate": false },
+        { "id": "c2", "field": "agent.name", "operator": "equals", "value": "chat-bot", "negate": true }
+      ],
+      "ignoreIps": [],
+      "actions": [{ "type": "alert", "params": { "severity": "low", "message": "Service failed on {{agent.name}}: {{full_log}}" } }],
+      "createdAt": "2026-05-25T23:00:00Z", "updatedAt": "2026-05-25T23:00:00Z"
+    }
+  ]
+}
