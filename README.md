@@ -9,13 +9,30 @@ A professional Security Operations Center (SOC) dashboard built with React + Vit
 ## Features
 
 ### Tabs
-- **Discover** — Full OpenSearch-style log exploration with DQL search, filter bar, histogram, sortable results table, row expansion (Table/JSON views), field sidebar with stats, column toggle/reorder
+- **Discover** — Full OpenSearch-style log exploration with DQL search, filter bar, histogram, sortable results table, row expansion (Table/JSON views), field sidebar with stats, column toggle/reorder. Includes **Apply Rules** toggle to evaluate enabled rules against live results.
 - **Dashboard** — Full SOC security dashboard with summary cards (24h/7d/30d counts, alert rate), severity distribution bars, alert timeline area chart, top rules/agents, categories donut chart, recent alerts feed — all auto-refreshing every 60s
 - **Scan** — Security scan against IP/hostname/URL targets
 - **Analytics** — Top rules, top agents, severity distribution charts (recharts)
 - **Geo** — Geo-location cards by source IP
 - **Health** — Wazuh cluster health, indices list, index stats
 - **Indices** — Index management overview
+- **Rules** — Rule Engine for creating and testing custom Wazuh-style rules
+
+### Rule Engine
+- **Create rules** with multiple conditions (AND/OR logic), field selectors with autocomplete (50+ Wazuh fields), operators (equals/contains/regex/startsWith/endsWith/gt/lt/inList/exists), and NOT negation
+- **Actions**: alert (severity + custom level 0-15 + interpolated message), tag, ignore
+- **Overwrite mode** — when enabled, rule overrides `rule.level` and `rule.description` in Discover tab
+- **Ignore IPs** — CIDR-based IP exclusion per rule
+- **Test panel** — Run Test against live data with per-condition match/fail indicators
+- **Batch Test All Rules** — Test all enabled rules against latest 50 alerts with match percentage
+- **Apply Rules in Discover** — Toggle ⚙ Rules in Discover tab to see rule-matched alerts with:
+  - Severity-colored Rule column with rule name badge
+  - Overridden `rule.level` (new badge + original strikethrough)
+  - Overridden `rule.description`
+  - Row highlighting by severity (red/orange/yellow/green)
+  - Purple stats bar with per-rule match counts
+- **Import/Export** — JSON-based rule sharing between instances
+- **Dashboard** — Stats overview (total/enabled/disabled rules, by group, by priority, overwrite count)
 
 ### UI/UX
 - **Inter font** with professional color palette (`#3b82f6` accent blue)
@@ -31,6 +48,7 @@ A professional Security Operations Center (SOC) dashboard built with React + Vit
 ### Backend
 - **Express.js proxy** server forwarding all requests to Wazuh API
 - **Endpoints**: `/api/search`, `/api/count`, `/api/aggregate`, `/api/fields`, `/api/health`, `/api/indices`, `/api/index-stats`, `/api/scan`, `/api/geo`, `/api/dashboard` (parallel 9-call aggregate)
+- **JWT Authentication** — automatic token acquisition via `WAZUH_USER`/`WAZUH_PASSWORD` with 5-min refresh; falls back to no auth if credentials not set
 - **120s timeout** for large result sets (7.9M+ events)
 - **SPA fallback** — serves built React app from `dist/`
 
@@ -61,6 +79,8 @@ Create `.env` in project root:
 
 ```
 WAZUH_API_URL=http://192.168.1.77:9999
+WAZUH_USER=admin
+WAZUH_PASSWORD=your_password
 PORT=3000
 ```
 
@@ -115,6 +135,11 @@ src/
     FieldSidebar.jsx  — Field list with stats popover
     DashboardStats.jsx  (replaced by SocDashboard)
     SocDashboard.jsx    — Full SOC dashboard: 7 widgets with live Wazuh data
+    RuleBuilder.jsx  — Full rule editor: conditions, actions, ignore IPs, test panel
+    ResultsTable.jsx — Sortable, filterable results with rule match badges & overrides
+  services/
+    ruleStorage.js   — localStorage CRUD for rules & groups
+    ruleEngine.js    — Rule evaluation engine: conditions, CIDR match, message interpolation
   tabs/
     DiscoverTab.jsx
     DashboardTab.jsx
@@ -123,6 +148,7 @@ src/
     GeoTab.jsx
     HealthTab.jsx
     IndicesTab.jsx
+    RulesTab.jsx
 server/
   server.cjs          — Express proxy + static file serving
 ```
@@ -146,6 +172,11 @@ server/
 | Fixed | Circular dependency in dynamic import — switched to static import |
 | Added | SOC Dashboard with 7 live widgets (summary cards, severity bars, timeline area, top rules, categories donut, top agents, recent alerts) via `/api/dashboard` endpoint |
 | Added | Auto-refresh every 60s on Dashboard tab |
+| Added | Rule Engine — RuleBuilder with conditions, actions, overwrite mode, ignore IPs, import/export, dashboard stats, test panel, batch testing |
+| Added | Apply Rules in Discover tab — client-side rule evaluation, severity-colored Rule column, overridden level/description, row highlighting, stats bar |
+| Added | Custom level override (0-15) in rule action params |
+| Added | Expanded field selector with 50+ Wazuh fields + free-text input with datalist autocomplete |
+| Added | Wazuh API JWT authentication — auto token acquisition via WAZUH_USER/WAZUH_PASSWORD in .env |
 
 ---
 
