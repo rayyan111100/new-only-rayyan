@@ -33,8 +33,6 @@ export function createRule(defaults = {}) {
     id: createId(),
     name: defaults.name || 'New Rule',
     enabled: true,
-    priority: 100,
-    overwrite: false,
     conditionLogic: 'AND',
     conditions: [],
     ignoreIps: [],

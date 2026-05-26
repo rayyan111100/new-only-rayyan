@@ -22,10 +22,8 @@ function cleanRule(r) {
   return {
     ...r, name: r.name || '',
     conditionLogic: r.conditionLogic === 'OR' ? 'OR' : 'AND',
-    conditions: (r.conditions || []).map(c => ({ ...c, field: c.field || 'rule.description', operator: c.operator || 'contains', value: c.value || '', negate: false })),
+    conditions: (r.conditions || []).map(c => ({ ...c, field: c.field || 'rule.description', operator: c.operator || 'contains', value: c.value || '' })),
     actions: (r.actions || []).map(a => ({ ...a, params: a.params || {} })),
-    priority: r.priority ?? 100,
-    overwrite: !!r.overwrite,
     enabled: r.enabled !== false
   }
 }
@@ -148,7 +146,6 @@ export default function RuleBuilder() {
               }`}>
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${r.enabled ? 'bg-green-500' : 'bg-[#9ca3af]'}`} />
               <span className="flex-1 truncate">{r.name}</span>
-              {r.overwrite && <span className="text-[9px] text-amber-500 font-bold">OV</span>}
             </button>
           ))}
         </aside>
@@ -165,16 +162,10 @@ export default function RuleBuilder() {
                 </label>
               </div>
               <div className="flex items-center gap-3">
-                <div className="w-24"><label className="block text-[10px] uppercase font-semibold text-[#9ca3af] mb-1">Priority</label>
-                  <input type="number" className="ginput w-full" value={editing.priority} onChange={e => patch({ priority: parseInt(e.target.value) || 0 })} /></div>
                 <div className="w-20"><label className="block text-[10px] uppercase font-semibold text-[#9ca3af] mb-1">Logic</label>
                   <select className="ginput w-full" value={editing.conditionLogic} onChange={e => patch({ conditionLogic: e.target.value })}>
                     <option value="AND">AND</option><option value="OR">OR</option>
                   </select></div>
-                <label className="flex items-center gap-1.5 text-xs cursor-pointer mt-4">
-                  <input type="checkbox" checked={editing.overwrite} onChange={e => patch({ overwrite: e.target.checked })} className="accent-amber-500" />
-                  <span className="text-amber-600 dark:text-amber-400 font-semibold">Overwrite</span>
-                </label>
               </div>
               <div className="gcard p-3">
                 <div className="flex items-center justify-between mb-2">

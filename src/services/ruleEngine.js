@@ -65,15 +65,9 @@ export function evaluateAllRules(rules, doc) {
 
   if (matches.length === 0) return { matched: false, matches: [] }
 
-  const sorted = [...matches].sort((a, b) => b.rule.priority - a.rule.priority)
-
-  const overwriteRule = sorted.find(m => m.rule.overwrite)
-
-  const finalMatches = overwriteRule ? [overwriteRule] : sorted
-
   const allActions = []
   const seen = new Set()
-  for (const m of finalMatches) {
+  for (const m of matches) {
     for (const a of (m.result.actions || [])) {
       const key = JSON.stringify(a)
       if (!seen.has(key)) {
@@ -85,14 +79,12 @@ export function evaluateAllRules(rules, doc) {
 
   return {
     matched: true,
-    matches: finalMatches.map(m => ({
+    matches: matches.map(m => ({
       rule: m.rule,
       details: m.result.details,
       actions: m.result.actions
     })),
-    actions: allActions,
-    overwritten: !!overwriteRule,
-    highestPriority: sorted[0].rule.priority
+    actions: allActions
   }
 }
 
