@@ -164,24 +164,33 @@ export default function RuleBuilder() {
               <div className="gcard p-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[10px] uppercase font-semibold text-[#9ca3af]">Conditions</span>
-                  <button onClick={addCondition} className="gbtn text-xs">+ Add</button>
+                  <div className="flex items-center gap-2">
+                    <select className="ginput text-xs py-0.5 w-16" value={editing.conditionLogic} onChange={e => patch({ conditionLogic: e.target.value })}>
+                      <option value="AND">AND</option><option value="OR">OR</option>
+                    </select>
+                    <button onClick={addCondition} className="gbtn text-xs">+ Add</button>
+                  </div>
                 </div>
                 {editing.conditions.length === 0 && <div className="text-xs text-[#9ca3af] py-4 text-center">Matches all events</div>}
                 <div className="space-y-1.5">
                   {editing.conditions.map((cond, idx) => (
-                    <div key={cond.id} className="flex items-center gap-2 text-xs">
-                      {idx > 0 ? (
-                        <button onClick={() => { const l = cond.logic === 'AND' ? 'OR' : 'AND'; updCondition(idx, { logic: l }) }}
-                          className="text-[10px] font-bold text-soc-blue w-8 shrink-0 text-center hover:underline">{cond.logic}</button>
-                      ) : <span className="w-8 shrink-0" />}
-                      <input className="ginput flex-1" list="flist" value={cond.field} onChange={e => updCondition(idx, { field: e.target.value })} placeholder="field" />
-                      <select className="ginput w-24 shrink-0" value={cond.operator} onChange={e => updCondition(idx, { operator: e.target.value })}>
-                        {OPERATORS.map(o => <option key={o} value={o}>{o}</option>)}
-                      </select>
-                      <input className="ginput flex-1" placeholder="value" value={cond.value} onChange={e => updCondition(idx, { value: e.target.value })} />
-                      <button onClick={() => delCondition(idx)} className="p-1 text-[#9ca3af] hover:text-red-500 shrink-0">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                      </button>
+                    <div key={cond.id}>
+                      {idx > 0 && (
+                        <div className="flex items-center justify-center py-1">
+                          <button onClick={() => { const l = cond.logic === 'AND' ? 'OR' : 'AND'; updCondition(idx, { logic: l }) }}
+                            className="text-[10px] font-bold text-soc-blue hover:underline px-2 py-0.5 rounded bg-soc-blue/10 dark:bg-blue-500/10">{cond.logic}</button>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 text-xs">
+                        <input className="ginput flex-1" list="flist" value={cond.field} onChange={e => updCondition(idx, { field: e.target.value })} placeholder="field" />
+                        <select className="ginput w-24 shrink-0" value={cond.operator} onChange={e => updCondition(idx, { operator: e.target.value })}>
+                          {OPERATORS.map(o => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                        <input className="ginput flex-1" placeholder="value" value={cond.value} onChange={e => updCondition(idx, { value: e.target.value })} />
+                        <button onClick={() => delCondition(idx)} className="p-1 text-[#9ca3af] hover:text-red-500 shrink-0">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
