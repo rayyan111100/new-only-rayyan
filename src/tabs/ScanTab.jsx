@@ -76,6 +76,57 @@ export default function SecurityDashboard() {
   const [scanResults, setScanResults] = useState(null)
   const [scanLoading, setScanLoading] = useState(false)
 
+  const [drillFilters, setDrillFilters] = useState([])
+  const [drillResults, setDrillResults] = useState(null)
+  const [drillLoading, setDrillLoading] = useState(false)
+  const drillRef = useRef([])
+
+  const runDrillSearch = useCallback(async (filters) => {
+    if (filters.length === 0) { setDrillResults(null); setDrillLoading(false); return }
+    setDrillLoading(true)
+    try {
+      const tp = timeParams()
+      const hasWildcard = filters.some(f => f.field === '*' && f.value === '*')
+      const effective = hasWildcard ? [] : filters
+      let q = '*'
+      if (effective.length > 0) {
+        q = effective.map(f => {
+          const val = /^\d+(\.\d+)?$/.test(String(f.value)) ? f.value : `"${f.value}"`
+          return `${f.field}:${val}`
+        }).join(' AND ')
+      }
+      const res = await api('search', { start_date: tp.start_date, end_date: tp.end_date, q, size: 50, sort: '@timestamp:desc' })
+      setDrillResults(res)
+    } catch { setDrillResults({ results: [], total: 0 }) }
+    setDrillLoading(false)
+  }, [timeParams])
+
+  const addDrill = useCallback((field, value) => {
+    setDrillFilters(prev => {
+      const exists = prev.find(f => f.field === field && f.value === value)
+      if (exists) return prev
+      const next = [...prev, { field, value }]
+      drillRef.current = next
+      runDrillSearch(next)
+      return next
+    })
+  }, [runDrillSearch])
+
+  const removeDrill = useCallback((idx) => {
+    setDrillFilters(prev => {
+      const next = prev.filter((_, i) => i !== idx)
+      drillRef.current = next
+      runDrillSearch(next)
+      return next
+    })
+  }, [runDrillSearch])
+
+  const clearDrills = useCallback(() => {
+    setDrillFilters([])
+    drillRef.current = []
+    setDrillResults(null)
+  }, [])
+
   const runScan = async () => {
     if (!scanTarget.trim()) return
     setScanLoading(true)
@@ -158,7 +209,7 @@ export default function SecurityDashboard() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [fetchData])
 
-  const navToDiscover = (field, value) => { addFilter(field, value, false) }
+  const navToDiscover = (field, value) => { addDrill(field, value) }
 
   const sevData = data ? SEV_ORDER.filter(s => data.severity[s]).map(s => ({ name: s, value: data.severity[s], color: SEV_LABELS[s].color })) : []
   const sevTotal = sevData.reduce((a, b) => a + b.value, 0)
@@ -195,6 +246,9 @@ export default function SecurityDashboard() {
           <PulseDot />
           <span className="text-sm font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">{'\uD83D\uDEE1\uFE0F'} SOC Security</span>
           <span className="gchip text-[10px]">{(count24 || 0).toLocaleString()} alerts</span>
+          {drillFilters.length > 0 && (
+            <span className="gchip text-[9px] bg-[#3b82f6]/10 text-[#3b82f6] dark:text-[#60a5fa]">{'Drill: ' + drillFilters.length}</span>
+          )}
           <div className="h-4 w-px bg-[#e5e7eb] dark:bg-[#2d3140]" />
           <button onClick={() => setScanOpen(!scanOpen)} className="gbtn-ghost text-[10px] px-2 py-1 gap-1 inline-flex items-center">
             {scanOpen ? '\u25BC' : '\uD83D\uDD0D'} Scanner
@@ -484,9 +538,100 @@ export default function SecurityDashboard() {
         </div>
       </div>
 
+      {drillFilters.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="gcard">
+          <div className="px-4 py-3 border-b border-[#e5e7eb] dark:border-[#2d3140]/60">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Drill Filters</h3>
+                <span className="gchip text-[9px]">{drillFilters.length}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {drillLoading && <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">{'\u23F3'} searching...</span>}
+                <button onClick={clearDrills} className="gbtn-ghost text-[10px] text-[#dc2626] dark:text-red-400">Clear All</button>
+              </div>
+            </div>
+          </div>
+          <div className="px-4 py-2 flex flex-wrap gap-1.5">
+            {drillFilters.map((f, i) => (
+              <span key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#eff6ff] dark:bg-[#3b82f6]/10 border border-[#bfdbfe] dark:border-[#3b82f6]/30 text-[10px] text-[#2563eb] dark:text-blue-400">
+                <span className="font-medium">{f.field}:</span>
+                <span className="truncate max-w-[120px]">{f.value}</span>
+                <button onClick={() => removeDrill(i)} className="ml-0.5 hover:text-[#dc2626] transition-colors">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </span>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {drillResults !== null && drillFilters.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="gcard">
+          <div className="px-4 py-3 border-b border-[#e5e7eb] dark:border-[#2d3140]/60">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Drill Results</h3>
+              <span className="gchip text-[9px]">{(drillResults?.total || 0).toLocaleString()} total</span>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-[9px] uppercase tracking-wider text-[#9ca3af] dark:text-[#6b7280] border-b border-[#e5e7eb] dark:border-[#2d3140]/50">
+                  <th className="text-left py-2.5 px-4 font-medium w-20">Time</th>
+                  <th className="text-left py-2.5 px-3 font-medium w-10">Lvl</th>
+                  <th className="text-left py-2.5 px-3 font-medium">Rule</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden sm:table-cell">Agent</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden md:table-cell">Description</th>
+                  <th className="text-right py-2.5 px-4 font-medium w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {(drillResults?.results || []).map((r, i) => {
+                  const lv = parseInt(r?.rule?.level) || 0
+                  const badgeCls = lv >= 15 ? 'badge-critical' : lv >= 12 ? 'badge-high' : lv >= 7 ? 'badge-medium' : lv >= 1 ? 'badge-low' : 'badge-info'
+                  return (
+                    <tr key={r._id || i} className={'border-b border-[#e5e7eb]/50 dark:border-[#2d3140]/30 hover:bg-[#f9fafb]/50 dark:hover:bg-[#2d3140]/30 transition-colors group ' + (i % 2 === 0 ? '' : 'bg-[#f9fafb]/30 dark:bg-[#0f1117]/30')}>
+                      <td className="py-2.5 px-4 whitespace-nowrap font-mono text-[10px] text-[#6b7280] dark:text-[#9ca3af]">
+                        {r['@timestamp'] ? new Date(r['@timestamp']).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '\u2014'}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <button onClick={() => addDrill('rule.level', r?.rule?.level)} className={'text-[10px] badge ' + badgeCls + ' hover:opacity-80 transition-opacity'}>{lv || '\u2014'}</button>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <button onClick={() => addDrill('rule.id', r?.rule?.id)} className="text-[#3b82f6] dark:text-[#60a5fa] hover:underline truncate max-w-[100px] block">{(r?.rule?.id || '').toString()}</button>
+                      </td>
+                      <td className="py-2.5 px-3 hidden sm:table-cell">
+                        <button onClick={() => addDrill('agent.name', r?.agent?.name)} className="text-[#1a1c23] dark:text-[#e4e6eb] hover:text-[#3b82f6] dark:hover:text-[#60a5fa] transition-colors truncate max-w-[100px] block">{r?.agent?.name || '\u2014'}</button>
+                      </td>
+                      <td className="py-2.5 px-3 hidden md:table-cell"><span className="text-[#6b7280] dark:text-[#9ca3af] truncate max-w-[180px] block text-[10px]">{r?.rule?.description || r?.rule?.groups?.[0] || ''}</span></td>
+                      <td className="py-2.5 px-4 text-right">
+                        <button onClick={() => addDrill('_id', r._id)} className="p-1 rounded hover:bg-[#3b82f6]/20 text-[#9ca3af] dark:text-[#6b7280] hover:text-[#3b82f6] dark:hover:text-[#60a5fa] transition-all" title="Filter by this alert">
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 7h3.5a.5.5 0 1 1 0 1H8v3.5a.5.5 0 1 1-1 0V8H3.5a.5.5 0 0 1 0-1H7V3.5a.5.5 0 0 1 1 0V7Z"/></svg>
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            {(!drillResults?.results || drillResults.results.length === 0) && (
+              <div className="text-center py-10 text-xs text-[#9ca3af] dark:text-[#6b7280]">{'\uD83D\uDCC4'} No results</div>
+            )}
+          </div>
+        </motion.div>
+      )}
+
+      {drillFilters.length === 0 && (
+        <div className="flex items-center justify-center py-8 text-xs text-[#9ca3af] dark:text-[#6b7280] gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"/></svg>
+          Click any widget above to drill down \u2014 results appear here
+        </div>
+      )}
+
       <div className="flex items-center justify-between text-[10px] text-[#9ca3af] dark:text-[#6b7280] pt-1">
         <div className="flex items-center gap-3">
-          <span>{'\uD83D\uDEE1\uFE0F'} SOC Security &middot; Auto-refresh 60s</span>
+          <span>{'\uD83D\uDEE1\uFE0F'} SOC Security &middot; Drill-down &middot; 60s refresh</span>
           <span className="hidden sm:inline">Last: {lastUpdated.toLocaleTimeString()}</span>
         </div>
         <button onClick={fetchData} className="gbtn-ghost gap-1 inline-flex items-center">

@@ -64,7 +64,6 @@ function toSeverity(level) {
 }
 
 export default function SecurityHub() {
-  const { addFilter } = useApp()
   const [timeRange, setTimeRange] = useState('now-24h')
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -88,10 +87,15 @@ export default function SecurityHub() {
     setDrillLoading(true)
     try {
       const tp = timeParams()
-      const q = filters.map(f => {
-        const val = /^\d+(\.\d+)?$/.test(String(f.value)) ? f.value : `"${f.value}"`
-        return `${f.field}:${val}`
-      }).join(' AND ')
+      const hasWildcard = filters.some(f => f.field === '*' && f.value === '*')
+      const effective = hasWildcard ? [] : filters
+      let q = '*'
+      if (effective.length > 0) {
+        q = effective.map(f => {
+          const val = /^\d+(\.\d+)?$/.test(String(f.value)) ? f.value : `"${f.value}"`
+          return `${f.field}:${val}`
+        }).join(' AND ')
+      }
       const res = await api('search', { start_date: tp.start_date, end_date: tp.end_date, q, size: 50, sort: '@timestamp:desc' })
       setDrillResults(res)
     } catch { setDrillResults({ results: [], total: 0 }) }
@@ -189,7 +193,7 @@ export default function SecurityHub() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [fetchData])
 
-  const navToDiscover = (field, value) => { addFilter(field, value, false) }
+  const drill = (field, value) => { addDrill(field, value) }
 
   const sevData = data ? SEV_ORDER.filter(s => data.severity[s]).map(s => ({ name: s, value: data.severity[s], color: SEV_LABELS[s].color })) : []
   const sevTotal = sevData.reduce((a, b) => a + b.value, 0)
@@ -252,7 +256,7 @@ export default function SecurityHub() {
           const isUp = pct > 0
           return (
             <motion.button key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
-              onClick={() => navToDiscover(item.field, item.val)}
+              onClick={() => drill(item.field, item.val)}
               className="gcard p-3.5 text-left hover:shadow-md transition-all group">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] uppercase tracking-wider text-[#9ca3af] dark:text-[#6b7280] font-semibold">{item.label}</span>
