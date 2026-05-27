@@ -6,8 +6,14 @@ import Histogram from '../components/Histogram'
 import { getAllRules } from '../services/ruleStorage'
 import { evaluateAllRules, interpolateMessage } from '../services/ruleEngine'
 
+const INDEX_OPTIONS = [
+  { label: 'Alerts', value: 'wazuh-alerts-4.x-*' },
+  { label: 'Archives', value: 'wazuh-archives-4.x-*' }
+]
+
 export default function RuleViewTab() {
-  const { total, results, loading, dql, filters, isDark, doSearch } = useApp()
+  const { total, results, loading, dql, filters, isDark, doSearch, setIndex } = useApp()
+  const [searchIndex, setSearchIndex] = useState('wazuh-alerts-4.x-*')
   const [applyRules, setApplyRules] = useState(true)
   const [transformed, setTransformed] = useState([])
   const [ruleMatches, setRuleMatches] = useState({})
@@ -15,7 +21,10 @@ export default function RuleViewTab() {
   const [ruleBreakdown, setRuleBreakdown] = useState({})
   const [ruleSevMap, setRuleSevMap] = useState({})
 
-  useEffect(() => { doSearch() }, [])
+  useEffect(() => {
+    setIndex(searchIndex)
+    doSearch({ index: searchIndex })
+  }, [searchIndex])
 
   useEffect(() => {
     if (!applyRules || !results.length) {
@@ -62,6 +71,13 @@ export default function RuleViewTab() {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.12 }} className="space-y-2">
       <div className="flex items-center gap-3 px-1 py-1 text-xs">
+        <div className="flex items-center gap-1.5">
+          <span className={`text-[10px] uppercase font-semibold ${isDark ? 'text-soc-darkstext' : 'text-soc-stext'}`}>Index</span>
+          <select value={searchIndex} onChange={e => setSearchIndex(e.target.value)}
+            className="ginput text-[10px] py-0.5 px-1 w-auto font-mono">
+            {INDEX_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
         <div className="flex items-center gap-1.5">
           <span className={`text-[10px] uppercase font-semibold ${isDark ? 'text-soc-darkstext' : 'text-soc-stext'}`}>Query</span>
           <span className="text-soc-blue dark:text-blue-400 font-mono">{dql || filters.length ? 'Filtered' : '*'}</span>
