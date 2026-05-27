@@ -4,9 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 const NAV_ITEMS = [
   { key: 'discover', label: 'Discover', icon: '\uD83D\uDD0E' },
   { key: 'dashboard', label: 'Dashboard', icon: '\uD83D\uDCCA' },
-  { key: 'scan', label: 'Scan', icon: '\uD83D\uDD0D' },
-  { key: 'analytics', label: 'Analytics', icon: '\uD83D\uDCC8' },
-  { key: 'indices', label: 'Indices', icon: '\uD83D\uDDC4\uFE0F' },
   { key: 'geo', label: 'Geo', icon: '\uD83C\uDF0D' },
   { key: 'health', label: 'Health', icon: '\u2764\uFE0F' },
   { key: 'rules', label: 'Rules', icon: '\u2699\uFE0F' },
