@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../api'
 import { useApp } from '../context/AppContext'
 import { decodeLog } from '../services/decoderEngine'
+import { createRule, updateRule } from '../services/ruleStorage'
 
 const FORMAT_COLORS = {
   json: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 ring-1 ring-green-400/30',
@@ -28,7 +29,7 @@ function FormatBadge({ format }) {
 }
 
 export default function DecoderTab() {
-  const { isDark } = useApp()
+  const { isDark, setTab } = useApp()
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
@@ -103,6 +104,29 @@ export default function DecoderTab() {
     } catch {}
   }
 
+  const handleCreateRule = () => {
+    if (!decoded || decoded.format === 'unknown' || decoded.format === 'batch') return
+    const decodedFields = decoded.fields || {}
+    const conditions = Object.entries(decodedFields)
+      .filter(([, v]) => String(v || '').length > 0 && String(v || '').length < 200)
+      .slice(0, 10)
+      .map(([k, v]) => ({
+        id: 'c_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        field: `decoded.${k}`,
+        operator: 'equals',
+        value: Array.isArray(v) ? v[0] : String(v)
+      }))
+    const doc = { full_log: logs[selectedIdx]?.full_log || '', decoded: decodedFields, decoded_format: decoded.format }
+    const rule = createRule({
+      name: `Decode: ${decoded.format} — ${Object.keys(decodedFields).slice(0, 3).join(', ')}${Object.keys(decodedFields).length > 3 ? '...' : ''}`
+    })
+    const patched = { ...rule, conditions }
+    updateRule(rule.id, patched)
+    setTab('rules')
+    setCopyMsg('Rule created! Switched to Rules tab.')
+    setTimeout(() => setCopyMsg(''), 2000)
+  }
+
   const txt = isDark ? 'text-soc-darkstext' : 'text-soc-stext'
   const txt2 = isDark ? 'text-soc-darkstext/60' : 'text-soc-stext/60'
   const bg = isDark ? 'bg-[#16181f] border-[#2d3140]' : 'bg-white border-[#e5e7eb]'
@@ -160,10 +184,16 @@ export default function DecoderTab() {
                           <div className="flex items-center gap-2">
                             <FormatBadge format={decoded.format} />
                             {decoded.format !== 'unknown' && decoded.format !== 'batch' && (
-                              <button onClick={handlePasteToRules}
-                                className="text-[9px] px-1.5 py-0.5 rounded bg-[#f3f4f6] dark:bg-[#2d3140] text-soc-stext dark:text-soc-darkstext hover:bg-[#e5e7eb] dark:hover:bg-[#374151] transition-all">
-                                Copy All Fields
-                              </button>
+                              <>
+                                <button onClick={handlePasteToRules}
+                                  className="text-[9px] px-1.5 py-0.5 rounded bg-[#f3f4f6] dark:bg-[#2d3140] text-soc-stext dark:text-soc-darkstext hover:bg-[#e5e7eb] dark:hover:bg-[#374151] transition-all">
+                                  Copy All Fields
+                                </button>
+                                <button onClick={handleCreateRule}
+                                  className="text-[9px] px-1.5 py-0.5 rounded bg-[#3b82f6] text-white hover:bg-[#2563eb] transition-all">
+                                  \u2795 Rule
+                                </button>
+                              </>
                             )}
                             <button onClick={() => setShowRaw(true)}
                               className="text-[9px] px-1.5 py-0.5 rounded bg-[#f3f4f6] dark:bg-[#2d3140] text-soc-stext dark:text-soc-darkstext hover:bg-[#e5e7eb] dark:hover:bg-[#374151] transition-all">

@@ -24,6 +24,12 @@ const COMMON_FIELDS = [
   'predecoder.program_name', 'predecoder.hostname', 'manager.name',
   'data.srcip', 'data.dstip', 'data.srcport', 'data.dstport', 'data.protocol', 'data.url',
   'data.action', 'data.user', 'data.system_name', 'data.host',
+  'decoded.format', 'decoded.src_ip', 'decoded.dst_ip', 'decoded.src_port', 'decoded.dst_port',
+  'decoded.protocol', 'decoded.action', 'decoded.direction', 'decoded.interface',
+  'decoded.timestamp', 'decoded.hostname', 'decoded.appName', 'decoded.pid',
+  'decoded.user', 'decoded.method', 'decoded.status_code', 'decoded.url', 'decoded.referrer',
+  'decoded.user_agent', 'decoded.message', 'decoded.logon_type', 'decoded.account',
+  'decoded.srcip', 'decoded.dstip', 'decoded.srcport', 'decoded.dstport',
   '@timestamp', 'timestamp', 'id', '_id', '_index'
 ]
 
