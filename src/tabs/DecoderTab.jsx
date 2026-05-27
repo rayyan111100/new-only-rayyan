@@ -122,11 +122,13 @@ export default function DecoderTab() {
       const merged = [...new Set([...stored, ...paths])].sort((a, b) => a.localeCompare(b))
       sessionStorage.setItem('ruleFields', JSON.stringify(merged))
     } catch {}
-    const rule = createRule({
-      name: `Decode: ${decoded.format} — ${Object.keys(decodedFields).slice(0, 3).join(', ')}${Object.keys(decodedFields).length > 3 ? '...' : ''}`
-    })
-    const patched = { ...rule, conditions }
-    updateRule(rule.id, patched)
+    try {
+      const rule = createRule({
+        name: `Decode: ${decoded.format} — ${Object.keys(decodedFields).slice(0, 3).join(', ')}${Object.keys(decodedFields).length > 3 ? '...' : ''}`
+      })
+      const patched = { ...rule, conditions }
+      updateRule(rule.id, patched)
+    } catch {}
     setTab('rules')
     setCopyMsg('Rule created! Switched to Rules tab.')
     setTimeout(() => setCopyMsg(''), 2000)

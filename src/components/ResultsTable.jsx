@@ -96,16 +96,18 @@ function DocViewer({ doc }) {
       id: 'c_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
       field: p,
       operator: 'equals',
-      value: String(doc[p.split('.').reduce((o, k) => o?.[k], doc) ?? ''])
+      value: String(p.split('.').reduce((o, k) => o?.[k], doc) ?? '')
     }))
     try {
       const stored = JSON.parse(sessionStorage.getItem('ruleFields') || '[]')
       const merged = [...new Set([...stored, ...paths])].sort((a, b) => a.localeCompare(b))
       sessionStorage.setItem('ruleFields', JSON.stringify(merged))
     } catch {}
-    const rule = createRule({ name: 'From event' })
-    const patched = { ...rule, conditions }
-    updateRule(rule.id, patched)
+    try {
+      const rule = createRule({ name: 'From event' })
+      const patched = { ...rule, conditions }
+      updateRule(rule.id, patched)
+    } catch {}
     setTab('rules')
   }
 
