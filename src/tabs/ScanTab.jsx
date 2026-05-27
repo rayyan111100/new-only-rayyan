@@ -129,52 +129,57 @@ export default function SecurityDashboard() {
     try {
       const tp = timeParams()
       const base = { start_date: tp.start_date, end_date: tp.end_date }
+      const safe = (p) => p.catch(() => null)
 
       const [totalRes, timelineRes, agentsRes, rulesRes, recentRes, ...sevRes] = await Promise.all([
-        api('search', { ...base, size: 0, q: '*' }),
-        api('aggregate', { ...base, field: '@timestamp', type: 'date_histogram', interval: '1h', limit: 48 }),
-        api('search', { ...base, size: 0, q: '*', aggs: JSON.stringify({ agents: { terms: { field: 'agent.name.keyword', size: 10 } } }) }),
-        api('search', { ...base, size: 0, q: '*', aggs: JSON.stringify({ rules: { terms: { field: 'rule.level', size: 10 } } }) }),
-        api('search', { ...base, size: 15, sort: '@timestamp:desc' }),
-        ...SEV_CONFIG.map(s => api('search', { ...base, size: 0, q: s.range }))
+        safe(api('search', { ...base, size: 0, q: '*' })),
+        safe(api('aggregate', { ...base, field: '@timestamp', type: 'date_histogram', interval: '1h', limit: 48 })),
+        safe(api('search', { ...base, size: 0, q: '*', aggs: JSON.stringify({ agents: { terms: { field: 'agent.name.keyword', size: 10 } } }) })),
+        safe(api('search', { ...base, size: 0, q: '*', aggs: JSON.stringify({ rules: { terms: { field: 'rule.level', size: 10 } } }) })),
+        safe(api('search', { ...base, size: 15, sort: '@timestamp:desc' })),
+        ...SEV_CONFIG.map(s => safe(api('search', { ...base, size: 0, q: s.range })))
       ])
 
-      const eventCounts = {}
       const eventResults = await Promise.all(
         WINDOWS_EVENTS.map(e =>
-          api('search', { ...base, size: 0, q: e.query }).catch(() => ({ total: 0 }))
+          safe(api('search', { ...base, size: 0, q: e.query }))
         )
       )
-      WINDOWS_EVENTS.forEach((e, i) => { eventCounts[e.id] = eventResults[i].total || 0 })
+      const eventCounts = {}
+      WINDOWS_EVENTS.forEach((e, i) => { eventCounts[e.id] = eventResults[i]?.total || 0 })
 
       let agents = []
-      try {
-        const aAggs = typeof agentsRes.aggregations === 'string' ? JSON.parse(agentsRes.aggregations) : agentsRes.aggregations
-        agents = (aAggs?.agents?.buckets || []).slice(0, 8)
-      } catch { agents = [] }
+      if (agentsRes) {
+        try {
+          const aAggs = typeof agentsRes.aggregations === 'string' ? JSON.parse(agentsRes.aggregations) : agentsRes.aggregations
+          agents = (aAggs?.agents?.buckets || []).slice(0, 8)
+        } catch { agents = [] }
+      }
 
       let rules = []
-      try {
-        const rAggs = typeof rulesRes.aggregations === 'string' ? JSON.parse(rulesRes.aggregations) : rulesRes.aggregations
-        rules = (rAggs?.rules?.buckets || []).slice(0, 8)
-      } catch { rules = [] }
+      if (rulesRes) {
+        try {
+          const rAggs = typeof rulesRes.aggregations === 'string' ? JSON.parse(rulesRes.aggregations) : rulesRes.aggregations
+          rules = (rAggs?.rules?.buckets || []).slice(0, 8)
+        } catch { rules = [] }
+      }
 
-      const timeline = (timelineRes.buckets || []).map(b => ({
+      const timeline = timelineRes?.buckets ? timelineRes.buckets.map(b => ({
         time: new Date(b.key).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         alerts: b.doc_count || 0
-      }))
+      })) : []
 
       const sevCounts = {}
-      SEV_CONFIG.forEach((s, i) => { sevCounts[s.key] = sevRes[i].total || 0 })
+      SEV_CONFIG.forEach((s, i) => { sevCounts[s.key] = sevRes[i]?.total || 0 })
 
       setData({
-        total: totalRes.total || 0,
+        total: totalRes?.total || 0,
         severity: sevCounts,
         timeline,
         agents,
         rules,
         events: eventCounts,
-        recent: (recentRes.results || []).slice(0, 15)
+        recent: (recentRes?.results || []).slice(0, 15)
       })
       setError(null)
     } catch (e) {
