@@ -3,59 +3,28 @@ import { motion } from 'framer-motion'
 import { api } from '../api'
 import { useApp } from '../context/AppContext'
 import { parseDateStr, formatPretty } from '../utils'
-import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
 const QUICK_TIMES = [
-  { label: '15m', value: 'now-15m' },
   { label: '1h', value: 'now-1h' },
   { label: '6h', value: 'now-6h' },
   { label: '24h', value: 'now-24h' },
   { label: '7d', value: 'now-7d' },
-  { label: '30d', value: 'now-30d' }
+  { label: '30d', value: 'now-30d' },
+  { label: '90d', value: 'now-90d' }
 ]
 
-const SEV_CONFIG = [
-  { key: 'critical', label: 'Critical', range: 'rule.level:>=12', color: '#dc2626', bg: 'bg-red-50 dark:bg-red-500/10', border: 'border-red-200 dark:border-red-500/30', text: 'text-[#dc2626] dark:text-red-400', icon: '\uD83D\uDD34', bar: '#dc2626' },
-  { key: 'high', label: 'High', range: 'rule.level:[7 TO 11]', color: '#ea580c', bg: 'bg-orange-50 dark:bg-orange-500/10', border: 'border-orange-200 dark:border-orange-500/30', text: 'text-[#ea580c] dark:text-orange-400', icon: '\uD83D\uDFE1', bar: '#ea580c' },
-  { key: 'medium', label: 'Medium', range: 'rule.level:[3 TO 6]', color: '#ca8a04', bg: 'bg-yellow-50 dark:bg-yellow-500/10', border: 'border-yellow-200 dark:border-yellow-500/30', text: 'text-[#ca8a04] dark:text-yellow-400', icon: '\uD83D\uDFE0', bar: '#ca8a04' },
-  { key: 'low', label: 'Low', range: 'rule.level:[1 TO 2]', color: '#16a34a', bg: 'bg-green-50 dark:bg-green-500/10', border: 'border-green-200 dark:border-green-500/30', text: 'text-[#16a34a] dark:text-green-400', icon: '\uD83D\uDFE2', bar: '#16a34a' }
-]
+const SEV_LABELS = { Critical: { color: '#dc2626', min: 12 }, High: { color: '#ea580c', min: 7 }, Medium: { color: '#ca8a04', min: 3 }, Low: { color: '#16a34a', min: 1 } }
+const SEV_ORDER = ['Critical', 'High', 'Medium', 'Low']
+const SEV_ICONS = { Critical: '\uD83D\uDD34', High: '\uD83D\uDFE1', Medium: '\uD83D\uDFE0', Low: '\uD83D\uDFE2' }
+const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#22c55e', '#eab308', '#f97316']
 
-const WINDOWS_EVENTS = [
-  { id: 4624, label: 'Successful Logon', desc: 'User logged on', severity: 'info', query: 'rule.groups:authentication_success OR data.win.system.eventID:4624' },
-  { id: 4625, label: 'Failed Logon', desc: 'Failed logon attempt', severity: 'high', query: 'rule.groups:authentication_failed OR data.win.system.eventID:4625' },
-  { id: 4672, label: 'Admin Logon', desc: 'Special privileges assigned', severity: 'critical', query: 'data.win.system.eventID:4672' },
-  { id: 4688, label: 'Process Created', desc: 'New process created', severity: 'medium', query: 'data.win.system.eventID:4688' },
-  { id: 4719, label: 'Audit Policy Changed', desc: 'System audit policy modified', severity: 'critical', query: 'data.win.system.eventID:4719' },
-  { id: 4720, label: 'User Account Created', desc: 'New user account created', severity: 'critical', query: 'data.win.system.eventID:4720' },
-  { id: 4728, label: 'Group Member Added', desc: 'Member added to security group', severity: 'high', query: 'data.win.system.eventID:4728' },
-  { id: 4740, label: 'Account Lockout', desc: 'User account locked out', severity: 'medium', query: 'data.win.system.eventID:4740' },
-  { id: 1102, label: 'Log Cleared', desc: 'Security audit log cleared', severity: 'critical', query: 'data.win.system.eventID:1102' },
-  { id: 7045, label: 'Service Installed', desc: 'New service installed', severity: 'high', query: 'data.win.system.eventID:7045' }
-]
-
-const SEV_EVENT_COLORS = { critical: '#dc2626', high: '#ea580c', medium: '#ca8a04', low: '#16a34a', info: '#2563eb' }
-
-const KPI_METRICS = [
-  { key: 'alertsPerSec', label: 'Alert Rate', suffix: '/s', icon: '\u26A1', color: '#3b82f6' },
-  { key: 'uniqueAgents', label: 'Active Agents', suffix: '', icon: '\uD83D\uDDC5\uFE0F', color: '#8b5cf6' },
-  { key: 'uniqueRules', label: 'Triggered Rules', suffix: '', icon: '\uD83D\uDCCA', color: '#06b6d4' }
-]
-
-const MITRE_TACTICS = [
-  { id: 'TA0001', label: 'Initial Access', icon: '\uD83D\uDEAA' },
-  { id: 'TA0002', label: 'Execution', icon: '\u25B6\uFE0F' },
-  { id: 'TA0003', label: 'Persistence', icon: '\uD83D\uDD17' },
-  { id: 'TA0004', label: 'Privilege Escalation', icon: '\u2B06\uFE0F' },
-  { id: 'TA0005', label: 'Defense Evasion', icon: '\uD83D\uDEE1\uFE0F' },
-  { id: 'TA0006', label: 'Credential Access', icon: '\uD83D\uDD11' },
-  { id: 'TA0007', label: 'Discovery', icon: '\uD83D\uDD0D' },
-  { id: 'TA0008', label: 'Lateral Movement', icon: '\u2194\uFE0F' },
-  { id: 'TA0009', label: 'Collection', icon: '\uD83D\uDCC1' },
-  { id: 'TA0011', label: 'Command & Control', icon: '\uD83D\uDCF6' },
-  { id: 'TA0010', label: 'Exfiltration', icon: '\uD83D\uDCE4' },
-  { id: 'TA0040', label: 'Impact', icon: '\uD83D\uDCA5' }
-]
+const SEV_RANGES = {
+  Critical: 'rule.level:>=12',
+  High: 'rule.level:[7 TO 11]',
+  Medium: 'rule.level:[3 TO 6]',
+  Low: 'rule.level:[1 TO 2]'
+}
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
@@ -88,13 +57,21 @@ function PulseDot({ color = '#22c55e' }) {
   )
 }
 
+function toSeverity(level) {
+  const n = parseInt(level) || 0
+  for (const s of SEV_ORDER) if (n >= SEV_LABELS[s].min) return s
+  return 'Low'
+}
+
 export default function SecurityDashboard() {
   const { addFilter } = useApp()
   const [timeRange, setTimeRange] = useState('now-24h')
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [lastUpdated, setLastUpdated] = useState(new Date())
   const intervalRef = useRef(null)
+  const [scanOpen, setScanOpen] = useState(false)
   const [scanTarget, setScanTarget] = useState('')
   const [scanResults, setScanResults] = useState(null)
   const [scanLoading, setScanLoading] = useState(false)
@@ -122,30 +99,24 @@ export default function SecurityDashboard() {
       const base = { start_date: tp.start_date, end_date: tp.end_date }
       const safe = (p) => p.catch(() => null)
 
-      const [totalRes, timelineRes, agentsRes, rulesRes, descRes, recentRes, mitreRes, ...sevRes] = await Promise.all([
+      const [totalRes, timelineRes, rulesRes, agentsRes, recentRes, ...sevRes] = await Promise.all([
         safe(api('search', { ...base, size: 0, q: '*' })),
         safe(api('aggregate', { ...base, field: '@timestamp', type: 'date_histogram', interval: '1h', limit: 48 })),
+        safe(api('search', { ...base, size: 0, q: '*', aggs: JSON.stringify({ rules: { terms: { field: 'rule.id', size: 10 } } }) })),
         safe(api('search', { ...base, size: 0, q: '*', aggs: JSON.stringify({ agents: { terms: { field: 'agent.name.keyword', size: 10 } } }) })),
-        safe(api('search', { ...base, size: 0, q: '*', aggs: JSON.stringify({ rules: { terms: { field: 'rule.level', size: 10 } } }) })),
-        safe(api('search', { ...base, size: 0, q: '*', aggs: JSON.stringify({ desc: { terms: { field: 'rule.description.keyword', size: 8 } } }) })),
         safe(api('search', { ...base, size: 20, sort: '@timestamp:desc' })),
-        safe(api('search', { ...base, size: 0, q: '*', aggs: JSON.stringify({ mitre: { terms: { field: 'rule.mitre.tactic.keyword', size: 12 } } }) })),
-        ...SEV_CONFIG.map(s => safe(api('search', { ...base, size: 0, q: s.range })))
+        ...Object.values(SEV_RANGES).map(q => safe(api('search', { ...base, size: 0, q })))
       ])
 
-      const eventResults = await Promise.all(
-        WINDOWS_EVENTS.map(e => safe(api('search', { ...base, size: 0, q: e.query })))
-      )
-      const eventCounts = {}
-      WINDOWS_EVENTS.forEach((e, i) => { eventCounts[e.id] = eventResults[i]?.total || 0 })
+      const sevCounts = {}
+      Object.keys(SEV_RANGES).forEach((s, i) => { sevCounts[s] = sevRes[i]?.total || 0 })
 
-      let agents = []
-      if (agentsRes) {
-        try {
-          const a = typeof agentsRes.aggregations === 'string' ? JSON.parse(agentsRes.aggregations) : agentsRes.aggregations
-          agents = (a?.agents?.buckets || []).slice(0, 8)
-        } catch { agents = [] }
-      }
+      const timeline = timelineRes?.buckets ? timelineRes.buckets.map(b => ({
+        time: new Date(b.key).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        alerts: b.doc_count || 0
+      })) : []
+
+      const total = totalRes?.total || 0
 
       let rules = []
       if (rulesRes) {
@@ -155,49 +126,24 @@ export default function SecurityDashboard() {
         } catch { rules = [] }
       }
 
-      let descriptions = []
-      if (descRes) {
+      let agents = []
+      if (agentsRes) {
         try {
-          const d = typeof descRes.aggregations === 'string' ? JSON.parse(descRes.aggregations) : descRes.aggregations
-          descriptions = (d?.desc?.buckets || []).slice(0, 8)
-        } catch { descriptions = [] }
+          const a = typeof agentsRes.aggregations === 'string' ? JSON.parse(agentsRes.aggregations) : agentsRes.aggregations
+          agents = (a?.agents?.buckets || []).slice(0, 8)
+        } catch { agents = [] }
       }
-
-      let mitreTactics = []
-      if (mitreRes) {
-        try {
-          const m = typeof mitreRes.aggregations === 'string' ? JSON.parse(mitreRes.aggregations) : mitreRes.aggregations
-          mitreTactics = (m?.mitre?.buckets || []).slice(0, 12)
-        } catch { mitreTactics = [] }
-      }
-
-      const timeline = timelineRes?.buckets ? timelineRes.buckets.map(b => ({
-        time: new Date(b.key).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        alerts: b.doc_count || 0
-      })) : []
-
-      const sevCounts = {}
-      SEV_CONFIG.forEach((s, i) => { sevCounts[s.key] = sevRes[i]?.total || 0 })
-
-      const total = totalRes?.total || 0
-      const dur = parseDateStr('now').diff(parseDateStr(timeRange), 'second') || 1
-      const alertsPerSec = total / dur
-      const uniqueAgents = agents.length
-      const uniqueRulesCount = rules.reduce((s, r) => s + r.doc_count, 0)
 
       setData({
         total,
         severity: sevCounts,
         timeline,
-        agents,
         rules,
-        descriptions,
-        events: eventCounts,
-        recent: (recentRes?.results || []).slice(0, 20),
-        mitre: mitreTactics,
-        kpi: { alertsPerSec, uniqueAgents, uniqueRules: uniqueRulesCount }
+        agents,
+        recent: (recentRes?.results || []).slice(0, 20)
       })
       setError(null)
+      setLastUpdated(new Date())
     } catch (e) {
       setError(e.message)
     } finally {
@@ -208,39 +154,51 @@ export default function SecurityDashboard() {
   useEffect(() => {
     setLoading(true)
     fetchData()
-    intervalRef.current = setInterval(fetchData, 30000)
+    intervalRef.current = setInterval(fetchData, 60000)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [fetchData])
 
   const navToDiscover = (field, value) => { addFilter(field, value, false) }
-  const navToDiscoverQ = (q) => { addFilter('_dql', q, false) }
 
-  const severityPie = data ? Object.entries(data.severity).map(([k, v]) => {
-    const cfg = SEV_CONFIG.find(s => s.key === k)
-    return { name: cfg.label, value: v, color: cfg.color }
-  }).filter(d => d.value > 0) : []
+  const sevData = data ? SEV_ORDER.filter(s => data.severity[s]).map(s => ({ name: s, value: data.severity[s], color: SEV_LABELS[s].color })) : []
+  const sevTotal = sevData.reduce((a, b) => a + b.value, 0)
+  const timelineData = (data?.timeline || []).slice(-24)
+  const topRulesData = (data?.rules || []).map(b => ({ name: b.key, count: b.doc_count }))
+  const topAgentsData = (data?.agents || []).map(b => ({ name: b.key, count: b.doc_count }))
+  const maxRule = Math.max(1, ...topRulesData.map(r => r.count))
+  const maxAgent = Math.max(1, ...topAgentsData.map(a => a.count))
 
-  const maxAgentCount = data?.agents?.length ? Math.max(...data.agents.map(a => a.doc_count)) : 1
-  const maxDescCount = data?.descriptions?.length ? Math.max(...data.descriptions.map(d => d.doc_count)) : 1
+  const count24 = data?.total || 0
+  const count7d = data?.total || 0
+  const count30d = data?.total || 0
+
+  if (loading) return (
+    <div className="space-y-3">
+      <div className="flex gap-1.5 flex-wrap">{QUICK_TIMES.map(qt => <div key={qt.value} className="h-7 w-10 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-lg animate-pulse" />)}</div>
+      <div className="grid grid-cols-5 gap-2.5">{[1,2,3,4,5].map(i => <div key={i} className="gcard p-4"><div className="h-16 bg-[#f3f4f6] dark:bg-[#2d3140] rounded animate-pulse"/></div>)}</div>
+      <div className="grid grid-cols-3 gap-3">{[1,2,3].map(i => <div key={i} className="gcard p-4"><div className="h-40 bg-[#f3f4f6] dark:bg-[#2d3140] rounded animate-pulse"/></div>)}</div>
+    </div>
+  )
+  if (error) return (
+    <div className="gcard p-6 text-center">
+      <div className="text-2xl mb-2">{'\u26A0\uFE0F'}</div>
+      <div className="text-sm text-[#dc2626] mb-3">{error}</div>
+      <button onClick={fetchData} className="gbtn-primary px-4 py-1.5">Retry</button>
+    </div>
+  )
+  if (!data) return null
 
   return (
-    <div className="space-y-3 pb-6">
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="gcard px-4 py-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-        <div className="flex items-center gap-2.5 flex-1 min-w-0">
-          <div className="flex items-center gap-2 shrink-0">
-            <PulseDot />
-            <span className="text-sm font-semibold text-[#1a1c23] dark:text-[#e4e6eb] whitespace-nowrap">{'\uD83D\uDEE1\uFE0F'} SOC Security</span>
-          </div>
-          <div className="h-4 w-px bg-[#e5e7eb] dark:bg-[#2d3140] hidden sm:block" />
-          <div className="flex items-center gap-2 flex-1">
-            <input type="text" value={scanTarget} onChange={e => setScanTarget(e.target.value)} placeholder="IP / Hostname / URL to scan..." className="ginput flex-1 min-w-0 py-1.5" onKeyDown={e => e.key === 'Enter' && runScan()} />
-            <button onClick={runScan} disabled={scanLoading} className="gbtn-primary whitespace-nowrap">
-              {scanLoading ? '\u23F3' : '\uD83D\uDD0D'} Scan
-            </button>
-          </div>
-          {scanResults && (
-            <button onClick={() => setScanResults(null)} className="text-[9px] text-[#9ca3af] dark:text-[#6b7280] hover:text-[#1a1c23] dark:hover:text-[#e4e6eb] shrink-0">\u2716</button>
-          )}
+    <div className="space-y-3">
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="gcard px-4 py-2.5 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <PulseDot />
+          <span className="text-sm font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">{'\uD83D\uDEE1\uFE0F'} SOC Security</span>
+          <span className="gchip text-[10px]">{(count24 || 0).toLocaleString()} alerts</span>
+          <div className="h-4 w-px bg-[#e5e7eb] dark:bg-[#2d3140]" />
+          <button onClick={() => setScanOpen(!scanOpen)} className="gbtn-ghost text-[10px] px-2 py-1 gap-1 inline-flex items-center">
+            {scanOpen ? '\u25BC' : '\uD83D\uDD0D'} Scanner
+          </button>
         </div>
         <div className="flex items-center gap-1 flex-wrap">
           {QUICK_TIMES.map(qt => (
@@ -252,183 +210,104 @@ export default function SecurityDashboard() {
         </div>
       </motion.div>
 
-      {scanResults && (
+      {scanOpen && (
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="gcard p-3 overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-semibold text-[#9ca3af] dark:text-[#6b7280] uppercase tracking-wider">Scan Results: {scanTarget}</span>
-            <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">{scanResults.error ? 'Error' : 'Success'}</span>
+          <div className="flex items-center gap-2">
+            <input type="text" value={scanTarget} onChange={e => setScanTarget(e.target.value)} placeholder="IP / Hostname / URL..." className="ginput flex-1 max-w-xs py-1.5 text-xs" onKeyDown={e => e.key === 'Enter' && runScan()} />
+            <button onClick={runScan} disabled={scanLoading} className="gbtn-primary text-[10px] px-3 py-1.5">
+              {scanLoading ? '\u23F3' : '\uD83D\uDD0D'} Scan
+            </button>
+            {scanResults && (
+              <button onClick={() => setScanResults(null)} className="text-[9px] text-[#9ca3af] dark:text-[#6b7280] hover:text-[#1a1c23] dark:hover:text-[#e4e6eb] shrink-0">{'\u2716'}</button>
+            )}
           </div>
-          <pre className="text-[10px] text-[#6b7280] dark:text-[#9ca3af] leading-relaxed max-h-32 overflow-auto bg-[#f9fafb] dark:bg-[#0f1117] rounded p-2">{JSON.stringify(scanResults, null, 2)}</pre>
+          {scanResults && (
+            <pre className="text-[10px] text-[#6b7280] dark:text-[#9ca3af] leading-relaxed max-h-32 overflow-auto bg-[#f9fafb] dark:bg-[#0f1117] rounded p-2 mt-2">{JSON.stringify(scanResults, null, 2)}</pre>
+          )}
         </motion.div>
       )}
 
-      {error && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-[#fef2f2] dark:bg-red-500/10 border border-[#fecaca] dark:border-red-500/25 rounded-lg px-4 py-2.5 text-xs text-[#dc2626] dark:text-red-400 flex items-center gap-2">
-          <span>{'\u26A0\uFE0F'}</span>
-          <span>{error}</span>
-        </motion.div>
-      )}
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2.5">
-        <div className="xl:col-span-1 flex items-stretch">
-          <StatCard label="Total Alerts" value={data?.total} color="#3b82f6" bg="bg-blue-50 dark:bg-blue-500/10" border="border-blue-200 dark:border-blue-500/30" text="text-[#2563eb] dark:text-blue-400" icon={'\uD83D\uDD35'} onClick={() => navToDiscover('*', '*')} loading={loading} />
-        </div>
-        {SEV_CONFIG.map(s => (
-          <StatCard key={s.key} label={s.label} value={data?.severity?.[s.key]} color={s.color} bg={s.bg} border={s.border} text={s.text} icon={s.icon} onClick={() => navToDiscover('rule.level', s.range)} loading={loading} />
-        ))}
-        <div className="hidden xl:flex xl:col-span-2 items-stretch">
-          <div className="grid grid-cols-1 gap-2 w-full">
-            {KPI_METRICS.map(k => (
-              <KPICard key={k.key} label={k.label} value={data?.kpi?.[k.key]} suffix={k.suffix} icon={k.icon} color={k.color} loading={loading} />
-            ))}
-          </div>
-        </div>
+      <div className="grid grid-cols-5 gap-2.5">
+        {[
+          { label: 'Total Alerts', value: count24, prev: count7d / 7, field: '*', val: '*', color: '#3b82f6' },
+          { label: 'Last 7 Days', value: count7d, prev: count30d / 4, field: '*', val: '*', color: '#8b5cf6' },
+          { label: 'Last 30 Days', value: count30d, prev: null, field: '*', val: '*', color: '#06b6d4' },
+          { label: 'Alert Rate', value: Math.round(count24 / 24), prev: null, suffix: '/hr', field: '*', val: '*', color: '#16a34a' },
+          { label: 'Recent Alerts', value: data.recent?.length || 0, prev: null, field: '*', val: '*', color: '#ca8a04' }
+        ].map((item, i) => {
+          const pct = item.prev ? Math.round(((item.value - item.prev) / item.prev) * 100) : 0
+          const isUp = pct > 0
+          return (
+            <motion.button key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
+              onClick={() => navToDiscover(item.field, item.val)}
+              className="gcard p-3.5 text-left hover:shadow-md transition-all group">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] uppercase tracking-wider text-[#9ca3af] dark:text-[#6b7280] font-semibold">{item.label}</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[#d1d5db] dark:text-[#4b5563] opacity-0 group-hover:opacity-100 transition-opacity"><path d="M9 5l7 7-7 7"/></svg>
+              </div>
+              <div className="text-2xl font-bold text-[#1a1c23] dark:text-[#e4e6eb]">{(item.value || 0).toLocaleString()}{item.suffix || ''}</div>
+              {item.prev && pct !== 0 && (
+                <div className={'text-[10px] font-medium mt-0.5 flex items-center gap-0.5 ' + (isUp ? 'text-[#dc2626]' : 'text-[#16a34a]')}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" className={isUp ? '' : 'rotate-180'}><path d="M12 5l7 7-1.41 1.41L13 9.83V21h-2V9.83l-4.59 4.58L5 12l7-7z"/></svg>
+                  {Math.abs(pct)}%
+                </div>
+              )}
+            </motion.button>
+          )
+        })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <div className="lg:col-span-2">
-          <div className="gcard">
-            <div className="px-4 py-3 border-b border-[#e5e7eb] dark:border-[#2d3140]/60">
-              <div className="flex items-center gap-2">
-                <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Alert Timeline</h3>
-                <span className="gchip text-[9px]">{data?.timeline?.length || 0} points</span>
-              </div>
-            </div>
-            {loading ? (
-              <div className="h-52 m-4 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-lg animate-pulse" />
-            ) : (
-              <div className="h-52 px-2 pt-2 pb-1">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={data?.timeline || []} margin={{ top: 8, right: 12, bottom: 4, left: -20 }}>
-                    <defs>
-                      <linearGradient id="colorAlerts" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#9ca3af' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                    <YAxis tick={{ fontSize: 9, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Area type="monotone" dataKey="alerts" stroke="#3b82f6" strokeWidth={2} fill="url(#colorAlerts)" dot={false} activeDot={{ r: 5, fill: '#3b82f6', stroke: '#fff', strokeWidth: 2 }} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            )}
+        <div className="gcard p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Alert Severity</h3>
+            <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">{(sevTotal || 0).toLocaleString()} total</span>
           </div>
-        </div>
-
-        <div>
-          <div className="gcard h-full flex flex-col">
-            <div className="px-4 py-3 border-b border-[#e5e7eb] dark:border-[#2d3140]/60">
-              <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Severity Distribution</h3>
-            </div>
-            {loading ? (
-              <div className="flex-1 flex items-center justify-center p-4">
-                <div className="w-36 h-36 rounded-full bg-[#f3f4f6] dark:bg-[#2d3140] animate-pulse" />
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center px-4 py-3">
-                {severityPie.length > 0 ? (
-                  <div className="w-full max-w-[180px]">
-                    <ResponsiveContainer width="100%" height={140}>
-                      <PieChart>
-                        <Pie data={severityPie} cx="50%" cy="50%" innerRadius={42} outerRadius={65} paddingAngle={3} dataKey="value" style={{ cursor: 'pointer' }}>
-                          {severityPie.map((entry, i) => (
-                            <Cell key={i} fill={entry.color} stroke="#fff" strokeWidth={2}
-                              onClick={() => { const c = SEV_CONFIG.find(s => s.label === entry.name); if (c) navToDiscover('rule.level', c.range) }} />
-                          ))}
-                        </Pie>
-                        <Tooltip content={<CustomTooltip />} />
-                      </PieChart>
-                    </ResponsiveContainer>
+          <div className="space-y-2.5">
+            {sevData.map(s => {
+              const pct = sevTotal ? Math.round((s.value / sevTotal) * 100) : 0
+              return (
+                <button key={s.name} onClick={() => navToDiscover('rule.level', SEV_RANGES[s.name])}
+                  className="w-full text-left group">
+                  <div className="flex items-center justify-between text-xs mb-0.5">
+                    <span className="flex items-center gap-1.5 text-[#1a1c23] dark:text-[#e4e6eb]">
+                      <span>{SEV_ICONS[s.name]}</span>
+                      <span className="font-medium">{s.name}</span>
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="font-semibold" style={{ color: s.color }}>{s.value.toLocaleString()}</span>
+                      <span className="text-[#9ca3af] dark:text-[#6b7280] text-[10px]">({pct}%)</span>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[#d1d5db] dark:text-[#4b5563] opacity-0 group-hover:opacity-100 transition-opacity ml-0.5"><path d="M9 5l7 7-7 7"/></svg>
+                    </span>
                   </div>
-                ) : <span className="text-xs text-[#9ca3af] dark:text-[#6b7280]">No data</span>}
-                <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mt-2">
-                  {severityPie.map(d => {
-                    const pct = data?.total ? ((d.value / data.total) * 100).toFixed(1) : 0
-                    return (
-                      <button key={d.name} onClick={() => { const c = SEV_CONFIG.find(s => s.label === d.name); if (c) navToDiscover('rule.level', c.range) }}
-                        className="flex items-center gap-1 text-[10px] text-[#6b7280] dark:text-[#9ca3af] hover:text-[#1a1c23] dark:hover:text-[#e4e6eb] transition-colors">
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: d.color }} />
-                        {d.name} <span className="font-semibold">{pct}%</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-5 gap-3">
-        <div className="xl:col-span-3">
-          <div className="gcard">
-            <div className="px-4 py-3 border-b border-[#e5e7eb] dark:border-[#2d3140]/60">
-              <div className="flex items-center gap-2">
-                <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Critical Windows Security Events</h3>
-                <span className="gchip text-[9px]">{Object.values(data?.events || {}).reduce((a, b) => a + b, 0).toLocaleString()}</span>
-              </div>
-            </div>
-            {loading ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 p-4">
-                {Array.from({ length: 10 }).map((_, i) => <div key={i} className="h-16 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-lg animate-pulse" />)}
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 p-4">
-                {WINDOWS_EVENTS.map(ev => {
-                  const cnt = data?.events?.[ev.id] || 0
-                  const sevColor = SEV_EVENT_COLORS[ev.severity] || '#6b7280'
-                  return (
-                    <button key={ev.id} onClick={() => navToDiscoverQ(ev.query)}
-                      className="group relative flex flex-col items-start p-3 rounded-lg border border-[#e5e7eb] dark:border-[#2d3140] bg-white dark:bg-[#1a1d27] hover:bg-[#f9fafb] dark:hover:bg-[#2d3140]/50 hover:border-[#3b82f6]/40 dark:hover:border-[#60a5fa]/40 transition-all text-left hover:shadow-sm">
-                      <div className="flex items-center justify-between w-full mb-1">
-                        <span className="text-[11px] font-mono font-bold" style={{ color: sevColor }}>{ev.id}</span>
-                        <FilterBtn field="data.win.system.eventID" value={ev.id} label={'Event ' + ev.id} />
-                      </div>
-                      <span className="text-[10px] text-[#6b7280] dark:text-[#9ca3af] leading-tight line-clamp-1 mb-1.5">{ev.label}</span>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-sm font-bold" style={{ color: sevColor }}>{cnt.toLocaleString()}</span>
-                        <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">events</span>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            )}
+                  <div className="w-full h-1.5 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-full overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-500" style={{ width: pct + '%', backgroundColor: s.color }} />
+                  </div>
+                </button>
+              )
+            })}
+            {sevData.length === 0 && <div className="text-xs text-[#9ca3af] dark:text-[#6b7280] py-4 text-center">No data</div>}
           </div>
         </div>
 
-        <div className="xl:col-span-2">
-          <div className="gcard h-full flex flex-col">
-            <div className="px-4 py-3 border-b border-[#e5e7eb] dark:border-[#2d3140]/60">
-              <div className="flex items-center gap-2">
-                <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">MITRE ATT&CK Tactics</h3>
-                <span className="gchip text-[9px]">{(data?.mitre?.length || 0)}</span>
-              </div>
-            </div>
-            {loading ? (
-              <div className="space-y-2 p-4">
-                {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-6 bg-[#f3f4f6] dark:bg-[#2d3140] rounded animate-pulse" />)}
-              </div>
+        <div className="gcard p-4 lg:col-span-2">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Alert Timeline</h3>
+            <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">{formatPretty(timeRange, 'now')}</span>
+          </div>
+          <div className="h-44">
+            {timelineData.length === 0 ? (
+              <div className="text-xs text-[#9ca3af] dark:text-[#6b7280] h-full flex items-center justify-center">No timeline data</div>
             ) : (
-              <div className="flex-1 overflow-y-auto p-3 space-y-1">
-                {(data?.mitre?.length > 0 ? data.mitre : []).map((m, i) => {
-                  const tactic = MITRE_TACTICS.find(t => m.key?.toLowerCase().includes(t.id.toLowerCase()) || t.label.toLowerCase().includes((m.key || '').toLowerCase()))
-                  return (
-                    <button key={m.key || i} onClick={() => navToDiscover('rule.mitre.tactic', m.key)}
-                      className="flex items-center gap-2.5 w-full p-2 rounded-lg hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140]/50 transition-colors text-left group">
-                      <span className="text-sm">{tactic?.icon || '\uD83D\uDD35'}</span>
-                      <span className="flex-1 text-xs text-[#1a1c23] dark:text-[#e4e6eb] truncate">{m.key || 'Unknown'}</span>
-                      <span className="text-[10px] font-semibold text-[#6b7280] dark:text-[#9ca3af]">{m.doc_count}</span>
-                      <FilterBtn field="rule.mitre.tactic" value={m.key} label={m.key} />
-                    </button>
-                  )
-                })}
-                {(!data?.mitre || data.mitre.length === 0) && (
-                  <div className="text-center py-6"><span className="text-xs text-[#9ca3af] dark:text-[#6b7280]">No MITRE data available</span></div>
-                )}
-              </div>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={timelineData} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
+                  <defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
+                  <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#9ca3af' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 9, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={30} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Area type="monotone" dataKey="alerts" stroke="#3b82f6" strokeWidth={2} fill="url(#tg)" dot={false} activeDot={{ r: 4, fill: '#3b82f6', stroke: '#fff', strokeWidth: 2 }} />
+                </AreaChart>
+              </ResponsiveContainer>
             )}
           </div>
         </div>
@@ -438,33 +317,30 @@ export default function SecurityDashboard() {
         <div className="gcard">
           <div className="px-4 py-3 border-b border-[#e5e7eb] dark:border-[#2d3140]/60">
             <div className="flex items-center gap-2">
-              <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Top Agents</h3>
-              <span className="gchip text-[9px]">{(data?.agents?.length || 0)}</span>
+              <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Top Alert Rules</h3>
+              <span className="gchip text-[9px]">{topRulesData.length}</span>
             </div>
           </div>
-          {loading ? (
-            <div className="space-y-2 p-4">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-7 bg-[#f3f4f6] dark:bg-[#2d3140] rounded animate-pulse" />)}</div>
+          {topRulesData.length === 0 ? (
+            <div className="text-xs text-[#9ca3af] dark:text-[#6b7280] py-8 text-center">No data</div>
           ) : (
-            <div className="p-3 space-y-1">
-              {(data?.agents?.length > 0 ? data.agents : []).map((a, i) => (
-                <button key={a.key || i} onClick={() => navToDiscover('agent.name', a.key)}
-                  className="flex items-center gap-2.5 w-full p-2 rounded-lg hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140]/50 transition-colors text-left group">
-                  <span className="text-[9px] font-mono text-[#9ca3af] dark:text-[#6b7280] w-3.5 text-right">{i + 1}</span>
+            <div className="p-3 space-y-1.5">
+              {topRulesData.map((r, i) => (
+                <button key={i} onClick={() => navToDiscover('rule.id', r.name)}
+                  className="flex items-center gap-2 w-full p-2 rounded-lg hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140]/50 transition-colors group">
+                  <span className="w-4 text-center text-[#9ca3af] dark:text-[#6b7280] text-[10px] font-mono shrink-0">{i + 1}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-xs text-[#1a1c23] dark:text-[#e4e6eb] truncate">{a.key}</span>
-                      <span className="text-[10px] font-semibold text-[#6b7280] dark:text-[#9ca3af] ml-2">{a.doc_count}</span>
+                      <span className="text-xs text-[#1a1c23] dark:text-[#e4e6eb] truncate">{r.name}</span>
+                      <span className="shrink-0 ml-2 text-xs font-semibold text-[#3b82f6] dark:text-[#60a5fa]">{r.count.toLocaleString()}</span>
                     </div>
                     <div className="w-full h-1 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-full overflow-hidden">
-                      <div className="h-full bg-[#3b82f6] dark:bg-[#60a5fa] rounded-full transition-all duration-700" style={{ width: (a.doc_count / maxAgentCount) * 100 + '%' }} />
+                      <div className="h-full rounded-full bg-[#3b82f6] dark:bg-[#60a5fa] transition-all duration-700" style={{ width: (r.count / maxRule) * 100 + '%' }} />
                     </div>
                   </div>
-                  <FilterBtn field="agent.name" value={a.key} label={a.key} />
+                  <FilterBtn field="rule.id" value={r.name} label={r.name} />
                 </button>
               ))}
-              {(!data?.agents || data.agents.length === 0) && (
-                <div className="text-center py-6"><span className="text-xs text-[#9ca3af] dark:text-[#6b7280]">No agent data</span></div>
-              )}
             </div>
           )}
         </div>
@@ -472,60 +348,92 @@ export default function SecurityDashboard() {
         <div className="gcard">
           <div className="px-4 py-3 border-b border-[#e5e7eb] dark:border-[#2d3140]/60">
             <div className="flex items-center gap-2">
-              <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Top Rules by Description</h3>
-              <span className="gchip text-[9px]">{(data?.descriptions?.length || 0)}</span>
+              <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Top Agents</h3>
+              <span className="gchip text-[9px]">{topAgentsData.length}</span>
             </div>
           </div>
-          {loading ? (
-            <div className="space-y-2 p-4">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-7 bg-[#f3f4f6] dark:bg-[#2d3140] rounded animate-pulse" />)}</div>
+          {topAgentsData.length === 0 ? (
+            <div className="text-xs text-[#9ca3af] dark:text-[#6b7280] py-8 text-center">No data</div>
           ) : (
-            <div className="p-3 space-y-1">
-              {(data?.descriptions?.length > 0 ? data.descriptions : []).map((d, i) => (
-                <button key={d.key || i} onClick={() => navToDiscover('rule.description', d.key)}
-                  className="flex items-center gap-2.5 w-full p-2 rounded-lg hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140]/50 transition-colors text-left group">
-                  <span className="text-[9px] font-mono text-[#9ca3af] dark:text-[#6b7280] w-3.5 text-right">{i + 1}</span>
+            <div className="p-3 space-y-1.5">
+              {topAgentsData.map((a, i) => (
+                <button key={i} onClick={() => navToDiscover('agent.name', a.name)}
+                  className="flex items-center gap-2 w-full p-2 rounded-lg hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140]/50 transition-colors group">
+                  <span className="w-4 text-center text-[#9ca3af] dark:text-[#6b7280] text-[10px] font-mono shrink-0">{i + 1}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-xs text-[#1a1c23] dark:text-[#e4e6eb] truncate">{d.key || 'Unknown'}</span>
-                      <span className="text-[10px] font-semibold text-[#6b7280] dark:text-[#9ca3af] ml-2">{d.doc_count}</span>
+                      <span className="text-xs text-[#1a1c23] dark:text-[#e4e6eb] truncate">{a.name}</span>
+                      <span className="shrink-0 ml-2 text-xs font-semibold text-[#8b5cf6]">{a.count.toLocaleString()}</span>
                     </div>
                     <div className="w-full h-1 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-full overflow-hidden">
-                      <div className="h-full bg-[#8b5cf6] rounded-full transition-all duration-700" style={{ width: (d.doc_count / maxDescCount) * 100 + '%' }} />
+                      <div className="h-full rounded-full bg-[#8b5cf6] transition-all duration-700" style={{ width: (a.count / maxAgent) * 100 + '%' }} />
                     </div>
                   </div>
-                  <FilterBtn field="rule.description" value={d.key} label={d.key} />
+                  <FilterBtn field="agent.name" value={a.name} label={a.name} />
                 </button>
               ))}
-              {(!data?.descriptions || data.descriptions.length === 0) && (
-                <div className="text-center py-6"><span className="text-xs text-[#9ca3af] dark:text-[#6b7280]">No rule description data</span></div>
-              )}
             </div>
           )}
         </div>
       </div>
 
-      <div className="gcard">
-        <div className="px-4 py-3 border-b border-[#e5e7eb] dark:border-[#2d3140]/60">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Recent Alerts</h3>
-              <span className="gchip text-[9px]">{data?.recent?.length || 0}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <PulseDot color="#3b82f6" />
-              <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">30s refresh</span>
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div className="gcard p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Severity Breakdown</h3>
+            <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">{sevData.length}</span>
+          </div>
+          <div className="h-44 flex items-center justify-center">
+            {sevData.length === 0 ? (
+              <div className="text-xs text-[#9ca3af] dark:text-[#6b7280]">No data</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={sevData} cx="50%" cy="50%" innerRadius={42} outerRadius={68} dataKey="value" paddingAngle={2} style={{ cursor: 'pointer' }}>
+                    {sevData.map((e, i) => (
+                      <Cell key={i} fill={e.color} stroke="#fff" strokeWidth={2}
+                        onClick={() => navToDiscover('rule.level', SEV_RANGES[e.name])} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 justify-center">
+            {sevData.map((s, i) => {
+              const pct = sevTotal ? Math.round((s.value / sevTotal) * 100) : 0
+              return (
+                <button key={i} onClick={() => navToDiscover('rule.level', SEV_RANGES[s.name])}
+                  className="inline-flex items-center gap-1 text-[10px] text-[#6b7280] dark:text-[#9ca3af] hover:text-[#1a1c23] dark:hover:text-[#e4e6eb] transition-colors">
+                  <span className="w-1.5 h-1.5 rounded-sm" style={{ backgroundColor: s.color }} />
+                  <span className="truncate max-w-[80px]">{s.name}</span>
+                  <span className="font-semibold">{pct}%</span>
+                </button>
+              )
+            })}
           </div>
         </div>
-        {loading ? (
-          <div className="space-y-2 p-4">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-7 bg-[#f3f4f6] dark:bg-[#2d3140] rounded animate-pulse" />)}</div>
-        ) : (
+
+        <div className="gcard lg:col-span-2">
+          <div className="px-4 py-3 border-b border-[#e5e7eb] dark:border-[#2d3140]/60">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Recent Alerts</h3>
+                <span className="gchip text-[9px]">{data.recent?.length || 0}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <PulseDot color="#3b82f6" />
+                <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">60s refresh</span>
+              </div>
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-[9px] uppercase tracking-wider text-[#9ca3af] dark:text-[#6b7280] border-b border-[#e5e7eb] dark:border-[#2d3140]/50">
                   <th className="text-left py-2.5 px-4 font-medium w-20">Time</th>
-                  <th className="text-left py-2.5 px-3 font-medium w-12">Lvl</th>
+                  <th className="text-left py-2.5 px-3 font-medium w-10">Lvl</th>
                   <th className="text-left py-2.5 px-3 font-medium">Rule</th>
                   <th className="text-left py-2.5 px-3 font-medium hidden sm:table-cell">Agent</th>
                   <th className="text-left py-2.5 px-3 font-medium hidden md:table-cell">Description</th>
@@ -533,33 +441,33 @@ export default function SecurityDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {(data?.recent || []).map((r, i) => {
-                  const lv = parseInt(r?.rule?.level) || 0
+                {(data.recent || []).slice(0, 6).map((r, i) => {
+                  const lv = r.rule?.level || 0
                   const badgeCls = lv >= 15 ? 'badge-critical' : lv >= 12 ? 'badge-high' : lv >= 7 ? 'badge-medium' : lv >= 1 ? 'badge-low' : 'badge-info'
                   return (
-                    <tr key={r._id || i} className={'border-b border-[#e5e7eb]/50 dark:border-[#2d3140]/30 hover:bg-[#f9fafb]/50 dark:hover:bg-[#2d3140]/30 transition-colors group ' + (i % 2 === 0 ? '' : 'bg-[#f9fafb]/30 dark:bg-[#0f1117]/30')}>
+                    <tr key={i} className={'border-b border-[#e5e7eb]/50 dark:border-[#2d3140]/30 hover:bg-[#f9fafb]/50 dark:hover:bg-[#2d3140]/30 transition-colors group ' + (i % 2 === 0 ? '' : 'bg-[#f9fafb]/30 dark:bg-[#0f1117]/30')}>
                       <td className="py-2.5 px-4 whitespace-nowrap font-mono">
                         <button onClick={() => navToDiscover('@timestamp', r['@timestamp'])} className="text-[#6b7280] dark:text-[#9ca3af] hover:text-[#3b82f6] dark:hover:text-[#60a5fa] transition-colors text-[10px]">
-                          {r['@timestamp'] ? new Date(r['@timestamp']).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '\u2014'}
+                          {r['@timestamp'] ? new Date(r['@timestamp']).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}
                         </button>
                       </td>
                       <td className="py-2.5 px-3">
-                        <button onClick={() => navToDiscover('rule.level', r?.rule?.level)} className={'text-[10px] badge ' + badgeCls + ' hover:opacity-80 transition-opacity'}>
-                          {lv || '\u2014'}
+                        <button onClick={() => navToDiscover('rule.level', r.rule?.level)} className={'text-[10px] badge ' + badgeCls + ' hover:opacity-80 transition-opacity'}>
+                          {lv || '--'}
                         </button>
                       </td>
                       <td className="py-2.5 px-3">
-                        <button onClick={() => navToDiscover('rule.id', r?.rule?.id)} className="text-[#3b82f6] dark:text-[#60a5fa] hover:underline truncate max-w-[120px] block">
-                          {(r?.rule?.id || '').toString()}
+                        <button onClick={() => navToDiscover('rule.id', r.rule?.id)} className="text-[#3b82f6] dark:text-[#60a5fa] hover:underline truncate max-w-[100px] block">
+                          {r.rule?.id || '--'}
                         </button>
                       </td>
                       <td className="py-2.5 px-3 hidden sm:table-cell">
-                        <button onClick={() => navToDiscover('agent.name', r?.agent?.name)} className="text-[#1a1c23] dark:text-[#e4e6eb] hover:text-[#3b82f6] dark:hover:text-[#60a5fa] transition-colors truncate max-w-[100px] block">
-                          {r?.agent?.name || '\u2014'}
+                        <button onClick={() => navToDiscover('agent.name', r.agent?.name)} className="text-[#1a1c23] dark:text-[#e4e6eb] hover:text-[#3b82f6] dark:hover:text-[#60a5fa] transition-colors truncate max-w-[100px] block">
+                          {r.agent?.name || '--'}
                         </button>
                       </td>
                       <td className="py-2.5 px-3 hidden md:table-cell">
-                        <span className="text-[#6b7280] dark:text-[#9ca3af] truncate max-w-[200px] block text-[10px]">{r?.rule?.description || r?.rule?.groups?.[0] || ''}</span>
+                        <span className="text-[#6b7280] dark:text-[#9ca3af] truncate max-w-[160px] block text-[10px]">{r.rule?.description || '--'}</span>
                       </td>
                       <td className="py-2.5 px-4 text-right">
                         <FilterBtn field="_id" value={r._id} label={'alert ' + (i + 1)} />
@@ -567,63 +475,26 @@ export default function SecurityDashboard() {
                     </tr>
                   )
                 })}
+                {data.recent.length === 0 && (
+                  <tr><td colSpan={6} className="py-10 text-center text-[#9ca3af] dark:text-[#6b7280]">{'\uD83D\uDCC4'} No recent alerts</td></tr>
+                )}
               </tbody>
             </table>
-            {(!data?.recent || data.recent.length === 0) && (
-              <div className="text-center py-10"><span className="text-xs text-[#9ca3af] dark:text-[#6b7280]">{'\uD83D\uDCC4'} No recent alerts found for this time range</span></div>
-            )}
           </div>
-        )}
+        </div>
       </div>
 
       <div className="flex items-center justify-between text-[10px] text-[#9ca3af] dark:text-[#6b7280] pt-1">
         <div className="flex items-center gap-3">
-          <span>{'\uD83D\uDEE1\uFE0F'} SOC Dashboard &middot; Auto-refresh 30s</span>
-          {data && <span className="hidden sm:inline">Last updated {new Date().toLocaleTimeString()}</span>}
+          <span>{'\uD83D\uDEE1\uFE0F'} SOC Security &middot; Auto-refresh 60s</span>
+          <span className="hidden sm:inline">Last: {lastUpdated.toLocaleTimeString()}</span>
         </div>
         <button onClick={fetchData} className="gbtn-ghost gap-1 inline-flex items-center">
-          <svg className={'w-3 h-3 ' + (loading ? 'animate-spin' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M1 4v6h6M23 20v-6h-6" /><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15" />
           </svg>
           Refresh
         </button>
-      </div>
-    </div>
-  )
-}
-
-function StatCard({ label, value, color, bg, border, text, icon, onClick, loading }) {
-  return (
-    <button onClick={onClick} disabled={!onClick} className={'relative overflow-hidden rounded-lg border text-left transition-all duration-200 p-3.5 ' + (onClick ? 'cursor-pointer hover:shadow-md active:scale-[0.98]' : '') + ' ' + bg + ' ' + border}>
-      {loading ? (
-        <div className="space-y-2">
-          <div className="h-3 w-16 bg-[#e5e7eb] dark:bg-[#2d3140] rounded animate-pulse" />
-          <div className="h-7 w-20 bg-[#e5e7eb] dark:bg-[#2d3140] rounded animate-pulse" />
-        </div>
-      ) : (
-        <>
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <span className="text-[11px]">{icon}</span>
-            <span className={'text-[10px] font-semibold uppercase tracking-wider ' + text}>{label}</span>
-          </div>
-          <div className={'text-2xl font-bold tracking-tight ' + text}>{typeof value === 'number' ? value.toLocaleString() : value || '\u2014'}</div>
-        </>
-      )}
-    </button>
-  )
-}
-
-function KPICard({ label, value, suffix, icon, color, loading }) {
-  return (
-    <div className="flex items-center gap-3 px-4 py-2 rounded-lg bg-[#f9fafb] dark:bg-[#0f1117] border border-[#e5e7eb] dark:border-[#2d3140]/50">
-      <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm" style={{ background: color + '15' }}>{icon}</div>
-      <div className="min-w-0">
-        <div className="text-[9px] text-[#9ca3af] dark:text-[#6b7280] uppercase tracking-wider font-medium">{label}</div>
-        {loading ? (
-          <div className="h-4 w-14 bg-[#e5e7eb] dark:bg-[#2d3140] rounded mt-0.5 animate-pulse" />
-        ) : (
-          <div className="text-sm font-bold" style={{ color }}>{(value || 0).toLocaleString()}{suffix}</div>
-        )}
       </div>
     </div>
   )
