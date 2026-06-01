@@ -1,45 +1,93 @@
 import { resolveField } from '../utils'
 
+function fieldExists(value) {
+  return value !== null && value !== undefined && value !== ''
+}
+
+function valueToText(value) {
+  if (Array.isArray(value)) return value.join(', ')
+  if (value && typeof value === 'object') return JSON.stringify(value)
+  return String(value ?? '')
+}
+
+function valueParts(value) {
+  if (Array.isArray(value)) return value.map(v => String(v))
+  return [valueToText(value)]
+}
+
+function makeResult(matched, reason = '') {
+  return { matched, reason }
+}
+
 function evalOperator(fieldVal, operator, condVal) {
-  const fv = fieldVal ?? ''
+  const exists = fieldExists(fieldVal)
+  const fv = valueToText(fieldVal)
+  const parts = valueParts(fieldVal)
+  const cv = String(condVal ?? '')
+
+  if (!exists && operator !== 'exists') {
+    return makeResult(false, 'Field missing in alert')
+  }
+
+  if (operator !== 'exists' && operator !== 'regex' && cv === '') {
+    return makeResult(false, 'Condition value is empty')
+  }
+
   switch (operator) {
     case 'equals':
-      return String(fv) === String(condVal)
+      return makeResult(parts.some(v => String(v) === cv), `Actual: ${fv}`)
     case 'contains':
-      return String(fv).toLowerCase().includes(String(condVal).toLowerCase())
+      return makeResult(parts.some(v => String(v).toLowerCase().includes(cv.toLowerCase())), `Actual: ${fv}`)
     case 'regex': {
-      try { return new RegExp(condVal, 'i').test(String(fv)) }
-      catch { return false }
+      if (!cv) return makeResult(false, 'Regex is empty')
+      try {
+        const re = new RegExp(cv, 'i')
+        return makeResult(parts.some(v => re.test(String(v))), `Actual: ${fv}`)
+      } catch (err) {
+        return makeResult(false, `Invalid regex: ${err.message}`)
+      }
     }
     case 'startsWith':
-      return String(fv).toLowerCase().startsWith(String(condVal).toLowerCase())
+      return makeResult(parts.some(v => String(v).toLowerCase().startsWith(cv.toLowerCase())), `Actual: ${fv}`)
     case 'endsWith':
-      return String(fv).toLowerCase().endsWith(String(condVal).toLowerCase())
+      return makeResult(parts.some(v => String(v).toLowerCase().endsWith(cv.toLowerCase())), `Actual: ${fv}`)
     case 'gt':
-      return Number(fv) > Number(condVal)
     case 'gte':
-      return Number(fv) >= Number(condVal)
     case 'lt':
-      return Number(fv) < Number(condVal)
     case 'lte':
-      return Number(fv) <= Number(condVal)
+      {
+        const actual = Number(fv)
+        const expected = Number(cv)
+        if (Number.isNaN(actual)) return makeResult(false, `Actual value is not a number: ${fv}`)
+        if (Number.isNaN(expected)) return makeResult(false, `Condition value is not a number: ${cv}`)
+        const matched = operator === 'gt' ? actual > expected
+          : operator === 'gte' ? actual >= expected
+            : operator === 'lt' ? actual < expected
+              : actual <= expected
+        return makeResult(matched, `Actual: ${actual}`)
+      }
     case 'inList': {
-      const list = String(condVal).split(',').map(s => s.trim())
-      return list.includes(String(fv))
+      const list = cv.split(',').map(s => s.trim()).filter(Boolean)
+      if (!list.length) return makeResult(false, 'List is empty')
+      return makeResult(parts.some(v => list.includes(String(v))), `Actual: ${fv}`)
     }
     case 'exists':
-      return fv !== null && fv !== undefined && fv !== ''
+      return makeResult(exists, exists ? `Actual: ${fv}` : 'Field missing in alert')
     default:
-      return false
+      return makeResult(false, `Unknown operator: ${operator}`)
   }
 }
 
 export function evalCondition(condition, doc) {
   const { field, operator, value, negate } = condition
   const fieldVal = resolveField(doc, field)
-  const missing = fieldVal === '' && !['exists'].includes(operator)
-  const matched = evalOperator(fieldVal, operator, value)
-  return { matched: negate ? !matched : matched, missing }
+  const missing = !fieldExists(fieldVal) && !['exists'].includes(operator)
+  const result = evalOperator(fieldVal, operator, value)
+  const matched = negate ? !result.matched : result.matched
+  const reason = negate
+    ? (matched ? `NOT passed because inner condition failed (${result.reason})` : `NOT failed because inner condition matched (${result.reason})`)
+    : result.reason
+  return { matched, missing, actual: fieldVal, reason }
 }
 
 export function evalRule(rule, doc) {
@@ -51,7 +99,7 @@ export function evalRule(rule, doc) {
 
   const results = conditions.map(c => {
     const ev = evalCondition(c, doc)
-    return { condition: { ...c, missing: ev.missing }, matched: ev.matched }
+    return { condition: { ...c, missing: ev.missing }, matched: ev.matched, actual: ev.actual, reason: ev.reason }
   })
 
   const matched = results.reduce((acc, r, idx) => {

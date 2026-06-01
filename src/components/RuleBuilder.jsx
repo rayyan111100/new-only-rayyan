@@ -709,10 +709,10 @@ export default function RuleBuilder() {
                                           : 'bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400'
                                     }`}>
                                       {d.matched
-                                        ? `${d.condition.field} ${d.condition.operator} "${d.condition.value}"`
+                                        ? `${d.condition.field} ${d.condition.operator} "${d.condition.value}" - ${d.reason || 'matched'}`
                                         : d.condition.missing
                                           ? `Field "${d.condition.field}" not in this alert`
-                                          : `${d.condition.field} ${d.condition.operator} "${d.condition.value}"`
+                                          : `${d.condition.field} ${d.condition.operator} "${d.condition.value}" - ${d.reason || 'not matched'}`
                                       }
                                     </span>
                                   ))}
