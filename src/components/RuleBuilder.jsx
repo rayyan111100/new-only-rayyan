@@ -8,7 +8,7 @@ import VersionHistoryPanel from './VersionHistoryPanel'
 import ConditionGroupEditor from './ConditionGroupEditor'
 import { evalRule, interpolateMessage } from '../services/ruleEngine'
 import { resolveField } from '../utils'
-import { GDPR_FIELDS } from '../data/gdprFields'
+import { GDPR_FIELDS, getGdprField } from '../data/gdprFields'
 import { api } from '../api'
 import { useApp } from '../context/AppContext'
 import { useToast } from '../context/ToastContext'
@@ -707,6 +707,43 @@ export default function RuleBuilder({ filterGroupIds = [], onGroupFilterChange }
                   />
                 </div>
               </div>
+
+              {(() => {
+                const allConditions = flattenConditions(editing.conditions || [])
+                const gdprConditions = allConditions.filter(c => getGdprField(c.field))
+                if (gdprConditions.length === 0) return null
+                return (
+                  <div className="bg-white dark:bg-[#16181f] rounded-xl border border-[#e5e7eb] dark:border-[#2d3140] shadow-sm overflow-hidden">
+                    <div className="flex items-center justify-between px-3 sm:px-4 py-3 border-b border-[#e5e7eb] dark:border-[#2d3140]">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-3.5 h-3.5 text-[#9ca3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <span className="text-[11px] uppercase font-semibold text-[#9ca3af] tracking-wider">GDPR</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="hidden sm:inline text-[10px] text-[#9ca3af]">{gdprConditions.length} item{gdprConditions.length !== 1 ? 's' : ''}</span>
+                      </div>
+                    </div>
+                    <div className="p-3 sm:p-4">
+                      <div className="flex flex-wrap gap-2">
+                        {gdprConditions.map((c, i) => {
+                          const gf = getGdprField(c.field)
+                          return (
+                            <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-[#f9fafb] dark:bg-[#0f1117] rounded-lg border border-[#e5e7eb] dark:border-[#2d3140] text-[10px]">
+                              <span className="text-xs">{gf.icon}</span>
+                              <span className="font-medium text-soc-stext dark:text-soc-darkstext">{c.field}</span>
+                              <span className="text-[#9ca3af]">{c.operator}</span>
+                              <span className="text-soc-stext dark:text-soc-darkstext">"{c.value}"</span>
+                              <span className="text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-1 py-0.5 rounded text-[9px] font-medium ml-1 whitespace-nowrap">
+                                {gf.gdprArticle}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
 
               <div className="bg-white dark:bg-[#16181f] rounded-xl border border-[#e5e7eb] dark:border-[#2d3140] shadow-sm overflow-hidden">
                 <div className="flex items-center justify-between px-3 sm:px-4 py-3 border-b border-[#e5e7eb] dark:border-[#2d3140]">

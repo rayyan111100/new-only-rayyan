@@ -428,49 +428,25 @@ function ConditionRow({ condition, fieldList, onChange, onRemove, canRemove, onD
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
-      className={`flex flex-col gap-1 rounded-lg border p-1.5 sm:p-1.5 transition-all cursor-grab active:cursor-grabbing ${
+      className={`flex rounded-lg border p-1.5 sm:p-1.5 transition-all cursor-grab active:cursor-grabbing ${
         isDragOver ? 'border-[#3b82f6] bg-[#3b82f6]/5 shadow-md' : 'border-[#e5e7eb] dark:border-[#2d3140] bg-[#f9fafb] dark:bg-[#0f1117]'
-      } ${gdpr ? 'border-l-2 border-l-blue-400 dark:border-l-blue-600' : ''}`}>
-      <div className="flex items-start sm:items-center gap-2 text-[11px]">
-        <div className="flex items-center gap-0.5 text-[#9ca3af] opacity-40 cursor-grab mt-0.5 sm:mt-0">
-          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M8 6h2v2H8V6zm6 0h2v2h-2V6zM8 11h2v2H8v-2zm6 0h2v2h-2v-2zm-6 5h2v2H8v-2zm6 0h2v2h-2v-2z"/></svg>
-        </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1 flex-1">
-          <FieldPicker value={condition.field} onChange={v => onChange({ ...condition, field: v })} fieldList={fieldList} />
-          <div className="hidden sm:block text-[#d1d5db] dark:text-[#4b5563] self-center text-[10px]">|</div>
-          <select className="bg-transparent outline-none text-soc-stext dark:text-soc-darkstext w-full sm:w-20 py-0.5 cursor-pointer text-[10px]" value={condition.operator} onChange={e => onChange({ ...condition, operator: e.target.value })}>
-            {gdprOps.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
-          <div className="hidden sm:block text-[#d1d5db] dark:text-[#4b5563] self-center text-[10px]">|</div>
-          <input className="flex-1 bg-transparent outline-none text-soc-stext dark:text-soc-darkstext py-0.5 text-[10px] w-full sm:w-auto min-w-[80px]" placeholder="value" value={condition.value || ''} onChange={e => onChange({ ...condition, value: e.target.value })} />
-        </div>
-        {canRemove && (
-          <button onClick={onRemove} className="p-1 text-[#9ca3af] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all shrink-0 mt-0.5 sm:mt-0">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-          </button>
-        )}
+      }`}>
+      <div className="flex items-center gap-0.5 text-[#9ca3af] opacity-40 cursor-grab shrink-0">
+        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M8 6h2v2H8V6zm6 0h2v2h-2V6zM8 11h2v2H8v-2zm6 0h2v2h-2v-2zm-6 5h2v2H8v-2zm6 0h2v2h-2v-2z"/></svg>
       </div>
-
-      {gdpr && (
-        <div className="flex items-center gap-1.5 ml-5 sm:ml-6">
-          <span className="text-[9px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded font-medium whitespace-nowrap">
-            {gdpr.icon} {gdpr.category} — {gdpr.gdprArticle}
-          </span>
-          {gdpr.presetValues.length > 0 && (
-            <div className="flex items-center gap-1 overflow-x-auto">
-              {gdpr.presetValues.map(pv => (
-                <button key={pv} onClick={() => onChange({ ...condition, value: pv })}
-                  className={`text-[9px] px-1.5 py-0.5 rounded-full border transition-colors whitespace-nowrap ${
-                    condition.value === pv
-                      ? 'bg-[#3b82f6] text-white border-[#3b82f6]'
-                      : 'bg-white dark:bg-[#2d3140] text-[#6b7280] dark:text-[#9ca3af] border-[#e5e7eb] dark:border-[#4b5563] hover:border-[#3b82f6] hover:text-[#3b82f6]'
-                  }`}>
-                  {pv}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        <FieldPicker value={condition.field} onChange={v => onChange({ ...condition, field: v })} fieldList={fieldList} />
+        <span className="text-[#d1d5db] dark:text-[#4b5563] text-[10px]">|</span>
+        <select className="bg-transparent outline-none text-soc-stext dark:text-soc-darkstext w-20 py-0.5 cursor-pointer text-[10px]" value={condition.operator} onChange={e => onChange({ ...condition, operator: e.target.value })}>
+          {gdprOps.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+        <span className="text-[#d1d5db] dark:text-[#4b5563] text-[10px]">|</span>
+        <input className="flex-1 bg-transparent outline-none text-soc-stext dark:text-soc-darkstext py-0.5 text-[10px] min-w-[80px]" placeholder="value" value={condition.value || ''} onChange={e => onChange({ ...condition, value: e.target.value })} />
+      </div>
+      {canRemove && (
+        <button onClick={onRemove} className="p-1 text-[#9ca3af] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all shrink-0">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
       )}
     </div>
   )
