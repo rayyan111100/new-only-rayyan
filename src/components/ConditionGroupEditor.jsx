@@ -10,7 +10,6 @@ function FieldPicker({ value, onChange, fieldList }) {
   const [query, setQuery] = useState('')
   const [focusedOnce, setFocusedOnce] = useState(false)
   const [pos, setPos] = useState(null)
-  const [tab, setTab] = useState('fields')
   const inputRef = useRef(null)
   const ref = useRef(null)
 
@@ -36,57 +35,41 @@ function FieldPicker({ value, onChange, fieldList }) {
         <input ref={inputRef} className="w-full bg-transparent outline-none text-soc-stext dark:text-soc-darkstext py-1 text-[10px] sm:text-[11px]" placeholder="field"
           value={focusedOnce ? query : value} onFocus={() => { openDropdown(); if (!focusedOnce) { setFocusedOnce(true); setQuery(value || '') } }}
           onChange={e => { setQuery(e.target.value); onChange(e.target.value); openDropdown() }} />
-        {getGdprField(value) && (
-          <span className="shrink-0 text-[9px] px-1 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-medium whitespace-nowrap"
-            title={getGdprField(value).gdprArticle}>
-            {getGdprField(value).icon} GDPR
-          </span>
-        )}
       </div>
       {open && pos && (
         <div style={{ position: 'fixed', top: pos.top, left: pos.left, width: Math.max(pos.width, 320) }}
           className="bg-white dark:bg-[#1a1d27] border border-[#e5e7eb] dark:border-[#2d3140] rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
-          <div className="flex border-b border-[#e5e7eb] dark:border-[#2d3140] sticky top-0 bg-white dark:bg-[#1a1d27] z-10">
-            <button onClick={() => setTab('fields')}
-              className={`flex-1 text-[10px] py-1.5 font-medium transition-colors ${tab === 'fields' ? 'text-[#3b82f6] border-b-2 border-[#3b82f6]' : 'text-[#9ca3af] hover:text-[#6b7280]'}`}>
-              Wazuh Fields
-            </button>
-            <button onClick={() => { setTab('gdpr'); setQuery('') }}
-              className={`flex-1 text-[10px] py-1.5 font-medium transition-colors ${tab === 'gdpr' ? 'text-[#3b82f6] border-b-2 border-[#3b82f6]' : 'text-[#9ca3af] hover:text-[#6b7280]'}`}>
-              GDPR Quick-Fill
-            </button>
+          <div className="p-2">
+            <div className="text-[9px] font-semibold text-[#6b7280] dark:text-[#9ca3af] uppercase tracking-wider mb-1 px-1">Fields</div>
+            {filtered.map(f => (
+              <button key={f} type="button" className="w-full text-left px-2 py-1 text-[10px] hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140] text-soc-stext dark:text-soc-darkstext truncate rounded transition-colors"
+                onMouseDown={() => { setQuery(''); setFocusedOnce(false); onChange(f); setOpen(false) }}>{f}</button>
+            ))}
+            {filtered.length === 0 && <div className="px-2 py-1.5 text-[9px] text-[#9ca3af] italic">Custom: {query}</div>}
           </div>
-          {tab === 'fields' ? (
-            <div>
-              {filtered.map(f => (
-                <button key={f} type="button" className="w-full text-left px-3 py-1.5 text-[10px] hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140] text-soc-stext dark:text-soc-darkstext truncate transition-colors"
-                  onMouseDown={() => { setQuery(''); setFocusedOnce(false); onChange(f); setOpen(false) }}>{f}</button>
-              ))}
-              {filtered.length === 0 && <div className="px-3 py-2 text-[9px] text-[#9ca3af] italic">Custom: {query}</div>}
-            </div>
-          ) : (
-            <div className="divide-y divide-[#f3f4f6] dark:divide-[#2d3140]">
+          <div className="border-t border-[#e5e7eb] dark:border-[#2d3140]" />
+          <div className="p-2">
+            <div className="text-[9px] font-semibold text-[#6b7280] dark:text-[#9ca3af] uppercase tracking-wider mb-1 px-1">GDPR</div>
+            <div className="space-y-0.5">
               {GDPR_CATEGORIES.map(cat => {
                 const catFields = GDPR_FIELDS.filter(f => f.category === cat)
                 return (
-                  <div key={cat} className="px-2 py-1.5">
-                    <div className="text-[9px] font-semibold text-[#6b7280] dark:text-[#9ca3af] uppercase tracking-wider mb-1 px-1">{cat}</div>
-                    <div className="space-y-0.5">
-                      {catFields.map(gf => (
-                        <button key={gf.field} type="button"
-                          onMouseDown={() => { onChange(gf.field); setOpen(false) }}
-                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-[10px] hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140] text-left transition-colors">
-                          <span className="text-xs shrink-0">{gf.icon}</span>
-                          <span className="flex-1 truncate text-soc-stext dark:text-soc-darkstext font-medium">{gf.field}</span>
-                          <span className="text-[8px] text-[#9ca3af] whitespace-nowrap">{gf.gdprArticle}</span>
-                        </button>
-                      ))}
-                    </div>
+                  <div key={cat}>
+                    <div className="text-[8px] font-medium text-[#9ca3af] px-1 py-0.5">{cat}</div>
+                    {catFields.map(gf => (
+                      <button key={gf.field} type="button"
+                        onMouseDown={() => { onChange(gf.field); setOpen(false) }}
+                        className="w-full flex items-center gap-2 px-2 py-1 rounded text-[10px] hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140] text-left transition-colors">
+                        <span className="text-xs shrink-0">{gf.icon}</span>
+                        <span className="flex-1 truncate text-soc-stext dark:text-soc-darkstext font-medium">{gf.field}</span>
+                        <span className="text-[8px] text-[#9ca3af] whitespace-nowrap">{gf.gdprArticle}</span>
+                      </button>
+                    ))}
                   </div>
                 )
               })}
             </div>
-          )}
+          </div>
         </div>
       )}
     </div>
