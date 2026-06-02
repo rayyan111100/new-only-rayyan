@@ -60,19 +60,27 @@ A professional Security Operations Center (SOC) dashboard built with React + Vit
 
 ---
 
-## Screenshots
+## Screenshots — All Features
 
-| Nested Condition Groups | Rules Overview |
+| Discover — Log Explorer | Filter Editor |
 |:---:|:---:|
-| ![Nested Condition Groups](output/rules-editor-nested.png) | ![Rules Overview](output/rules-overview.png) |
+| ![Discover](output/discover.png) | ![Filter Editor](output/filter-editor.png) |
 
-| Version History | Bulk Operations |
+| SOC Dashboard | Security Hub |
 |:---:|:---:|
-| ![Version History](output/version-history.png) | ![Bulk Operations](output/bulk-operations.png) |
+| ![Dashboard](output/dashboard.png) | ![Security Hub](output/security-hub.png) |
 
-| Test Lab — Run | Test Lab — History |
+| Health — Cluster & Indices | Rules — Nested Condition Groups |
 |:---:|:---:|
-| ![Test Lab Run](output/testlab-run.png) | ![Test Lab History](output/testlab-history.png) |
+| ![Health](output/health.png) | ![Rules Editor](output/rules-editor-nested.png) |
+
+| Rules — Version History | Groups Management |
+|:---:|:---:|
+| ![Version History](output/version-history.png) | ![Groups](output/groups.png) |
+
+| Group Rules Manager | RuleView — Browse Rules |
+|:---:|:---:|
+| ![Group Rules](output/group-rules.png) | ![RuleView](output/ruleview.png) |
 
 ---
 
