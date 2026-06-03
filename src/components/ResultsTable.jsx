@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useApp } from '../context/AppContext'
 import { resolveField } from '../utils'
@@ -196,7 +196,7 @@ function RuleBadge({ severity, name, groupNames, groupColors }) {
 }
 
 export default function ResultsTable({ ruleMatches = null, groupMap = null, results: propResults = null, total: propTotal = null, loading: propLoading = null, error: propError = null }) {
-  const { results: ctxResults, total: ctxTotal, columns, toggleColumn, moveColumn, doSort, sortField, sortOrder, loading: ctxLoading, error: ctxError, isDark, fields, loadFields, filters, index: ctxIndex } = useApp()
+  const { results: ctxResults, total: ctxTotal, browsableTotal, columns, toggleColumn, moveColumn, doSort, sortField, sortOrder, loading: ctxLoading, error: ctxError, isDark, fields, loadFields, filters, index: ctxIndex, limit, page, setPage, doSearch } = useApp()
   const index = ctxIndex
   const results = propResults ?? ctxResults
   const total = propTotal ?? ctxTotal
@@ -205,6 +205,46 @@ export default function ResultsTable({ ruleMatches = null, groupMap = null, resu
   const [expanded, setExpanded] = React.useState({})
   const [fieldsOpen, setFieldsOpen] = React.useState(false)
   const [fieldSearch, setFieldSearch] = React.useState('')
+  const [liveTime, setLiveTime] = useState(new Date().toLocaleTimeString())
+  const [jumpInput, setJumpInput] = useState('')
+  const [dragCol, setDragCol] = useState(null)
+  const [dragOverCol, setDragOverCol] = useState(null)
+
+  const pageSize = limit || 50
+  const effectiveTotal = Math.min(total, browsableTotal || total)
+  const totalPages = Math.max(1, Math.ceil(effectiveTotal / pageSize))
+  const shownStart = (page - 1) * pageSize + 1
+  const shownEnd = shownStart + results.length - 1
+
+  const goToPage = (p) => {
+    if (p < 1 || p > totalPages) return
+    setPage(p)
+    doSearch({ keepPage: true })
+  }
+
+  const handleDragStart = (c) => { setDragCol(c) }
+  const handleDragOver = (e, c) => { e.preventDefault(); setDragOverCol(c) }
+  const handleDragEnd = () => { setDragCol(null); setDragOverCol(null) }
+  const handleDrop = (c) => {
+    if (dragCol && dragCol !== c) {
+      const from = columns.indexOf(dragCol)
+      const to = columns.indexOf(c)
+      if (from >= 0 && to >= 0) {
+        const dir = to > from ? 1 : -1
+        let current = from
+        while (current !== to) {
+          moveColumn(columns[current], dir)
+          current += dir
+        }
+      }
+    }
+    setDragCol(null); setDragOverCol(null)
+  }
+
+  useEffect(() => {
+    const timer = setInterval(() => setLiveTime(new Date().toLocaleTimeString()), 1000)
+    return () => clearInterval(timer)
+  }, [])
   const toggleRow = id => setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
 
   React.useEffect(() => { loadFields() }, [])
@@ -233,7 +273,13 @@ export default function ResultsTable({ ruleMatches = null, groupMap = null, resu
   return (
     <div>
       <div className="text-xs text-soc-stext dark:text-soc-darkstext mb-1 px-0.5 flex items-center gap-3">
-        <span><b className="text-soc-text dark:text-soc-darktext">{total.toLocaleString()}</b> results ({results.length} shown)</span>
+        <span className="font-mono text-[10px] text-soc-stext/60 dark:text-soc-darkstext/60">{liveTime}</span>
+        <span className="text-soc-stext/30 dark:text-soc-darkstext/30">|</span>
+        <span><b className="text-soc-text dark:text-soc-darktext">{total.toLocaleString()}</b> results</span>
+        {browsableTotal && browsableTotal < total && (
+          <span className="text-[9px] text-amber-600 dark:text-amber-400">(browsing first {browsableTotal.toLocaleString()})</span>
+        )}
+        <span className="text-soc-stext/50 dark:text-soc-darkstext/50">({shownStart}&ndash;{shownEnd} of {total.toLocaleString()})</span>
         <div className="fields-dropdown relative">
           <button onClick={() => { setFieldsOpen(o => !o); loadFields() }}
             className="inline-flex items-center gap-1 text-[10px] font-medium text-[#1a73e8] dark:text-[#8ab4f8] hover:underline">
@@ -267,9 +313,17 @@ export default function ResultsTable({ ruleMatches = null, groupMap = null, resu
             <tr className="bg-soc-bg dark:bg-soc-darkbg">
               <th className="p-0 w-7"></th>
 
-              {columns.map(c => (
-                <th key={c} className="p-0 border-b border-soc-border dark:border-soc-darkborder">
-                  <div className="th-wrap flex items-center gap-1 px-1.5 py-1">
+              {columns.map((c, ci) => {
+                const isOver = dragOverCol === c && dragCol !== c
+                return (
+                <th key={c}
+                  draggable
+                  onDragStart={() => handleDragStart(c)}
+                  onDragOver={e => handleDragOver(e, c)}
+                  onDragEnd={handleDragEnd}
+                  onDrop={() => handleDrop(c)}
+                  className={`p-0 border-b border-soc-border dark:border-soc-darkborder select-none ${isOver ? 'border-t-2 border-t-[#1a73e8] dark:border-t-[#8ab4f8]' : ''} ${dragCol === c ? 'opacity-40' : ''}`}>
+                  <div className="th-wrap flex items-center gap-1 px-1.5 py-1 cursor-grab active:cursor-grabbing">
                     <span className="font-semibold text-[#1a73e8] dark:text-[#8ab4f8] cursor-pointer text-xxs" onClick={() => toggleColumn(c)}>{c}</span>
                     <span className="th-actions flex items-center gap-0.5 ml-auto">
                       <span className="th-act text-[9px]" onClick={() => doSort(c)} title="Sort">
@@ -281,7 +335,8 @@ export default function ResultsTable({ ruleMatches = null, groupMap = null, resu
                     </span>
                   </div>
                 </th>
-              ))}
+                )
+              })}
             </tr>
           </thead>
           <tbody>
@@ -348,6 +403,73 @@ export default function ResultsTable({ ruleMatches = null, groupMap = null, resu
           </tbody>
         </table>
       </div>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-0.5 pt-2 pb-0.5 text-xs text-soc-stext dark:text-soc-darkstext">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px]">Page {page} of {totalPages}</span>
+            <span className="text-soc-stext/30 dark:text-soc-darkstext/30">|</span>
+            <form onSubmit={e => { e.preventDefault(); const p = parseInt(jumpInput); if (p >= 1 && p <= totalPages) { goToPage(p); setJumpInput('') } }} className="flex items-center gap-1">
+              <span className="text-[9px] text-soc-stext/50 dark:text-soc-darkstext/50">Go to</span>
+              <input
+                type="number"
+                min={1}
+                max={totalPages}
+                value={jumpInput}
+                onChange={e => setJumpInput(e.target.value)}
+                className="w-10 px-1 py-0.5 text-[10px] text-center bg-soc-bg dark:bg-soc-darkbg border border-soc-border/50 dark:border-soc-darkborder/50 rounded outline-none text-soc-text dark:text-soc-darktext"
+                placeholder="#"
+                title="Enter a page number and press Enter"
+              />
+            </form>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => goToPage(1)}
+              disabled={page <= 1}
+              className="px-1.5 py-0.5 rounded text-[10px] font-medium disabled:opacity-30 disabled:cursor-not-allowed hover:bg-soc-bg dark:hover:bg-soc-darkbg transition-colors"
+              title="First page"
+            >{'|\u25C0'}</button>
+            <button
+              onClick={() => goToPage(page - 1)}
+              disabled={page <= 1}
+              className="px-1.5 py-0.5 rounded text-[10px] font-medium disabled:opacity-30 disabled:cursor-not-allowed hover:bg-soc-bg dark:hover:bg-soc-darkbg transition-colors"
+              title="Previous page"
+            >{'\u25C0'}</button>
+            {(() => {
+              const pages = []
+              const maxVisible = 7
+              let s = Math.max(1, page - Math.floor(maxVisible / 2))
+              let e = Math.min(totalPages, s + maxVisible - 1)
+              if (e - s + 1 < maxVisible) s = Math.max(1, e - maxVisible + 1)
+              if (s > 1) { pages.push(1); if (s > 2) pages.push('...') }
+              for (let p = s; p <= e; p++) pages.push(p)
+              if (e < totalPages) { if (e < totalPages - 1) pages.push('...'); pages.push(totalPages) }
+              return pages.map((p, i) =>
+                p === '...' ? (
+                  <span key={`ellipsis-${i}`} className="px-1 text-soc-stext/40 dark:text-soc-darkstext/40">...</span>
+                ) : (
+                  <button
+                    key={`p-${p}`}
+                    onClick={() => goToPage(p)}
+                    title={`Go to page ${p}`}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                      p === page
+                        ? 'bg-[#1a73e8] text-white dark:bg-[#8ab4f8] dark:text-[#1a1d27]'
+                        : 'hover:bg-soc-bg dark:hover:bg-soc-darkbg text-soc-stext dark:text-soc-darkstext'
+                    }`}
+                  >{p}</button>
+                )
+              )
+            })()}
+            <button
+              onClick={() => goToPage(page + 1)}
+              disabled={page >= totalPages}
+              className="px-1.5 py-0.5 rounded text-[10px] font-medium disabled:opacity-30 disabled:cursor-not-allowed hover:bg-soc-bg dark:hover:bg-soc-darkbg transition-colors"
+              title="Next page"
+            >{'\u25B6'}</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

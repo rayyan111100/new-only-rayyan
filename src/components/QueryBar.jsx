@@ -500,10 +500,6 @@ export default function QueryBar() {
           </button>
         )}
 
-        <button onClick={() => { setSaveDialogOpen(true) }}
-          className="text-[10px] text-[#1a73e8] dark:text-[#8ab4f8] hover:underline px-1">
-          {'\uD83D\uDCBE'} Save
-        </button>
       </div>
 
       <AnimatePresence>

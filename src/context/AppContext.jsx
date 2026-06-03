@@ -20,11 +20,12 @@ export function AppProvider({ children }) {
   const [endDate, setEndDate] = useState('now')
   const [limit, setLimit] = useState(50)
   const [index, setIndex] = useState('wazuh-alerts-4.x-*')
-  const [sortField, setSortField] = useState('@timestamp')
+  const [sortField, setSortField] = useState('timestamp')
   const [sortOrder, setSortOrder] = useState('desc')
-  const [columns, setColumns] = useState(['@timestamp', 'Rule', 'rule.id', 'rule.description'])
+  const [columns, setColumns] = useState(['timestamp', 'Rule', 'rule.id', 'rule.description'])
   const [results, setResults] = useState([])
   const [total, setTotal] = useState(0)
+  const [browsableTotal, setBrowsableTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [fields, setFields] = useState([])
   const [histogram, setHistogram] = useState([])
@@ -38,6 +39,9 @@ export function AppProvider({ children }) {
   const [groupFilter, setGroupFilter] = useState([])
   const [filterMatch, setFilterMatch] = useState('and')
   const [warning, setWarning] = useState(null)
+  const [page, setPageState] = useState(1)
+  const pageRef = useRef(1)
+  const setPage = useCallback(n => { pageRef.current = n; setPageState(n) }, [])
   const dedupFilters = (arr) => {
     const seen = new Set()
     return arr.filter(f => {
@@ -88,6 +92,7 @@ export function AppProvider({ children }) {
     setLoading(true)
     setError(null)
     setWarning(null)
+    const prevPage = pageRef.current
     try {
       const currentFilters = opts.filters !== undefined ? opts.filters : filtersRef.current
       const matchMode = opts.filterMatch || filterMatch
@@ -115,8 +120,12 @@ export function AppProvider({ children }) {
       if (userQ && serverFilterQ) combined = '(' + userQ + ') ' + (matchMode === 'or' ? 'OR' : 'AND') + ' ' + serverFilterQ
       else combined = userQ || serverFilterQ
 
+      if (!opts.keepPage) { pageRef.current = 1; setPageState(1) }
+      const offset = (pageRef.current - 1) * (opts.limit || limit)
+
       const params = {
         limit: opts.limit || limit,
+        offset: offset,
         index: opts.index || index,
         q: combined || undefined,
         sort: opts.sortField || sortField,
@@ -126,16 +135,18 @@ export function AppProvider({ children }) {
       }
       if (!params.q) delete params.q
 
+      // Use scan endpoint for deep pagination (no 10,000 max_result_window limit)
+      const ep = offset > 9000 ? 'scan' : 'search'
       const [d, c] = await Promise.all([
-        api('search', params),
+        api(ep, params),
         api('count', { index: params.index, q: params.q || '*', start_date: params.start_date, end_date: params.end_date }).catch(() => null)
       ])
 
       let totalRes = extractTotal(c) || extractTotal(d)
-      let res = extractResults(d)
+      let rawRes = extractResults(d)
 
       // Auto-fallback: if 0 results in 4.x index, try broader index
-      if ((totalRes === 0 || totalRes === 10000) && params.index && params.index.includes('4.x') && !opts.index) {
+      if (totalRes === 0 && params.index && params.index.includes('4.x') && !opts.index) {
         const fallbackParams = { ...params, index: 'wazuh-alerts-*' }
         try {
           const [fd, fc] = await Promise.all([
@@ -147,26 +158,25 @@ export function AppProvider({ children }) {
             setIndex('wazuh-alerts-*')
             setWarning(`Switched to wazuh-alerts-* (found ${fdTotal} results). No data in ${params.index}.`)
             totalRes = fdTotal
-            res = extractResults(fd)
+            rawRes = extractResults(fd)
           }
         } catch {}
       }
 
-      // Apply ALL filters client-side (handles NOT, ranges, regex, etc. that server ignores)
-      res = applyClientFilters(res, currentFilters, matchMode)
+      let res = applyClientFilters(rawRes, currentFilters, matchMode)
 
-      if (res.length === 0 && totalRes > 0) {
+      setTotal(totalRes)
+      setBrowsableTotal(totalRes)
+      if (rawRes.length === 0 && totalRes > 0 && offset === 0) {
         setWarning('Server returned results that did not match your filter (API limitation). Results refined client-side.')
-      }
-      if (fullFilterQ && !serverFilterQ && totalRes > 0 && res.length < totalRes) {
+      } else if (fullFilterQ && !serverFilterQ && totalRes > 0 && res.length < totalRes) {
         setWarning(`Showing ${res.length} of ${totalRes} results (client-filtered). Remove restrictive filters to see more.`)
       }
-
-      const hasClientOnlyFilters = serverSafe.length < currentFilters.filter(f => !f.disabled).length
-      setTotal(hasClientOnlyFilters ? res.length : totalRes)
       setResults(res)
       if (opts.noHistogram !== true) loadHistogram(params)
     } catch (e) {
+      pageRef.current = prevPage
+      setPageState(prevPage)
       setError(e.message)
       setResults([])
       setTotal(0)
@@ -211,7 +221,7 @@ export function AppProvider({ children }) {
   const loadHistogram = useCallback(async (params) => {
     try {
       const hParams = { ...params, field: '@timestamp', type: 'date_histogram', interval: '1h', limit: 48 }
-      delete hParams.q; delete hParams.limit
+      delete hParams.q; delete hParams.limit; delete hParams.offset
       const d = await api('aggregate', hParams)
       setHistogram(d.buckets || [])
     } catch { setHistogram([]) }
@@ -269,13 +279,13 @@ export function AppProvider({ children }) {
     if (refreshRef.current) { clearInterval(refreshRef.current); refreshRef.current = null }
     if (!refreshActive || refreshValue <= 0) return
     const ms = refreshUnit === 'h' ? refreshValue * 3600000 : refreshUnit === 'm' ? refreshValue * 60000 : refreshValue * 1000
-    refreshRef.current = setInterval(() => doSearchRef.current({ noHistogram: false, filterMatch: filterMatch }), ms)
+    refreshRef.current = setInterval(() => doSearchRef.current({ noHistogram: false, filterMatch: filterMatch, keepPage: true }), ms)
     return () => { if (refreshRef.current) clearInterval(refreshRef.current) }
   }, [refreshActive, refreshValue, refreshUnit, filterMatch])
 
   const toggleRefresh = useCallback(() => {
     if (refreshActive) { setRefreshActive(false); if (refreshRef.current) { clearInterval(refreshRef.current); refreshRef.current = null } }
-    else if (refreshValue > 0) { doSearch(); setRefreshActive(true) }
+    else if (refreshValue > 0) { doSearch({ keepPage: true }); setRefreshActive(true) }
   }, [refreshActive, refreshValue, doSearch])
 
   const selectRule = useCallback(id => {
@@ -335,7 +345,7 @@ export function AppProvider({ children }) {
     limit, setLimit, index, setIndex,
     sortField, sortOrder, columns,
     toggleColumn, moveColumn, doSort,
-    results, total, loading, error,
+    results, total, browsableTotal, loading, error, page, setPage,
     fields, setFields, histogram,
     doSearch, loadFields, resolveTimeRange,
     refreshValue, setRefreshValue, refreshUnit, setRefreshUnit, refreshActive, toggleRefresh,

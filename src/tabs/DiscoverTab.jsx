@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useApp } from '../context/AppContext'
 import { api } from '../api'
@@ -19,6 +19,33 @@ export default function DiscoverTab() {
   const [groupColorMap, setGroupColorMap] = useState({})
   const [groupFilter, setGroupFilter] = useState([])
   const [showGroupFilter, setShowGroupFilter] = useState(false)
+  const [sidebarWidth, setSidebarWidth] = useState(240)
+  const [isDragging, setIsDragging] = useState(false)
+  const containerRef = useRef(null)
+
+  const handleSplitterDown = useCallback((e) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }, [])
+
+  useEffect(() => {
+    if (!isDragging) return
+    const handleMove = (e) => {
+      if (!containerRef.current) return
+      const rect = containerRef.current.getBoundingClientRect()
+      const newW = rect.right - e.clientX
+      setSidebarWidth(Math.max(180, Math.min(500, newW)))
+    }
+    const handleUp = () => setIsDragging(false)
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    return () => { window.removeEventListener('mousemove', handleMove); window.removeEventListener('mouseup', handleUp) }
+  }, [isDragging])
+
+  useEffect(() => {
+    if (isDragging) document.body.style.cursor = 'col-resize'
+    else document.body.style.cursor = ''
+  }, [isDragging])
 
   const allGroups = getAllGroups()
   const groupMap = Object.fromEntries(allGroups.map(g => [g.id, g]))
@@ -138,7 +165,7 @@ export default function DiscoverTab() {
           <span className="font-bold text-soc-text dark:text-soc-darktext">{total.toLocaleString()}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className={`text-[10px] uppercase font-semibold ${isDark ? 'text-soc-darkstext' : 'text-soc-stext'}`}>Showing</span>
+          <span className={`text-[10px] uppercase font-semibold ${isDark ? 'text-soc-darkstext' : 'text-soc-stext'}`}>Fetched</span>
           <span className="text-soc-text dark:text-soc-darktext">{results.length}</span>
         </div>
         {loading && <span className="text-soc-stext dark:text-soc-darkstext">{'\u23F3'} searching...</span>}
@@ -325,7 +352,7 @@ export default function DiscoverTab() {
           )}
         </div>
       ) : (
-        <div className="flex gap-3 flex-col lg:flex-row">
+        <div ref={containerRef} className="flex gap-0 flex-col lg:flex-row">
           <div className="flex-1 min-w-0">
             <ResultsTable
               ruleMatches={applyRules ? (groupFilter.length > 0
@@ -335,7 +362,20 @@ export default function DiscoverTab() {
               groupMap={groupMap}
             />
           </div>
-          <div className="w-full lg:w-60 shrink-0">
+          <div
+            onMouseDown={handleSplitterDown}
+            className={`relative shrink-0 flex items-center justify-center cursor-col-resize transition-colors ${
+              isDragging ? 'bg-blue-500 dark:bg-blue-400' : 'bg-soc-border/40 dark:bg-soc-darkborder/40 hover:bg-blue-400/60 dark:hover:bg-blue-500/60'
+            }`}
+            style={{ width: 5, minWidth: 5 }}
+            title="Drag to resize"
+          >
+            <div className="absolute inset-y-0 -left-1 -right-1" />
+            <div className={`w-0.5 h-6 rounded-full transition-colors ${
+              isDragging ? 'bg-white' : 'bg-soc-stext/20 dark:text-soc-darkstext/20'
+            }`} />
+          </div>
+          <div className="shrink-0 overflow-hidden" style={{ width: sidebarWidth }}>
             <FieldSidebar />
           </div>
         </div>
