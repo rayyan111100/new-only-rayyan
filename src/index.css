@@ -15,7 +15,9 @@
   input, select, textarea, button { font-family: inherit; }
 }
 @layer components {
-  .gcard { @apply bg-white dark:bg-[#1e2337] border border-[#e8eaed] dark:border-[#2a3042] rounded-xl shadow-sm; }
+  .gcard { @apply bg-white dark:bg-[#1e2337] border border-[#e8eaed] dark:border-[#2a3042] rounded-xl shadow-sm transition-all duration-300; }
+  .gcard:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.12); border-color: rgba(232,104,26,0.3); }
+  .dark .gcard:hover { box-shadow: 0 8px 30px rgba(232,104,26,0.12); border-color: rgba(232,104,26,0.4); }
   .ginput { @apply bg-white dark:bg-[#151a28] border border-[#e8eaed] dark:border-[#2a3042] rounded-lg text-xs text-[#324059] dark:text-[#e4e6eb] placeholder-[#9ca3af] dark:placeholder-[#6b7280] outline-none focus:border-[#EF843C] dark:focus:border-[#EF843C] transition-colors; }
   .gbtn { @apply px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-150 select-none; }
   .gbtn-primary { @apply gbtn bg-[#EF843C] text-white hover:bg-[#e0752a] active:bg-[#d4661e]; }

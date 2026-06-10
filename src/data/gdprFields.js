@@ -1,169 +1,68 @@
-export const GDPR_FIELDS = [
-  {
-    field: "data.classification",
-    type: "string",
-    operators: ["equals", "is one of"],
-    presetValues: ["PII", "PHI", "PCI", "Sensitive", "Internal", "Public"],
-    gdprArticle: "Article 4(1)",
-    icon: "\uD83C\uDFF7\uFE0F",
-    category: "Data Classification"
-  },
-  {
-    field: "data.subject.rights",
-    type: "string",
-    operators: ["equals"],
-    presetValues: ["access", "rectification", "erasure", "restrict_processing", "data_portability", "object"],
-    gdprArticle: "Articles 15-21",
-    icon: "\uD83D\uDC64",
-    category: "Data Subject Rights"
-  },
-  {
-    field: "data.legal_basis",
-    type: "string",
-    operators: ["equals", "is one of"],
-    presetValues: ["consent", "contract", "legal_obligation", "vital_interests", "public_interest", "legitimate_interest"],
-    gdprArticle: "Article 6",
-    icon: "\u2696\uFE0F",
-    category: "Lawful Basis"
-  },
-  {
-    field: "data.transfer.country",
-    type: "string",
-    operators: ["equals", "is one of", "is not one of"],
-    presetValues: ["DE", "FR", "IT", "ES", "NL", "US", "IN", "CN", "RU", "BR"],
-    gdprArticle: "Articles 44-49",
-    icon: "\uD83C\uDF0D",
-    category: "Cross-Border Transfer"
-  },
-  {
-    field: "data.breach.type",
-    type: "string",
-    operators: ["equals", "is one of"],
-    presetValues: ["confidentiality", "integrity", "availability", "unauthorized_access", "data_loss", "ransomware"],
-    gdprArticle: "Articles 33-34",
-    icon: "\uD83D\uDD34",
-    category: "Data Breach"
-  },
-  {
-    field: "data.breach.notification_deadline",
-    type: "number",
-    operators: ["lt", "lte", "gt", "gte"],
-    presetValues: ["24", "48", "72"],
-    gdprArticle: "Article 33",
-    icon: "\u23F0",
-    category: "Breach Notification"
-  },
-  {
-    field: "data.retention.period",
-    type: "number",
-    operators: ["gt", "gte", "lt", "lte"],
-    presetValues: ["30", "90", "180", "365", "730", "1825"],
-    gdprArticle: "Article 5(1)(e)",
-    icon: "\uD83D\uDCE6",
-    category: "Storage Limitation"
-  },
-  {
-    field: "data.encryption.status",
-    type: "string",
-    operators: ["equals", "is one of"],
-    presetValues: ["encrypted", "unencrypted", "at_rest", "in_transit", "end_to_end"],
-    gdprArticle: "Article 32(1)(a)",
-    icon: "\uD83D\uDD10",
-    category: "Security Measures"
-  },
-  {
-    field: "data.consent.status",
-    type: "string",
-    operators: ["equals", "is one of"],
-    presetValues: ["given", "withdrawn", "expired", "never_given", "invalid"],
-    gdprArticle: "Article 7",
-    icon: "\u2705",
-    category: "Consent Management"
-  },
-  {
-    field: "data.dpia.required",
-    type: "boolean",
-    operators: ["is"],
-    presetValues: ["true", "false"],
-    gdprArticle: "Article 35",
-    icon: "\uD83D\uDCCB",
-    category: "DPIA"
-  },
-  {
-    field: "data.pseudonymization",
-    type: "boolean",
-    operators: ["is"],
-    presetValues: ["true", "false"],
-    gdprArticle: "Article 4(5)",
-    icon: "\uD83C\uDFAD",
-    category: "Pseudonymization"
-  },
-  {
-    field: "data.processing.purpose",
-    type: "string",
-    operators: ["equals", "is one of", "contains"],
-    presetValues: ["marketing", "analytics", "security", "legal", "hr", "finance", "healthcare"],
-    gdprArticle: "Article 5(1)(b)",
-    icon: "\uD83C\uDFAF",
-    category: "Purpose Limitation"
-  },
-  {
-    field: "data.access.request_id",
-    type: "string",
-    operators: ["equals", "exists", "does not exist"],
-    presetValues: [],
-    gdprArticle: "Article 15",
-    icon: "\uD83D\uDD0D",
-    category: "Access Request"
-  },
-  {
-    field: "data.dpo.alert",
-    type: "boolean",
-    operators: ["is"],
-    presetValues: ["true", "false"],
-    gdprArticle: "Articles 37-39",
-    icon: "\uD83D\uDC54",
-    category: "DPO Notification"
-  },
-  {
-    field: "data.third_party.processor",
-    type: "string",
-    operators: ["equals", "is one of", "contains"],
-    presetValues: ["aws", "azure", "gcp", "salesforce", "workday", "sap"],
-    gdprArticle: "Article 28",
-    icon: "\uD83E\uDD1D",
-    category: "Third Party"
-  },
-  {
-    field: "data.minimization.check",
-    type: "boolean",
-    operators: ["is"],
-    presetValues: ["true", "false"],
-    gdprArticle: "Article 5(1)(c)",
-    icon: "\u2702\uFE0F",
-    category: "Data Minimization"
-  },
-  {
-    field: "data.accuracy.verified",
-    type: "boolean",
-    operators: ["is"],
-    presetValues: ["true", "false"],
-    gdprArticle: "Article 5(1)(d)",
-    icon: "\u2714\uFE0F",
-    category: "Accuracy"
-  },
-  {
-    field: "data.logging.enabled",
-    type: "boolean",
-    operators: ["is"],
-    presetValues: ["true", "false"],
-    gdprArticle: "Article 30",
-    icon: "\uD83D\uDCDD",
-    category: "Record Keeping"
-  }
+export const GDPR_CATEGORIES = [
+  'Data Subject Rights',
+  'Data Processing',
+  'Security Measures',
+  'Data Breach',
+  'Consent',
+  'Data Transfers'
 ]
 
-export const GDPR_CATEGORIES = [...new Set(GDPR_FIELDS.map(f => f.category))]
+export const GDPR_FIELDS = [
+  { field: 'gdpr.data_subject.id', category: 'Data Subject Rights', icon: '👤', gdprArticle: 'Art. 15', operators: ['equals', 'exists', 'inList'] },
+  { field: 'gdpr.data_subject.name', category: 'Data Subject Rights', icon: '📛', gdprArticle: 'Art. 15', operators: ['equals', 'contains', 'regex', 'startsWith'] },
+  { field: 'gdpr.data_subject.email', category: 'Data Subject Rights', icon: '📧', gdprArticle: 'Art. 15', operators: ['equals', 'contains', 'regex', 'exists'] },
+  { field: 'gdpr.data_subject.consent_given', category: 'Consent', icon: '✅', gdprArticle: 'Art. 7', operators: ['equals', 'exists'] },
+  { field: 'gdpr.data_subject.consent_date', category: 'Consent', icon: '📅', gdprArticle: 'Art. 7', operators: ['equals', 'gt', 'gte', 'lt', 'lte', 'exists'] },
+  { field: 'gdpr.data_subject.right_to_access', category: 'Data Subject Rights', icon: '🔍', gdprArticle: 'Art. 15', operators: ['equals', 'exists'] },
+  { field: 'gdpr.data_subject.right_to_erasure', category: 'Data Subject Rights', icon: '🗑️', gdprArticle: 'Art. 17', operators: ['equals', 'exists'] },
+  { field: 'gdpr.data_subject.right_to_portability', category: 'Data Subject Rights', icon: '📋', gdprArticle: 'Art. 20', operators: ['equals', 'exists'] },
+  { field: 'gdpr.processing.purpose', category: 'Data Processing', icon: '🎯', gdprArticle: 'Art. 5', operators: ['equals', 'contains', 'regex', 'exists'] },
+  { field: 'gdpr.processing.lawful_basis', category: 'Data Processing', icon: '⚖️', gdprArticle: 'Art. 6', operators: ['equals', 'inList', 'exists'] },
+  { field: 'gdpr.processing.legitimate_interest', category: 'Data Processing', icon: '📄', gdprArticle: 'Art. 6(1)(f)', operators: ['equals', 'contains', 'exists'] },
+  { field: 'gdpr.processing.special_category', category: 'Data Processing', icon: '🔒', gdprArticle: 'Art. 9', operators: ['equals', 'exists'] },
+  { field: 'gdpr.processing.criminal_data', category: 'Data Processing', icon: '⚖️', gdprArticle: 'Art. 10', operators: ['equals', 'exists'] },
+  { field: 'gdpr.processing.automated_decisions', category: 'Data Processing', icon: '🤖', gdprArticle: 'Art. 22', operators: ['equals', 'exists'] },
+  { field: 'gdpr.processing.processor', category: 'Data Processing', icon: '🏢', gdprArticle: 'Art. 28', operators: ['equals', 'contains', 'exists'] },
+  { field: 'gdpr.processing.record_of_processing', category: 'Data Processing', icon: '📝', gdprArticle: 'Art. 30', operators: ['equals', 'exists'] },
+  { field: 'gdpr.security.pseudonymization', category: 'Security Measures', icon: '🔄', gdprArticle: 'Art. 32', operators: ['equals', 'exists'] },
+  { field: 'gdpr.security.encryption', category: 'Security Measures', icon: '🔐', gdprArticle: 'Art. 32', operators: ['equals', 'exists'] },
+  { field: 'gdpr.security.confidentiality', category: 'Security Measures', icon: '🤫', gdprArticle: 'Art. 32', operators: ['equals', 'exists'] },
+  { field: 'gdpr.security.integrity', category: 'Security Measures', icon: '🔗', gdprArticle: 'Art. 32', operators: ['equals', 'exists'] },
+  { field: 'gdpr.security.availability', category: 'Security Measures', icon: '✅', gdprArticle: 'Art. 32', operators: ['equals', 'exists'] },
+  { field: 'gdpr.security.resilience', category: 'Security Measures', icon: '🛡️', gdprArticle: 'Art. 32', operators: ['equals', 'exists'] },
+  { field: 'gdpr.security.testing', category: 'Security Measures', icon: '🧪', gdprArticle: 'Art. 32', operators: ['equals', 'exists'] },
+  { field: 'gdpr.security.incident_response', category: 'Security Measures', icon: '🚨', gdprArticle: 'Art. 32', operators: ['equals', 'contains', 'exists'] },
+  { field: 'gdpr.breach.occurred', category: 'Data Breach', icon: '⚠️', gdprArticle: 'Art. 33', operators: ['equals', 'exists'] },
+  { field: 'gdpr.breach.detection_date', category: 'Data Breach', icon: '📅', gdprArticle: 'Art. 33', operators: ['equals', 'gt', 'gte', 'lt', 'lte', 'exists'] },
+  { field: 'gdpr.breach.notification_dpo', category: 'Data Breach', icon: '📢', gdprArticle: 'Art. 33', operators: ['equals', 'exists'] },
+  { field: 'gdpr.breach.notification_supervisory', category: 'Data Breach', icon: '🏛️', gdprArticle: 'Art. 33', operators: ['equals', 'exists'] },
+  { field: 'gdpr.breach.notification_data_subject', category: 'Data Breach', icon: '📨', gdprArticle: 'Art. 34', operators: ['equals', 'exists'] },
+  { field: 'gdpr.breach.risk_assessment', category: 'Data Breach', icon: '📊', gdprArticle: 'Art. 34', operators: ['equals', 'contains', 'exists'] },
+  { field: 'gdpr.breach.containment_measures', category: 'Data Breach', icon: '🛑', gdprArticle: 'Art. 33', operators: ['equals', 'contains', 'exists'] },
+  { field: 'gdpr.consent.type', category: 'Consent', icon: '📋', gdprArticle: 'Art. 7', operators: ['equals', 'inList', 'exists'] },
+  { field: 'gdpr.consent.withdrawn', category: 'Consent', icon: '🚫', gdprArticle: 'Art. 7(3)', operators: ['equals', 'exists'] },
+  { field: 'gdpr.consent.withdrawal_date', category: 'Consent', icon: '📅', gdprArticle: 'Art. 7(3)', operators: ['equals', 'gt', 'gte', 'lt', 'lte', 'exists'] },
+  { field: 'gdpr.consent.collection_method', category: 'Consent', icon: '📝', gdprArticle: 'Art. 7', operators: ['equals', 'contains', 'exists'] },
+  { field: 'gdpr.transfer.third_country', category: 'Data Transfers', icon: '🌍', gdprArticle: 'Art. 44', operators: ['equals', 'inList', 'exists'] },
+  { field: 'gdpr.transfer.safeguards', category: 'Data Transfers', icon: '🛡️', gdprArticle: 'Art. 46', operators: ['equals', 'contains', 'exists'] },
+  { field: 'gdpr.transfer.binding_corporate_rules', category: 'Data Transfers', icon: '📑', gdprArticle: 'Art. 47', operators: ['equals', 'exists'] },
+  { field: 'gdpr.transfer.adequacy_decision', category: 'Data Transfers', icon: '✅', gdprArticle: 'Art. 45', operators: ['equals', 'exists'] },
+  { field: 'gdpr.transfer.standard_contractual_clauses', category: 'Data Transfers', icon: '📄', gdprArticle: 'Art. 46(2)', operators: ['equals', 'exists'] },
+  { field: 'gdpr.dpo.appointed', category: 'Data Processing', icon: '👤', gdprArticle: 'Art. 37', operators: ['equals', 'exists'] },
+  { field: 'gdpr.dpo.contact', category: 'Data Processing', icon: '📞', gdprArticle: 'Art. 37', operators: ['equals', 'contains', 'exists'] },
+  { field: 'gdpr.dpia.conducted', category: 'Security Measures', icon: '📋', gdprArticle: 'Art. 35', operators: ['equals', 'exists'] },
+  { field: 'gdpr.dpia.result', category: 'Security Measures', icon: '📊', gdprArticle: 'Art. 35', operators: ['equals', 'contains', 'exists'] },
+  { field: 'gdpr.policy.privacy_notice', category: 'Data Processing', icon: '📜', gdprArticle: 'Art. 13', operators: ['equals', 'contains', 'exists'] },
+  { field: 'gdpr.policy.retention_period', category: 'Data Processing', icon: '⏱️', gdprArticle: 'Art. 5(1)(e)', operators: ['equals', 'contains', 'exists'] },
+  { field: 'gdpr.policy.data_minimization', category: 'Data Processing', icon: '✂️', gdprArticle: 'Art. 5(1)(c)', operators: ['equals', 'exists'] },
+  { field: 'gdpr.policy.accuracy', category: 'Data Processing', icon: '🎯', gdprArticle: 'Art. 5(1)(d)', operators: ['equals', 'exists'] },
+  { field: 'gdpr.policy.storage_limitation', category: 'Data Processing', icon: '🗄️', gdprArticle: 'Art. 5(1)(e)', operators: ['equals', 'exists'] },
+  { field: 'gdpr.policy.accountability', category: 'Data Processing', icon: '📋', gdprArticle: 'Art. 5(2)', operators: ['equals', 'exists'] },
+  { field: 'gdpr.complaint.filed', category: 'Data Subject Rights', icon: '📩', gdprArticle: 'Art. 77', operators: ['equals', 'exists'] },
+  { field: 'gdpr.complaint.status', category: 'Data Subject Rights', icon: '📌', gdprArticle: 'Art. 77', operators: ['equals', 'inList', 'exists'] },
+  { field: 'gdpr.fine.amount', category: 'Data Breach', icon: '💰', gdprArticle: 'Art. 83', operators: ['equals', 'gt', 'gte', 'lt', 'lte', 'exists'] },
+  { field: 'gdpr.fine.reason', category: 'Data Breach', icon: '⚖️', gdprArticle: 'Art. 83', operators: ['equals', 'contains', 'regex', 'exists'] },
+]
 
 export function getGdprField(fieldName) {
   return GDPR_FIELDS.find(f => f.field === fieldName) || null

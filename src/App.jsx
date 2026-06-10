@@ -25,6 +25,10 @@ import GroupRulesTab from './tabs/GroupRulesTab'
 import RuleViewTab from './tabs/RuleViewTab'
 import DecoderTab from './tabs/DecoderTab'
 import RuleGuideTab from './tabs/RuleGuideTab'
+import WindowsEventTab from './tabs/WindowsEventTab'
+import ComplianceTab from './tabs/ComplianceTab'
+import PcidssTab from './tabs/PcidssTab'
+import HipaaTab from './tabs/HipaaTab'
 import LoginModal from './components/LoginModal'
 import ErrorBoundary from './components/ErrorBoundary'
 
@@ -43,7 +47,11 @@ const TABS = {
   grouprules: GroupRulesTab,
   ruleview: RuleViewTab,
   decoder: DecoderTab,
-  ruleguide: RuleGuideTab
+  ruleguide: RuleGuideTab,
+  windowsevent: WindowsEventTab,
+  compliance: ComplianceTab,
+  pcidss: PcidssTab,
+  hipaa: HipaaTab
 }
 
 function DashboardShell() {
