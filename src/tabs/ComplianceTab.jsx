@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext'
 import { parseDateStr, formatPretty } from '../utils'
 import DateRangePicker from '../components/DateRangePicker'
 import AssetSidebar from '../components/AssetSidebar'
+import LogDetailModal from '../components/LogDetailModal'
 import { PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 const FRAMEWORKS = ['PCI-DSS', 'HIPAA', 'GDPR', 'TSC (SOC 2)', 'MITRE ATT&CK']
@@ -157,6 +158,24 @@ export default function ComplianceTab() {
   const modalContent = () => {
     if (!modal) return null
     const mKey = modal
+    if (mKey.startsWith('log-')) {
+      const idx = parseInt(mKey.replace('log-', ''))
+      const r = filteredRecent[idx]
+      if (!r) return null
+      const logObj = {
+        time: r.timestamp ? new Date(r.timestamp).toLocaleString() : '--',
+        agent: r.agent?.name || r.agent || '--',
+        rule: r.rule?.id || r.rule || '--',
+        level: parseInt(r.rule?.level || r.level || 0),
+        description: r.rule?.description || r.description || '--',
+        event: r.rule?.groups?.[0] || r.event_type || '--',
+        frameworks: Array.isArray(r.frameworks) ? r.frameworks.join(', ') : '--',
+        file: r.data?.file || r.file || '--',
+        groups: r.rule?.groups?.join(', ') || '--'
+      }
+      return <LogDetailModal log={logObj} onClose={closeModal} label="Compliance Log" />
+    }
+
     const md = {
       'm-events': { t: 'Compliance Events', b: `Total compliance events across all frameworks: ${totalEvents.toLocaleString()}. Top framework: ${data?.frameworkCounts?.[0]?.framework || 'N/A'} with ${data?.frameworkCounts?.[0]?.count || 0} events.` },
     }
@@ -383,13 +402,13 @@ export default function ComplianceTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Time</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Agent</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Rule</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Sev</th></tr></thead>
             <tbody>
-              {filteredRecent.slice(0, 5).map((r, i) => {
+                {filteredRecent.slice(0, 5).map((r, i) => {
                 const level = parseInt(r.rule?.level || r.level || 0)
                 const sev = toSev(level)
                 const agentName = r.agent?.name || r.agent || ''
                 const ruleId = r.rule?.id || r.rule || ''
                 return (
-                  <tr key={r._id || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
+                  <tr key={r._id || i} onClick={() => openModal('log-' + i)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">
                       {r.timestamp ? new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}
                     </td>
@@ -505,7 +524,7 @@ export default function ComplianceTab() {
               const ruleId = r.rule?.id || r.rule || ''
               const sev = toSev(level)
               return (
-                <tr key={r._id || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
+                <tr key={r._id || i} onClick={() => openModal('log-' + i)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
                   <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">
                     {r.timestamp ? new Date(r.timestamp).toLocaleString() : '--'}
                   </td>
@@ -550,6 +569,7 @@ export default function ComplianceTab() {
       <AssetSidebar
         open={assetSidebarOpen}
         onClose={() => setAssetSidebarOpen(false)}
+        onSelectAgent={(name) => setFilter('agent', name)}
         agents={data?.topAgents || []}
         title="Monitored Assets"
       />

@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext'
 import { parseDateStr } from '../utils'
 import DateRangePicker from '../components/DateRangePicker'
 import AssetSidebar from '../components/AssetSidebar'
+import LogDetailModal from '../components/LogDetailModal'
 import { PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 const SEV_COLORS = { Critical: '#f85149', High: '#e8681a', Medium: '#d29922', Low: '#3fb950' }
@@ -186,34 +187,7 @@ export default function GdprTab() {
       const idx = parseInt(mKey.replace('log-', ''))
       const l = filteredLogs[idx]
       if (!l) return null
-      return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeModal}>
-          <div className="bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-xl p-5 w-[500px] max-h-[72vh] overflow-y-auto shadow-lg" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc]">Log Entry &mdash; {l.agent} (Rule {l.rule})</span>
-              <button onClick={closeModal} className="text-[#656d76] dark:text-[#8b949e] hover:text-[#1f2328] dark:hover:text-[#f0f6fc] text-lg leading-none">&times;</button>
-            </div>
-            <div className="grid grid-cols-2 gap-2.5 mb-3">
-              {[
-                { label: 'Time', val: l.time },
-                { label: 'Agent', val: l.agent, cls: 'text-[#e8681a] font-semibold' },
-                { label: 'Rule ID', val: l.rule, cls: 'text-[#e8681a] font-bold text-sm' },
-                { label: 'GDPR Article', val: l.art, cls: 'text-[#e8681a] font-semibold' },
-                { label: 'Severity', val: l.sev },
-                { label: 'Event Type', val: l.event, cls: 'text-[#e8681a] font-medium' },
-              ].map(f => (
-                <div key={f.label}>
-                  <div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">{f.label}</div>
-                  <div className={`text-xs text-[#36454f] dark:text-[#c9d1d9] ${f.cls || ''}`}>{f.val}</div>
-                </div>
-              ))}
-            </div>
-            <div className="mb-3"><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-1">Description</div><p className="text-xs text-[#36454f] dark:text-[#c9d1d9] leading-relaxed">{l.desc}</p></div>
-            <div className="mb-3"><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-1">File / Resource</div><p className="text-xs text-[#8b949e] break-all">{l.file}</p></div>
-            <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-1">Groups</div><p className="text-xs text-[#e8681a]">{l.groups}</p></div>
-          </div>
-        </div>
-      )
+      return <LogDetailModal log={l} onClose={closeModal} label="GDPR Log" />
     }
 
     if (mKey.startsWith('art-')) {
@@ -649,6 +623,7 @@ export default function GdprTab() {
       <AssetSidebar
         open={assetSidebarOpen}
         onClose={() => setAssetSidebarOpen(false)}
+        onSelectAgent={(name) => setFilter('agent', name)}
         agents={data?.topAgents || []}
         title="Monitored Assets"
       />

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
-export default function AssetSidebar({ open, onClose, agents, title = 'Monitored Assets' }) {
+export default function AssetSidebar({ open, onClose, onSelectAgent, agents, title = 'Monitored Assets' }) {
   const [search, setSearch] = useState('')
 
   const filtered = useMemo(() => {
@@ -70,8 +70,11 @@ export default function AssetSidebar({ open, onClose, agents, title = 'Monitored
               {filtered.length === 0 ? (
                 <div className="flex items-center justify-center h-32 text-xs text-[#8b949e]">No assets found</div>
               ) : (
-                filtered.map((a, i) => (
+                filtered.map((a, i) => {
+                  const agentName = a.key || a.agent || 'Unknown'
+                  return (
                   <div key={a.key || a.agent || i}
+                    onClick={() => { onSelectAgent?.(agentName); onClose() }}
                     className="flex items-center justify-between px-4 py-2.5 hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] cursor-pointer transition-colors border-b border-[#f0f2f4] dark:border-[#1d2432]/50"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -87,7 +90,8 @@ export default function AssetSidebar({ open, onClose, agents, title = 'Monitored
                     </div>
                     <div className="text-xs font-bold text-[#5f6368] dark:text-[#e4e6eb] tabular-nums shrink-0 ml-3">{a.doc_count || 0}</div>
                   </div>
-                ))
+                  )
+                })
               )}
             </div>
           </motion.div>
