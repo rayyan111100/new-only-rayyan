@@ -2,18 +2,14 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { api } from '../api'
 import { useApp } from '../context/AppContext'
-import { parseDateStr } from '../utils'
+import { parseDateStr, formatPretty } from '../utils'
+import DateRangePicker from '../components/DateRangePicker'
+import AssetSidebar from '../components/AssetSidebar'
 import { PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 const FRAMEWORKS = ['PCI-DSS', 'HIPAA', 'GDPR', 'TSC (SOC 2)', 'MITRE ATT&CK']
 const SEV_COLORS = { Critical: '#f85149', High: '#e8681a', Medium: '#d29922', Low: '#3fb950' }
 const SEV_ORDER = ['Critical', 'High', 'Medium', 'Low']
-const QUICK_TIMES = [
-  { label: '24h', value: 'now-24h' },
-  { label: '7d', value: 'now-7d' },
-  { label: '30d', value: 'now-30d' },
-  { label: '90d', value: 'now-90d' }
-]
 
 const CustomTip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
@@ -44,31 +40,24 @@ function groupSev(buckets) {
   return map
 }
 
-function formatDateRange(range) {
-  if (range === 'now-24h') {
-    const sd = parseDateStr(range).format('MMM D, h:mm A')
-    return `${sd} - Now`
-  }
-  const sd = parseDateStr(range)
-  const ed = parseDateStr('now')
-  return `${sd.format('MMM D')} - ${ed.format('MMM D')}`
-}
+
 
 export default function ComplianceTab() {
-  const { isDark } = useApp()
-  const [timeRange, setTimeRange] = useState('now-7d')
+  const { isDark, startDate, endDate } = useApp()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(new Date())
   const [modal, setModal] = useState(null)
+  const [assetSidebarOpen, setAssetSidebarOpen] = useState(false)
+  const [severityFilter, setSeverityFilter] = useState(null)
   const intervalRef = useRef(null)
 
   const timeParams = useCallback(() => {
-    const sd = parseDateStr(timeRange).toISOString()
-    const ed = parseDateStr('now').toISOString()
+    const sd = parseDateStr(startDate).toISOString()
+    const ed = parseDateStr(endDate).toISOString()
     return { start_date: sd, end_date: ed }
-  }, [timeRange])
+  }, [startDate, endDate])
 
   const fetchData = useCallback(async () => {
     try {
@@ -111,6 +100,16 @@ export default function ComplianceTab() {
     name: s, value: data.severity[s], color: SEV_COLORS[s]
   }))
 
+  const filteredRecent = useMemo(() => {
+    const all = data?.recent || []
+    if (!severityFilter) return all
+    return all.filter(r => {
+      const level = parseInt(r.rule?.level || r.level || 0)
+      const sev = toSev(level)
+      return sev === severityFilter
+    })
+  }, [data?.recent, severityFilter])
+
   const SevBadge = ({ s }) => {
     const BG = { Critical: '#4a0a0e', High: '#3d1a00', Medium: '#2d1f00', Low: '#052e16' }
     const TXT = { Critical: '#ff8a8a', High: '#ffbe7a', Medium: '#fde68a', Low: '#86efac' }
@@ -122,7 +121,15 @@ export default function ComplianceTab() {
   }
 
   const closeModal = () => setModal(null)
-  const openModal = (k) => setModal(k)
+  const openModal = (k) => {
+    if (k === 'm-assets') { setAssetSidebarOpen(true); return }
+    const sevMap = { 'm-crit': 'Critical', 'm-high': 'High', 'm-med': 'Medium' }
+    if (sevMap[k]) {
+      setSeverityFilter(prev => prev === sevMap[k] ? null : sevMap[k])
+      return
+    }
+    setModal(k)
+  }
 
   const modalContent = () => {
     if (!modal) return null
@@ -162,26 +169,33 @@ export default function ComplianceTab() {
           <div className="text-xl font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">Compliance Management Overview</div>
         </div>
         <div className="flex items-center gap-2 mt-1.5">
-          <div className="flex items-center gap-1.5 text-[11px] text-[#8b949e] bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-md px-3 py-1.5 cursor-pointer font-medium hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40 transition-colors">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-            {formatDateRange(timeRange)}
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          </div>
-          <div className="flex gap-1">
-            {QUICK_TIMES.map(qt => (
-              <button key={qt.value} onClick={() => setTimeRange(qt.value)}
-                className={`px-2 py-1 text-[10px] font-medium rounded border transition-colors ${
-                  timeRange === qt.value
-                    ? 'bg-[#e8681a]/10 text-[#e8681a] border-[#e8681a]/30'
-                    : 'bg-transparent text-[#8b949e] border-transparent hover:bg-[#161b22] hover:border-[#1d2432]'
-                }`}>{qt.label}</button>
-            ))}
-          </div>
+          <div className="-mr-1.5"><DateRangePicker /></div>
           <button className="p-1.5 rounded border border-transparent hover:bg-[#161b22] text-[#8b949e] hover:text-[#e8681a] transition-colors">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           </button>
         </div>
       </div>
+
+      {severityFilter && (
+        <div className="flex items-center gap-2 mb-2.5 px-1">
+          <div className="flex items-center gap-1.5 text-xs text-[#8b949e]">
+            <span>Filtered by:</span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+              style={{
+                background: severityFilter === 'Critical' ? '#e0525218' : severityFilter === 'High' ? '#e8893a18' : '#d2992218',
+                color: severityFilter === 'Critical' ? '#ff6b6b' : severityFilter === 'High' ? '#e8893a' : '#d29922'
+              }}
+            >
+              {severityFilter}
+              <button onClick={() => setSeverityFilter(null)} className="hover:opacity-70">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Metric Cards */}
       <div className="grid grid-cols-6 gap-2.5 mb-3">
@@ -194,7 +208,11 @@ export default function ComplianceTab() {
           { key: 'm-frameworks', label: 'Active Frameworks', val: FRAMEWORKS.length, sub: FRAMEWORKS.join(', '), icon: 'layout-grid', iconBg: '#7c3aed1a', iconColor: '#7c3aed' },
         ].map(card => (
           <div key={card.key} onClick={() => openModal(card.key)}
-              className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 cursor-pointer hover:border-[#e8681a]/50 dark:hover:border-[#e8681a]/60 transition-all duration-300 hover:-translate-y-[3px] shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] hover:shadow-[0_8px_25px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)]"
+              className={`bg-white dark:bg-[#0d1117] border rounded-xl p-3 cursor-pointer transition-all duration-300 hover:-translate-y-[3px] shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] hover:shadow-[0_8px_25px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] ${
+                (card.key === 'm-crit' && severityFilter === 'Critical') || (card.key === 'm-high' && severityFilter === 'High') || (card.key === 'm-med' && severityFilter === 'Medium')
+                  ? 'border-[#e8681a] dark:border-[#e8681a] ring-1 ring-[#e8681a]/30'
+                  : 'border-[#d0d7de] dark:border-[#1d2432] hover:border-[#e8681a]/50 dark:hover:border-[#e8681a]/60'
+              }`}
             style={{}}>
             <div className="float-right w-[34px] h-[34px] rounded-lg flex items-center justify-center text-lg" style={{ background: card.iconBg }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={card.iconColor} strokeWidth="2">
@@ -264,7 +282,7 @@ export default function ComplianceTab() {
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2 flex items-center justify-between">
             <span>Compliance Trend</span>
             <span className="text-[10px] text-[#8b949e] bg-[#f0f2f4] dark:bg-[#21262d] px-2 py-0.5 rounded font-medium normal-case cursor-pointer hover:bg-[#e5e7eb] dark:hover:bg-[#2d3140]">
-              {timeRange === 'now-24h' ? 'Last 24 Hours' : timeRange === 'now-7d' ? 'Last 7 Days' : timeRange === 'now-30d' ? 'Last 30 Days' : 'Last 90 Days'} <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="inline ml-0.5"><polyline points="6 9 12 15 18 9"/></svg>
+              {formatPretty(startDate, endDate)} <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="inline ml-0.5"><polyline points="6 9 12 15 18 9"/></svg>
             </span>
           </div>
           <div className="h-[150px]">
@@ -340,7 +358,7 @@ export default function ComplianceTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Time</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Agent</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Rule</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Sev</th></tr></thead>
             <tbody>
-              {(data?.recent || []).slice(0, 5).map((r, i) => {
+              {filteredRecent.slice(0, 5).map((r, i) => {
                 const level = parseInt(r.rule?.level || r.level || 0)
                 const sev = toSev(level)
                 return (
@@ -354,6 +372,9 @@ export default function ComplianceTab() {
                   </tr>
                 )
               })}
+              {filteredRecent.length === 0 && (
+                <tr><td colSpan={4} className="text-center py-4 text-xs text-[#8b949e]">No {severityFilter ? severityFilter.toLowerCase() : ''} violations found</td></tr>
+              )}
             </tbody>
           </table>
           <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
@@ -440,7 +461,7 @@ export default function ComplianceTab() {
             </tr>
           </thead>
           <tbody>
-            {(data?.recent || []).slice(0, 10).map((r, i) => {
+            {filteredRecent.slice(0, 10).map((r, i) => {
               const level = parseInt(r.rule?.level || r.level || 0)
               return (
                 <tr key={r._id || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
@@ -466,6 +487,9 @@ export default function ComplianceTab() {
                 </tr>
               )
             })}
+            {filteredRecent.length === 0 && (
+              <tr><td colSpan={9} className="text-center py-4 text-xs text-[#8b949e]">No {severityFilter ? severityFilter.toLowerCase() : ''} logs found</td></tr>
+            )}
           </tbody>
         </table>
         <div className="flex items-center justify-between mt-2.5 flex-wrap gap-2">
@@ -476,6 +500,12 @@ export default function ComplianceTab() {
 
       <div className="text-center text-[10px] text-[#8b949e] py-3 border-t border-[#d0d7de] dark:border-[#1d2432]">&copy; 2025 UniShield 360. All rights reserved.</div>
 
+      <AssetSidebar
+        open={assetSidebarOpen}
+        onClose={() => setAssetSidebarOpen(false)}
+        agents={data?.topAgents || []}
+        title="Monitored Assets"
+      />
       {modalContent()}
     </motion.div>
   )

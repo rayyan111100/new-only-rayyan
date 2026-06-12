@@ -41,7 +41,7 @@ function getCal(year, month) {
 function sameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate() }
 
 export default function DateRangePicker() {
-  const { startDate, setStartDate, endDate, setEndDate, doSearch, isDark } = useApp()
+  const { startDate, setStartDate, endDate, setEndDate, doSearch, isDark, refreshValue, setRefreshValue, refreshUnit, setRefreshUnit, refreshActive, toggleRefresh } = useApp()
   const wrap = useRef(null)
   const timeRef = useRef(null)
   const [open, setOpen] = useState(false)
@@ -62,8 +62,8 @@ export default function DateRangePicker() {
     const p = s => { if (!s || s === 'now') return new Date(); const d = new Date(s); return isNaN(d) ? new Date() : d }
     const sd = p(startDate), ed = p(endDate)
     setAbsSd(sd); setAbsEd(ed)
-    setAbsSt(String(sd.getHours()).padStart(2,'0') + ':' + String(Math.floor(sd.getMinutes()/30)*30).padStart(2,'0'))
-    setAbsEt(String(ed.getHours()).padStart(2,'0') + ':' + String(Math.floor(ed.getMinutes()/30)*30).padStart(2,'0'))
+    setAbsSt(String(sd.getHours()).padStart(2,'0')+':'+String(sd.getMinutes()).padStart(2,'0'))
+    setAbsEt(String(ed.getHours()).padStart(2,'0')+':'+String(ed.getMinutes()).padStart(2,'0'))
     setCalYear(sd.getFullYear()); setCalMonth(sd.getMonth())
   }, [open])
 
@@ -82,8 +82,8 @@ export default function DateRangePicker() {
 
   useEffect(() => {
     if (open && timeRef.current) {
-      const sel = timeRef.current.querySelector('[data-sel="1"]')
-      if (sel) sel.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      const sel = timeRef.current.children[parseInt(selHour)]
+      if (sel) sel.scrollIntoView({ block: 'center' })
     }
   }, [open, activeEdge, absSt, absEt])
 
@@ -97,19 +97,22 @@ export default function DateRangePicker() {
   const cells = getCal(calYear, calMonth)
   const today = new Date()
   const selDate = activeEdge === 'start' ? absSd : absEd
+  const selHour = activeEdge === 'start' ? absSt.split(':')[0] : absEt.split(':')[0]
   const selTime = activeEdge === 'start' ? absSt : absEt
   const setSelDate = d => { if (activeEdge === 'start') setAbsSd(d); else setAbsEd(d) }
   const setSelTime = t => { if (activeEdge === 'start') setAbsSt(t); else setAbsEt(t) }
-  const timeSlots = []; for (let h = 0; h < 24; h++) for (let m = 0; m < 60; m += 30) timeSlots.push(String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'))
-  const nowTime = String(today.getHours()).padStart(2,'0')+':'+String(today.getMinutes()).padStart(2,'0')
+  const timeSlots = Array.from({ length: 24 }, (_, h) => h)
+  const fmtHour = (h) => (h < 12 ? (h === 0 ? '12' : String(h)) : (h === 12 ? '12' : String(h - 12))) + ':00 ' + (h < 12 ? 'AM' : 'PM')
 
   const apply = v => { setStartDate(v.start); setEndDate(v.end); setOpen(false); doSearch() }
   const applyRel = () => { setStartDate('now-' + relNum + relUnit); setEndDate('now'); setOpen(false); doSearch() }
   const applyNow = () => { setStartDate('now'); setEndDate('now'); setOpen(false); doSearch() }
   const applyAbs = () => {
     let sd = new Date(absSd), ed = new Date(absEd)
-    const [sh, sm] = absSt.split(':').map(Number); sd.setHours(sh, sm, 0, 0)
-    const [eh, em] = absEt.split(':').map(Number); ed.setHours(eh, em, 0, 0)
+    const [sh, sm] = absSt.split(':').map(Number)
+    const [eh, em] = absEt.split(':').map(Number)
+    sd.setHours(sh||0, sm||0, 0, 0)
+    ed.setHours(eh||0, em||0, 0, 0)
     if (ed <= sd) { ed = new Date(sd); ed.setDate(ed.getDate() + 1); ed.setHours(0, 0, 0, 0) }
     setStartDate(sd.toISOString()); setEndDate(ed.toISOString()); setOpen(false); doSearch()
   }
@@ -118,11 +121,14 @@ export default function DateRangePicker() {
     <div className="relative" ref={wrap}>
       <button
         onClick={() => setOpen(!open)}
-        className={`flex items-center gap-1.5 px-2.5 py-1 text-xs border border-soc-border dark:border-soc-darkborder rounded whitespace-nowrap transition-colors bg-white dark:bg-[#2d2d2d] text-soc-darktext dark:text-soc-darktext`}
+        className={`flex items-center gap-1.5 px-2.5 py-1 text-xs border border-soc-border dark:border-soc-darkborder rounded whitespace-nowrap transition-colors bg-white dark:bg-[#2d2d2d] text-soc-text dark:text-soc-darktext`}
       >
         <span className="font-medium">{label}</span>
         <span className={`text-[10px] ${txt}`}>{open ? <svg className="w-2.5 h-2.5 inline" viewBox="0 0 24 24" fill="currentColor"><polyline points="18 15 12 9 6 15"/></svg> : <svg className="w-2.5 h-2.5 inline" viewBox="0 0 24 24" fill="currentColor"><polyline points="6 9 12 15 18 9"/></svg>}</span>
       </button>
+      {open && (
+        <div className="fixed inset-0 z-[199]" style={{ backdropFilter: 'blur(2px)', background: 'rgba(0,0,0,0.15)' }} onClick={() => setOpen(false)} />
+      )}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -131,7 +137,7 @@ export default function DateRangePicker() {
             exit={{ opacity: 0, scaleY: 0.96, y: -4 }}
             transition={{ duration: 0.12 }}
             className={`gcard absolute top-full right-0 mt-1 z-[200] shadow-xl overflow-hidden`}
-            style={{ width: tab === 'absolute' ? 580 : 360 }}
+            style={{ width: tab === 'absolute' ? 560 : 340 }}
           >
             <div className={`flex border-b ${isDark ? 'border-soc-darkborder' : 'border-soc-border'}`}>
               {['relative','absolute','now'].map(t => (
@@ -142,7 +148,7 @@ export default function DateRangePicker() {
             </div>
 
             {tab === 'relative' && (
-              <div className="p-4 space-y-3">
+              <div className="p-3 space-y-2">
                 <div className="flex items-center gap-2">
                   <span className={`text-xs font-medium ${txt}`}>Last</span>
                   <input type="number" min={1} value={relNum} onChange={e => setRelNum(parseInt(e.target.value) || 1)} className={`ginput w-16 px-2 py-1 text-xs text-center`} />
@@ -150,13 +156,13 @@ export default function DateRangePicker() {
                     {UNITS.map(u => <option key={u} value={u}>{UNAMES[u]}</option>)}
                   </select>
                   <span className={`text-xs ${txt}`}>to now</span>
-                  <button onClick={applyRel} className="gbtn-primary ml-auto px-3 py-1 text-xs font-semibold rounded">Apply</button>
+                  <button onClick={applyRel} className="gbtn-primary ml-auto px-2.5 py-1 text-xs font-semibold rounded">Apply</button>
                 </div>
                 <div>
-                  <div className="text-xs font-medium text-[#5f6368] dark:text-[#9aa0a6] uppercase tracking-wide mb-2">Commonly used</div>
-                  <div className="grid grid-cols-2 gap-x-2">
+                  <div className="text-[10px] font-medium text-[#5f6368] dark:text-[#9aa0a6] uppercase tracking-wide mb-1.5">Commonly used</div>
+                  <div className="grid grid-cols-2 gap-x-1">
                     {COMMON.map((c, i) => (
-                      <button key={i} onClick={() => apply(c)} className={`text-left px-2 py-1 text-xs rounded transition-colors ${isDark ? 'text-[#EF843C] hover:bg-soc-darkborder/50' : 'text-[#EF843C] hover:bg-soc-bg'}`}>
+                      <button key={i} onClick={() => apply(c)} className={`text-left px-2 py-0.5 text-[11px] rounded transition-colors ${isDark ? 'text-[#EF843C] hover:bg-soc-darkborder/50' : 'text-[#EF843C] hover:bg-soc-bg'}`}>
                         {c.label}
                       </button>
                     ))}
@@ -166,79 +172,110 @@ export default function DateRangePicker() {
             )}
 
             {tab === 'absolute' && (
-              <div className="p-3">
-                <div className={`flex gap-2 mb-2 ${txt}`}>
-                  <button onClick={() => setActiveEdge('start')} className={`px-2 py-1 rounded text-xs font-semibold transition-colors ${activeEdge === 'start' ? 'gbtn-primary' : 'border rounded ' + btn}`}>Start</button>
-                  <button onClick={() => setActiveEdge('end')} className={`px-2 py-1 rounded text-xs font-semibold transition-colors ${activeEdge === 'end' ? 'gbtn-primary' : 'border rounded ' + btn}`}>End</button>
+              <div className="p-2.5">
+                <div className={`flex gap-2 mb-1.5 ${txt}`}>
+                  <button onClick={() => setActiveEdge('start')} className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${activeEdge === 'start' ? 'gbtn-primary' : 'border rounded ' + btn}`}>Start</button>
+                  <button onClick={() => setActiveEdge('end')} className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${activeEdge === 'end' ? 'gbtn-primary' : 'border rounded ' + btn}`}>End</button>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex gap-2">
                   <div className="flex-1 min-w-0">
-                    <div className={`flex items-center justify-between mb-1 ${txt}`}>
+                    <div className={`flex items-center justify-between mb-0.5 ${txt}`}>
                       <button onClick={() => { if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11) } else setCalMonth(m => m - 1) }} className="px-2 py-0.5 rounded hover:bg-[#EF843C]/20 transition-colors text-xs"><svg className="w-2.5 h-2.5 inline" viewBox="0 0 24 24" fill="currentColor"><polyline points="15 18 9 12 15 6"/></svg></button>
-                      <span className="text-xs font-semibold">{MONTHS[calMonth]} {calYear}</span>
+                      <span className="text-[11px] font-semibold">{MONTHS[calMonth]} {calYear}</span>
                       <button onClick={() => { if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0) } else setCalMonth(m => m + 1) }} className="px-2 py-0.5 rounded hover:bg-[#EF843C]/20 transition-colors text-xs"><svg className="w-2.5 h-2.5 inline" viewBox="0 0 24 24" fill="currentColor"><polyline points="9 18 15 12 9 6"/></svg></button>
                     </div>
                     <div className="grid grid-cols-7 gap-0">
-                      {DAYS.map(d => <div key={d} className={`text-center text-[10px] font-semibold py-0.5 ${txt}`}>{d}</div>)}
+                      {DAYS.map(d => <div key={d} className={`text-center text-[9px] font-semibold py-0.5 ${txt}`}>{d}</div>)}
                     </div>
                     <div className="grid grid-cols-7 gap-0">
                       {cells.map((cell, i) => {
                         const cd = new Date(cell.year, cell.month, cell.day)
                         const isT = sameDay(cd, today)
                         const isSel = sameDay(cd, selDate)
-                        const cls = `text-center text-xs py-0.5 rounded transition-colors cursor-pointer ${
+                        const cls = `text-center text-[11px] py-0.5 rounded transition-colors cursor-pointer ${
                           isSel ? 'bg-[#EF843C] text-white font-semibold' :
                           isT ? (isDark ? 'bg-blue-500/20 text-[#EF843C] font-semibold' : 'bg-blue-100 text-[#EF843C] font-semibold') :
                           cell.other ? (isDark ? 'text-soc-darkstext/40' : 'text-soc-stext/40') :
                           (isDark ? 'text-soc-darktext hover:bg-soc-darkborder/50' : 'text-soc-text hover:bg-soc-bg')
                         }`
                         return (
-                          <button key={i} onClick={() => { const nd = new Date(cell.year, cell.month, cell.day); const [h, m] = selTime.split(':').map(Number); nd.setHours(h, m, 0, 0); setSelDate(nd) }} className={cls}>
+                          <button key={i} onClick={() => { const [h, mi] = selTime.split(':').map(Number); const nd = new Date(cell.year, cell.month, cell.day); nd.setHours(h||0, mi||0, 0, 0); setSelDate(nd) }} className={cls}>
                             {cell.day}
                           </button>
                         )
                       })}
                     </div>
-                    <div className={`mt-2 pt-2 border-t text-xs ${isDark ? 'border-soc-darkborder' : 'border-soc-border'}`}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`font-semibold ${txt}`}>S:</span>
-                        <input type="datetime-local" value={absSd.getFullYear()+'-'+String(absSd.getMonth()+1).padStart(2,'0')+'-'+String(absSd.getDate()).padStart(2,'0')+'T'+absSt} onChange={e => { const v = e.target.value; if (v) { const [d, t] = v.split('T'); const [y, mo, da] = d.split('-').map(Number); setAbsSd(new Date(y, mo - 1, da)); setAbsSt(t) } }} className={`ginput flex-1 px-2 py-1 text-xs`} />
+                    <div className={`mt-1.5 pt-1.5 border-t text-xs ${isDark ? 'border-soc-darkborder' : 'border-soc-border'}`}>
+                      <div className="flex items-center gap-1 mb-0.5">
+                        <span className={`font-semibold text-[10px] w-3 ${txt}`}>S:</span>
+                        <input type="date" value={absSd.getFullYear()+'-'+String(absSd.getMonth()+1).padStart(2,'0')+'-'+String(absSd.getDate()).padStart(2,'0')} onChange={e => { const v = e.target.value; if (v) { const [y, mo, da] = v.split('-').map(Number); setAbsSd(new Date(y, mo - 1, da)) } }} className={`ginput flex-1 px-1.5 py-0.5 text-[10px]`} />
+                        <input type="time" value={absSt} onChange={e => { const v = e.target.value; if (v) setAbsSt(v) }} className={`ginput w-[60px] px-1.5 py-0.5 text-[10px]`} />
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`font-semibold ${txt}`}>E:</span>
-                        <input type="datetime-local" value={absEd.getFullYear()+'-'+String(absEd.getMonth()+1).padStart(2,'0')+'-'+String(absEd.getDate()).padStart(2,'0')+'T'+absEt} onChange={e => { const v = e.target.value; if (v) { const [d, t] = v.split('T'); const [y, mo, da] = d.split('-').map(Number); setAbsEd(new Date(y, mo - 1, da)); setAbsEt(t) } }} className={`ginput flex-1 px-2 py-1 text-xs`} />
+                      <div className="flex items-center gap-1">
+                        <span className={`font-semibold text-[10px] w-3 ${txt}`}>E:</span>
+                        <input type="date" value={absEd.getFullYear()+'-'+String(absEd.getMonth()+1).padStart(2,'0')+'-'+String(absEd.getDate()).padStart(2,'0')} onChange={e => { const v = e.target.value; if (v) { const [y, mo, da] = v.split('-').map(Number); setAbsEd(new Date(y, mo - 1, da)) } }} className={`ginput flex-1 px-1.5 py-0.5 text-[10px]`} />
+                        <input type="time" value={absEt} onChange={e => { const v = e.target.value; if (v) setAbsEt(v) }} className={`ginput w-[60px] px-1.5 py-0.5 text-[10px]`} />
                       </div>
                     </div>
                   </div>
-                  <div className={`w-[72px] border-l pl-2 ${isDark ? 'border-soc-darkborder' : 'border-soc-border'}`}>
-                    <div className="text-[10px] font-medium text-[#5f6368] dark:text-[#9aa0a6] uppercase tracking-wide mb-1 text-center">Time</div>
-                    <div ref={timeRef} className="h-[240px] overflow-y-auto space-y-0.5">
-                      {timeSlots.map(t => (
-                        <button key={t} data-sel={t === selTime ? '1' : '0'} onClick={() => setSelTime(t)}
-                          className={`block w-full text-center text-xs py-0.5 rounded transition-colors ${
-                            t === selTime ? 'bg-[#EF843C] text-white font-semibold' :
-                            t === nowTime ? (isDark ? 'text-[#EF843C]' : 'text-[#EF843C]') :
-                            (isDark ? 'text-soc-darkstext hover:bg-soc-darkborder/50' : 'text-soc-stext hover:bg-soc-bg')
-                          }`}
-                        >{t}</button>
-                      ))}
+                  <div className={`cal-time ${isDark ? '' : ''}`} style={{ width: '60px', borderLeft: '1px solid ' + (isDark ? '#2a3042' : '#d1d9e0'), display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden' }}>
+                    <div className="cal-time-hdr" style={{ padding: '3px 0 2px', fontSize: '8px', color: isDark ? '#9aa0a6' : '#5f6368', textAlign: 'center', fontWeight: 700, letterSpacing: '.3px', borderBottom: '1px solid ' + (isDark ? '#2a3042' : '#d1d9e0'), flexShrink: 0 }}>TIME</div>
+                    <div ref={timeRef} className="cal-time-list" style={{ overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: isDark ? '#2a3042 transparent' : '#d1d9e0 transparent', maxHeight: '156px' }}>
+                      {timeSlots.map(t => {
+                        const curH = parseInt(t)
+                        const lbl = fmtHour(curH)
+                        const isSel = String(curH) === selHour
+                        return (
+                          <div key={t} onClick={() => { const m = activeEdge === 'start' ? absSt.split(':')[1]||'00' : absEt.split(':')[1]||'00'; setSelTime(String(curH).padStart(2,'0')+':'+m); if (activeEdge === 'start') setActiveEdge('end') }}
+                            className={`cal-time-slot${isSel ? ' active' : ''}`}
+                            style={{
+                              padding: '2px 0', textAlign: 'center', fontSize: '10px',
+                              color: isSel ? '#EF843C' : (isDark ? '#9aa0a6' : '#5f6368'),
+                              fontWeight: isSel ? 700 : 400,
+                              cursor: 'pointer', transition: 'all .1s',
+                              background: isSel ? 'rgba(232,104,26,.15)' : 'transparent'
+                            }}
+                            onMouseEnter={e => { if (!isSel) { e.currentTarget.style.background = isDark ? '#2d3140' : '#f1f3f4'; e.currentTarget.style.color = isDark ? '#e8eaed' : '#202124' } }}
+                            onMouseLeave={e => { if (!isSel) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = isDark ? '#9aa0a6' : '#5f6368' } }}
+                          >{lbl}</div>
+                        )
+                      })}
                     </div>
                   </div>
                 </div>
-                <div className={`flex justify-end gap-2 pt-2 mt-2 border-t ${isDark ? 'border-soc-darkborder' : 'border-soc-border'}`}>
-                  <button onClick={() => setOpen(false)} className={`px-3 py-1 text-xs border rounded transition-colors ${btn}`}>Cancel</button>
-                  <button onClick={applyAbs} className="gbtn-primary px-3 py-1 text-xs font-semibold rounded">Apply</button>
+                <div className={`flex justify-end gap-2 pt-1.5 mt-1.5 border-t ${isDark ? 'border-soc-darkborder' : 'border-soc-border'}`}>
+                  <button onClick={() => setOpen(false)} className={`px-2.5 py-0.5 text-[11px] border rounded transition-colors ${btn}`}>Cancel</button>
+                  <button onClick={applyAbs} className="gbtn-primary px-2.5 py-0.5 text-[11px] font-semibold rounded">Apply</button>
                 </div>
               </div>
             )}
 
             {tab === 'now' && (
-              <div className="p-5 text-center space-y-3">
-                <div className="text-lg"><svg className="w-6 h-6 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-                <div className={`text-sm font-medium ${txt}`}>Set start and end to now</div>
-                <div className="flex justify-center gap-2">
-                  <button onClick={() => setOpen(false)} className={`px-3 py-1 text-xs border rounded transition-colors ${btn}`}>Cancel</button>
-                  <button onClick={applyNow} className="gbtn-primary px-3 py-1 text-xs font-semibold rounded">Apply</button>
+              <div className="p-3 space-y-2.5">
+                <div className="text-center space-y-1 pb-2 border-b dark:border-soc-darkborder border-soc-border">
+                  <div className="text-xs"><svg className="w-4 h-4 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+                  <div className={`text-[11px] font-medium ${txt}`}>Set start and end to now</div>
+                  <div className="flex justify-center gap-2 pt-1">
+                    <button onClick={() => setOpen(false)} className={`px-2.5 py-0.5 text-[10px] border rounded transition-colors ${btn}`}>Cancel</button>
+                    <button onClick={applyNow} className="gbtn-primary px-2.5 py-0.5 text-[10px] font-semibold rounded">Apply</button>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-medium text-[#5f6368] dark:text-[#9aa0a6] uppercase tracking-wide mb-2">Auto Refresh</div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[11px] ${txt}`}>Every</span>
+                    <input type="number" min={1} value={refreshValue || ''} onChange={e => setRefreshValue(Math.max(1, parseInt(e.target.value) || 0))} placeholder="sec" className={`ginput w-16 px-2 py-1 text-xs text-center`} />
+                    <span className={`text-[11px] ${txt}`}>sec</span>
+                    <button onClick={toggleRefresh} disabled={!refreshValue} className={`ml-auto px-2.5 py-1 text-[10px] font-semibold rounded transition-colors ${refreshActive ? 'bg-[#dc2626]/10 text-[#dc2626] border border-[#dc2626]/30' : 'gbtn-primary'}`}>
+                      {refreshActive ? 'Stop' : 'Start'}
+                    </button>
+                  </div>
+                  {refreshActive && (
+                    <div className="flex items-center gap-1.5 mt-2 text-[10px] text-[#22c55e]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse" />
+                      Refreshing every {refreshValue}s
+                    </div>
+                  )}
                 </div>
               </div>
             )}

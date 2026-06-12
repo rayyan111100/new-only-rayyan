@@ -4,16 +4,11 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { SortableContext, useSortable, rectSortingStrategy, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { api } from '../api'
+import { useApp } from '../context/AppContext'
+import DateRangePicker from '../components/DateRangePicker'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
-const QUICK_TIMES = [
-  { label: '1h', value: 'now-1h' },
-  { label: '6h', value: 'now-6h' },
-  { label: '24h', value: 'now-24h' },
-  { label: '7d', value: 'now-7d' },
-  { label: '30d', value: 'now-30d' },
-  { label: '90d', value: 'now-90d' }
-]
+
 
 const WIDGETS = {
   metricTotal: { title: 'Total Windows Events', cols: 1, icon: 'file-text', category: 'metrics' },
@@ -482,7 +477,7 @@ function MitreMappingWidget() {
 }
 
 export default function WindowsEventTab() {
-  const [timeRange, setTimeRange] = useState('now-24h')
+  const { startDate, endDate } = useApp()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -509,8 +504,8 @@ export default function WindowsEventTab() {
   const fetchData = useCallback(async () => {
     try {
       const d = await api('windows-dashboard', {
-        start_date: timeRange,
-        end_date: 'now'
+        start_date: startDate,
+        end_date: endDate
       })
       setData(d)
       setError(null)
@@ -520,7 +515,7 @@ export default function WindowsEventTab() {
     } finally {
       setLoading(false)
     }
-  }, [timeRange])
+  }, [startDate, endDate])
 
   useEffect(() => {
     setLoading(true)
@@ -614,7 +609,7 @@ export default function WindowsEventTab() {
   if (loading && !data) {
     return (
       <div className="space-y-3">
-        <div className="flex gap-1.5 flex-wrap">{QUICK_TIMES.map(qt => <div key={qt.value} className="h-7 w-10 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-lg animate-pulse" />)}</div>
+        <div className="flex gap-1.5 flex-wrap"><div className="h-7 w-44 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-lg animate-pulse" /></div>
         <div className="grid grid-cols-5 gap-2">{[1,2,3,4,5].map(i => <div key={i} className="gcard p-4"><div className="h-16 bg-[#f3f4f6] dark:bg-[#2d3140] rounded animate-pulse"/></div>)}</div>
         <div className="grid grid-cols-[1fr_1fr_2fr] gap-2">{[1,2,3].map(i => <div key={i} className="gcard p-4"><div className="h-40 bg-[#f3f4f6] dark:bg-[#2d3140] rounded animate-pulse"/></div>)}</div>
       </div>
@@ -647,14 +642,7 @@ export default function WindowsEventTab() {
           className="gbtn-ghost text-[10px] px-2 py-1 flex items-center gap-1">
           {SVG_ICONS['settings']} {showSettings ? 'Done' : 'Customize'}
         </button>
-        <div className="flex items-center gap-0.5">
-          {QUICK_TIMES.map(qt => (
-            <button key={qt.value} onClick={() => setTimeRange(qt.value)}
-              className={'text-[10px] px-2 py-1 rounded transition-colors ' + (timeRange === qt.value ? 'bg-[#EF843C] text-white' : 'text-[#9ca3af] dark:text-[#6b7280] hover:bg-[#f1f3f4] dark:hover:bg-[#2a3042]')}>
-              {qt.label}
-            </button>
-          ))}
-        </div>
+        <DateRangePicker />
       </motion.div>
 
       <AnimatePresence>

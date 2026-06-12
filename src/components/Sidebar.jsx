@@ -19,6 +19,7 @@ const NAV_SECTIONS = [
       { key: 'pcidss', label: 'PCI-DSS', icon: 'assignment' },
       { key: 'hipaa', label: 'HIPAA', icon: 'assignment' },
       { key: 'gdpr', label: 'GDPR', icon: 'assignment' },
+      { key: 'tscsoc2', label: 'TSC (SOC 2)', icon: 'assignment' },
       { key: 'mitreattack', label: 'MITRE ATT&CK', icon: 'assignment' },
     ]
   },
@@ -62,7 +63,7 @@ export default function Sidebar({ active, onSelect, collapsed, onToggle }) {
   const [expanded, setExpanded] = useState(() => {
     const inRules = ['createrule', 'rulegroups', 'ruleview', 'ruleguide'].includes(active)
     const inSec = ['securityhub', 'windowsevent'].includes(active)
-    const inCompliance = ['compliance', 'pcidss', 'hipaa', 'gdpr', 'mitreattack'].includes(active)
+    const inCompliance = ['compliance', 'pcidss', 'hipaa', 'gdpr', 'tscsoc2', 'mitreattack'].includes(active)
     if (inSec) return 'securityhub'
     if (inRules) return 'rules'
     if (inCompliance) return 'compliance'
@@ -71,7 +72,7 @@ export default function Sidebar({ active, onSelect, collapsed, onToggle }) {
 
   const isInRules = ['createrule', 'rulegroups', 'ruleview', 'ruleguide'].includes(active)
   const isInSecurity = ['securityhub', 'windowsevent'].includes(active)
-  const isInCompliance = ['compliance', 'pcidss', 'hipaa', 'gdpr', 'mitreattack'].includes(active)
+  const isInCompliance = ['compliance', 'pcidss', 'hipaa', 'gdpr', 'tscsoc2', 'mitreattack'].includes(active)
 
   return (
     <motion.aside

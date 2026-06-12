@@ -35,4 +35,7 @@
   .badge-medium { @apply bg-[#fefce8] text-[#ca8a04] dark:bg-[#ca8a041a] dark:text-[#fde047]; }
   .badge-low { @apply bg-[#f0fdf4] text-[#16a34a] dark:bg-[#16a34a1a] dark:text-[#86efac]; }
   .badge-info { @apply bg-[#eff6ff] text-[#2563eb] dark:bg-[#3b82f61a] dark:text-[#93c5fd]; }
+  .cal-time-list::-webkit-scrollbar { width: 3px; }
+  .cal-time-list::-webkit-scrollbar-thumb { background: #d1d9e0; border-radius: 2px; }
+  .dark .cal-time-list::-webkit-scrollbar-thumb { background: #2a3042; }
 }

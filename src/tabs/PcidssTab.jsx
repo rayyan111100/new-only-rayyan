@@ -3,16 +3,12 @@ import { motion } from 'framer-motion'
 import { api } from '../api'
 import { useApp } from '../context/AppContext'
 import { parseDateStr } from '../utils'
+import DateRangePicker from '../components/DateRangePicker'
+import AssetSidebar from '../components/AssetSidebar'
 import { PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 const SEV_COLORS = { Critical: '#f85149', High: '#e8681a', Medium: '#d29922', Low: '#3fb950' }
 const SEV_ORDER = ['Critical', 'High', 'Medium', 'Low']
-const QUICK_TIMES = [
-  { label: '24h', value: 'now-24h' },
-  { label: '7d', value: 'now-7d' },
-  { label: '30d', value: 'now-30d' },
-  { label: '90d', value: 'now-90d' }
-]
 
 function toSev(level) {
   const n = parseInt(level) || 0
@@ -56,22 +52,23 @@ const CustomTip = ({ active, payload, label }) => {
 }
 
 export default function PcidssTab() {
-  const { isDark } = useApp()
-  const [timeRange, setTimeRange] = useState('now-7d')
+  const { isDark, startDate, endDate } = useApp()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [modal, setModal] = useState(null)
+  const [assetSidebarOpen, setAssetSidebarOpen] = useState(false)
+  const [severityFilter, setSeverityFilter] = useState(null)
   const intervalRef = useRef(null)
   const [logPage, setLogPage] = useState(1)
   const LOG_PAGE_SIZE = 5
   const totalLogPages = Math.ceil(LOG_DATA.length / LOG_PAGE_SIZE)
 
   const timeParams = useCallback(() => {
-    const sd = parseDateStr(timeRange).toISOString()
-    const ed = parseDateStr('now').toISOString()
+    const sd = parseDateStr(startDate).toISOString()
+    const ed = parseDateStr(endDate).toISOString()
     return { start_date: sd, end_date: ed }
-  }, [timeRange])
+  }, [startDate, endDate])
 
   const fetchData = useCallback(async () => {
     try {
@@ -104,6 +101,8 @@ export default function PcidssTab() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [fetchData])
 
+  useEffect(() => { setLogPage(1) }, [severityFilter])
+
   const totalEvents = data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
   const maxAgent = data ? Math.max(...data.topAgents.map(a => a.doc_count || 0), 1) : 1
   const maxControl = Math.max(...PCI_CONTROLS.map(c => {
@@ -126,7 +125,15 @@ export default function PcidssTab() {
   }
 
   const closeModal = () => setModal(null)
-  const openModal = (k) => setModal(k)
+  const openModal = (k) => {
+    if (k === 'm-assets') { setAssetSidebarOpen(true); return }
+    const sevMap = { 'm-crit': 'Critical', 'm-high': 'High' }
+    if (sevMap[k]) {
+      setSeverityFilter(prev => prev === sevMap[k] ? null : sevMap[k])
+      return
+    }
+    setModal(k)
+  }
 
   const modalContent = () => {
     if (!modal) return null
@@ -201,26 +208,33 @@ export default function PcidssTab() {
           <div className="text-xl font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">PCI-DSS Compliance</div>
         </div>
         <div className="flex items-center gap-2 mt-1.5">
-          <div className="flex items-center gap-1.5 text-[11px] text-[#8b949e] bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-md px-3 py-1.5 cursor-pointer font-medium">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-            May 18 - May 24
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          </div>
-          <div className="flex gap-1">
-            {QUICK_TIMES.map(qt => (
-              <button key={qt.value} onClick={() => setTimeRange(qt.value)}
-                className={`px-2 py-1 text-[10px] font-medium rounded border transition-colors ${
-                  timeRange === qt.value
-                    ? 'bg-[#e8681a]/10 text-[#e8681a] border-[#e8681a]/30'
-                    : 'bg-transparent text-[#8b949e] border-transparent hover:bg-[#21262d]'
-                }`}>{qt.label}</button>
-            ))}
-          </div>
+          <DateRangePicker />
           <button className="p-1.5 rounded border border-transparent hover:bg-[#21262d] text-[#8b949e] hover:text-[#e8681a] transition-colors">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           </button>
         </div>
       </div>
+
+      {severityFilter && (
+        <div className="flex items-center gap-2 mb-2.5 px-1">
+          <div className="flex items-center gap-1.5 text-xs text-[#8b949e]">
+            <span>Filtered by:</span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+              style={{
+                background: severityFilter === 'Critical' ? '#e0525218' : '#e8893a18',
+                color: severityFilter === 'Critical' ? '#ff6b6b' : '#e8893a'
+              }}
+            >
+              {severityFilter}
+              <button onClick={() => setSeverityFilter(null)} className="hover:opacity-70">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Metric Cards */}
       <div className="grid grid-cols-6 gap-2.5 mb-3">
@@ -233,7 +247,11 @@ export default function PcidssTab() {
           { key: 'm-top-ctrl', label: 'Top Triggered Control', val: PCI_CONTROLS[0].req, sub: PCI_CONTROLS[0].desc, icon: 'award', iconBg: '#e8681a18', iconColor: '#e8681a', valColor: '#e8681a', valSize: 'text-base' },
         ].map(card => (
           <div key={card.key} onClick={() => openModal(card.key)}
-            className="bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-xl p-3 cursor-pointer hover:border-[#e8681a]/50 dark:hover:border-[#e8681a]/60 transition-all duration-300 hover:-translate-y-[3px] shadow-lg hover:shadow-[0_8px_25px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)]"
+            className={`bg-white dark:bg-[#161b22] border rounded-xl p-3 cursor-pointer transition-all duration-300 hover:-translate-y-[3px] shadow-lg hover:shadow-[0_8px_25px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] ${
+              (card.key === 'm-crit' && severityFilter === 'Critical') || (card.key === 'm-high' && severityFilter === 'High')
+                ? 'border-[#e8681a] dark:border-[#e8681a] ring-1 ring-[#e8681a]/30'
+                : 'border-[#d0d7de] dark:border-[#30363d] hover:border-[#e8681a]/50 dark:hover:border-[#e8681a]/60'
+            }`}
             style={{}}>
             <div className="float-right w-[34px] h-[34px] rounded-lg flex items-center justify-center text-lg" style={{ background: card.iconBg }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={card.iconColor} strokeWidth="2">
@@ -431,7 +449,9 @@ export default function PcidssTab() {
             </tr>
           </thead>
           <tbody>
-            {LOG_DATA.slice((logPage - 1) * LOG_PAGE_SIZE, logPage * LOG_PAGE_SIZE).map((l, i) => (
+            {(() => {
+              const filtered = severityFilter ? LOG_DATA.filter(l => l.sev === severityFilter) : LOG_DATA
+              return filtered.slice((logPage - 1) * LOG_PAGE_SIZE, logPage * LOG_PAGE_SIZE).map((l, i) => (
               <tr key={i} onClick={() => openModal('log-' + ((logPage - 1) * LOG_PAGE_SIZE + i))}
                 className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
                 <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{l.time}</td>
@@ -444,7 +464,11 @@ export default function PcidssTab() {
                 <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e] text-[9px] overflow-hidden text-ellipsis whitespace-nowrap">{l.file}</td>
                 <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] text-[9px] font-medium overflow-hidden text-ellipsis whitespace-nowrap">{l.groups}</td>
               </tr>
-            ))}
+            ))
+          })()}
+          {severityFilter && LOG_DATA.filter(l => l.sev === severityFilter).length === 0 && (
+            <tr><td colSpan={9} className="text-center py-4 text-xs text-[#8b949e]">No {severityFilter.toLowerCase()} logs found</td></tr>
+          )}
           </tbody>
         </table>
         <div className="flex items-center justify-between mt-2.5 flex-wrap gap-2">
@@ -475,6 +499,12 @@ export default function PcidssTab() {
 
       <div className="text-center text-[10px] text-[#8b949e] py-3 border-t border-[#d0d7de] dark:border-[#30363d]">&copy; 2025 UniShield 360. All rights reserved.</div>
 
+      <AssetSidebar
+        open={assetSidebarOpen}
+        onClose={() => setAssetSidebarOpen(false)}
+        agents={data?.topAgents || []}
+        title="Monitored Assets"
+      />
       {modalContent()}
     </motion.div>
   )
