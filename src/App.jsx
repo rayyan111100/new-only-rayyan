@@ -64,7 +64,7 @@ function DashboardShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
   const TabComponent = TABS[tab] || DiscoverTab
-  const showQueryBar = tab === 'discover' || tab === 'search' || tab === 'ruleview'
+  const showQueryBar = true
   const showFields = tab === 'discover' || tab === 'search' || tab === 'ruleview' || tab === 'analytics'
 
   useEffect(() => {

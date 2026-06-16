@@ -3,6 +3,7 @@ import { api, apiPost } from '../api'
 import { applyClientFilters, buildDqlText, parseDateStr, COMMON_FIELDS, inferFieldTypes, extractTotal, extractResults } from '../utils'
 import { getRule, getAllRules, updateRule, deleteRule, toggleRuleEnabled } from '../services/ruleStorage'
 import { addRulesToGroup, moveRulesToGroup, removeRulesFromGroup } from '../services/ruleGroupManager'
+import useRealtime from '../hooks/useRealtime'
 
 const AppContext = createContext()
 
@@ -42,6 +43,43 @@ export function AppProvider({ children }) {
   const [page, setPageState] = useState(1)
   const pageRef = useRef(1)
   const setPage = useCallback(n => { pageRef.current = n; setPageState(n) }, [])
+  const { connected: realtimeConnected, matches: realtimeMatches, stats: realtimeStats, clearMatches: realtimeClearMatches } = useRealtime()
+
+  // Merge real-time WebSocket alerts into results when on discover tab
+  const realtimeMergeKey = useRef(0)
+  useEffect(() => {
+    const msgs = realtimeMatches
+    if (msgs.length === 0 || tab !== 'discover') return
+    const newDocs = msgs.filter(m => m.doc).map(m => m.doc)
+    if (newDocs.length === 0) return
+    const key = newDocs[0]?.['@timestamp'] || newDocs[0]?.timestamp || ''
+    if (key === realtimeMergeKey.current) return
+    realtimeMergeKey.current = key
+    setResults(prev => {
+      const existingIds = new Set(prev.map(r => r._id || r.id || r['@timestamp']))
+      const unique = newDocs.filter(d => !existingIds.has(d._id || d.id || d['@timestamp']))
+      if (unique.length === 0) return prev
+      return [...unique, ...prev].slice(0, 500)
+    })
+    setTotal(prev => prev + 1)
+  }, [realtimeMatches, tab])
+
+  // Auto-refresh every 10s on discover tab for continuous real-time data
+  const autoRefreshRef = useRef(null)
+  useEffect(() => {
+    if (tab === 'discover') {
+      autoRefreshRef.current = setInterval(() => {
+        doSearchRef.current({ keepPage: true })
+      }, 10000)
+      return () => {
+        if (autoRefreshRef.current) {
+          clearInterval(autoRefreshRef.current)
+          autoRefreshRef.current = null
+        }
+      }
+    }
+  }, [tab])
+
   const dedupFilters = (arr) => {
     const seen = new Set()
     return arr.filter(f => {
@@ -361,7 +399,8 @@ export function AppProvider({ children }) {
     selectRule, deselectRule,
     selectAllRules, deselectAllRules,
     bulkAddToGroup, bulkMoveToGroup, bulkRemoveFromGroup,
-    bulkDeleteRules, bulkToggleRules
+    bulkDeleteRules, bulkToggleRules,
+    realtimeConnected, realtimeMatches, realtimeStats, realtimeClearMatches
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

@@ -205,7 +205,8 @@ function RuleBadge({ severity, name, groupNames }) {
 }
 
 export default function ResultsTable({ ruleMatches = null, groupMap = null, results: propResults = null, total: propTotal = null, loading: propLoading = null, error: propError = null }) {
-  const { results: ctxResults, total: ctxTotal, browsableTotal, columns, toggleColumn, moveColumn, doSort, sortField, sortOrder, loading: ctxLoading, error: ctxError, isDark, fields, loadFields, filters, index: ctxIndex, limit, page, setPage, doSearch } = useApp()
+  const { results: ctxResults, total: ctxTotal, browsableTotal, columns, toggleColumn, moveColumn, doSort, sortField, sortOrder, loading: ctxLoading, error: ctxError, isDark, fields, loadFields, filters, index: ctxIndex, limit, page, setPage, doSearch, realtimeConnected, realtimeStats } = useApp()
+  const liveCount = realtimeStats?.alertCount || 0
   const index = ctxIndex
   const results = propResults ?? ctxResults
   const total = propTotal ?? ctxTotal
@@ -285,6 +286,10 @@ export default function ResultsTable({ ruleMatches = null, groupMap = null, resu
         <span className="font-mono text-[10px] text-soc-stext/60 dark:text-soc-darkstext/60">{liveTime}</span>
         <span className="text-soc-stext/30 dark:text-soc-darkstext/30">|</span>
         <span><b className="text-soc-text dark:text-soc-darktext">{total.toLocaleString()}</b> results</span>
+        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium ${realtimeConnected ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${realtimeConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+          {realtimeConnected ? `LIVE ${liveCount}` : 'Offline'}
+        </span>
         {browsableTotal && browsableTotal < total && (
           <span className="text-[9px] text-amber-600 dark:text-amber-400">(browsing first {browsableTotal.toLocaleString()})</span>
         )}

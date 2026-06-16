@@ -88,6 +88,15 @@ class RealtimeEngine {
           const decoded = this.de.decodeLog(fullLog)
           const enriched = { ...doc, decoded: decoded.fields, decoded_format: decoded.format }
 
+          // Broadcast every new alert as real-time data (with full doc)
+          this.broadcast({
+            type: 'alert',
+            id: this.alertCount,
+            timestamp: new Date().toISOString(),
+            alertTimestamp: docTs,
+            doc: enriched
+          })
+
           const evalResult = this.re.evaluateAllRules(rules, enriched)
           if (evalResult.matched) {
             if (this.passesThresholds(rules, evalResult, enriched)) {
@@ -100,6 +109,7 @@ class RealtimeEngine {
                 agent: enriched.agent?.name || 'unknown',
                 rule: enriched.rule?.id || '-',
                 decoded_format: decoded.format,
+                doc: enriched,
                 matches: evalResult.matches.map(m => ({
                   ruleId: m.rule.id,
                   ruleName: m.rule.name,
