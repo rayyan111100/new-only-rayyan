@@ -64,29 +64,11 @@ export default function GdprTab() {
   const [error, setError] = useState(null)
   const [modal, setModal] = useState(null)
   const [assetSidebarOpen, setAssetSidebarOpen] = useState(false)
-  const [filters, setFilters] = useState({})
+  const [severityFilter, setSeverityFilter] = useState(null)
   const intervalRef = useRef(null)
   const [logPage, setLogPage] = useState(1)
   const LOG_PAGE_SIZE = 5
-
-  const setFilter = (key, value) => {
-    setFilters(prev => {
-      if (prev[key] === value) {
-        const next = { ...prev }
-        delete next[key]
-        return next
-      }
-      return { ...prev, [key]: value }
-    })
-  }
-
-  const clearFilter = (key) => setFilters(prev => {
-    const next = { ...prev }
-    delete next[key]
-    return next
-  })
-
-  const activeFilters = Object.keys(filters)
+  const totalLogPages = Math.ceil(LOG_DATA.length / LOG_PAGE_SIZE)
 
   const timeParams = useCallback(() => {
     const sd = parseDateStr(startDate).toISOString()
@@ -125,16 +107,7 @@ export default function GdprTab() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [fetchData])
 
-  useEffect(() => { setLogPage(1) }, [activeFilters.join()])
-
-  const filteredLogs = LOG_DATA.filter(l => {
-    if (filters.severity && l.sev !== filters.severity) return false
-    if (filters.agent && l.agent !== filters.agent) return false
-    if (filters.rule && l.rule !== filters.rule) return false
-    return true
-  })
-
-  const totalLogPages = Math.ceil(filteredLogs.length / LOG_PAGE_SIZE)
+  useEffect(() => { setLogPage(1) }, [severityFilter])
 
   const totalEvents = data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 192
   const maxAgent = data ? Math.max(...data.topAgents.map(a => a.doc_count || 0), 1) : 74
@@ -157,20 +130,14 @@ export default function GdprTab() {
     return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: bg, color: tx }}>{s}</span>
   }
 
-  const FILTER_STYLES = {
-    severity: (v) => ({
-      bg: v === 'Critical' ? '#e0525218' : v === 'High' ? '#e8893a18' : v === 'Medium' ? '#d2992218' : '#3fb95018',
-      color: v === 'Critical' ? '#ff6b6b' : v === 'High' ? '#e8893a' : v === 'Medium' ? '#d29922' : '#3fb950'
-    }),
-    agent: () => ({ bg: '#58a6ff1a', color: '#58a6ff' }),
-    rule: () => ({ bg: '#e8681a18', color: '#e8681a' })
-  }
-
   const closeModal = () => setModal(null)
   const openModal = (k) => {
     if (k === 'm-assets') { setAssetSidebarOpen(true); return }
-    const sevMap = { 'm-crit': 'Critical', 'm-high': 'High', 'm-med': 'Medium' }
-    if (sevMap[k]) { setFilter('severity', sevMap[k]); return }
+    const sevMap = { 'm-crit': 'Critical', 'm-high': 'High' }
+    if (sevMap[k]) {
+      setSeverityFilter(prev => prev === sevMap[k] ? null : sevMap[k])
+      return
+    }
     setModal(k)
   }
 
@@ -185,7 +152,7 @@ export default function GdprTab() {
 
     if (mKey.startsWith('log-')) {
       const idx = parseInt(mKey.replace('log-', ''))
-      const l = filteredLogs[idx]
+      const l = LOG_DATA[idx]
       if (!l) return null
       return <LogDetailModal log={l} onClose={closeModal} label="GDPR Log" />
     }
@@ -303,22 +270,24 @@ export default function GdprTab() {
         </div>
       </div>
 
-      {activeFilters.length > 0 && (
-        <div className="flex items-center gap-2 mb-2.5 px-1 flex-wrap">
-          <span className="text-xs text-[#8b949e]">Filtered by:</span>
-          {Object.entries(filters).map(([key, val]) => {
-            const st = FILTER_STYLES[key]?.(val) || { bg: '#e8681a18', color: '#e8681a' }
-            return (
-              <span key={key} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: st.bg, color: st.color }}>
-                {key === 'severity' ? '' : key + ': '}{val}
-                <button onClick={() => clearFilter(key)} className="hover:opacity-70">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                  </svg>
-                </button>
-              </span>
-            )
-          })}
+      {severityFilter && (
+        <div className="flex items-center gap-2 mb-2.5 px-1">
+          <div className="flex items-center gap-1.5 text-xs text-[#8b949e]">
+            <span>Filtered by:</span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+              style={{
+                background: severityFilter === 'Critical' ? '#e0525218' : '#e8893a18',
+                color: severityFilter === 'Critical' ? '#ff6b6b' : '#e8893a'
+              }}
+            >
+              {severityFilter}
+              <button onClick={() => setSeverityFilter(null)} className="hover:opacity-70">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </span>
+          </div>
         </div>
       )}
 
@@ -328,13 +297,13 @@ export default function GdprTab() {
           { key: 'm-events', label: 'GDPR Events', val: totalEvents.toLocaleString(), change: '18%', up: true, icon: 'certificate', iconBg: '#a371f71a', iconColor: '#a371f7' },
           { key: 'm-crit', label: 'Critical Violations', val: (data?.severity?.Critical || 8).toLocaleString(), change: '14%', up: true, icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b' },
           { key: 'm-high', label: 'High Severity Violations', val: (data?.severity?.High || 29).toLocaleString(), change: '16%', up: true, icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a' },
-          { key: 'm-med', label: 'Medium Severity Violations', val: (data?.severity?.Medium || 62).toLocaleString(), change: '8%', up: false, icon: 'alert-circle', iconBg: '#d2992218', iconColor: '#d29922', valColor: '#d29922' },
           { key: 'm-assets', label: 'Monitored Assets', val: data?.topAgents?.length || 5, sub: 'Active agents', icon: 'device-desktop', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
           { key: 'm-articles', label: 'Articles Violated', val: GDPR_ARTICLES.length, sub: 'Unique GDPR articles', icon: 'list-check', iconBg: '#3fb95018', iconColor: '#3fb950' },
+          { key: 'm-top-art', label: 'Most Active Article', val: GDPR_ARTICLES[0].art, sub: GDPR_ARTICLES[0].desc + ' · 42 Events', icon: 'award', iconBg: '#e8681a18', iconColor: '#e8681a', valColor: '#e8681a', valSize: 'text-base' },
         ].map(card => (
           <div key={card.key} onClick={() => openModal(card.key)}
             className={`bg-white dark:bg-[#161b22] border rounded-xl p-3 cursor-pointer transition-all duration-300 hover:-translate-y-[3px] shadow-lg hover:shadow-[0_8px_25px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] ${
-              (card.key === 'm-crit' && filters.severity === 'Critical') || (card.key === 'm-high' && filters.severity === 'High') || (card.key === 'm-med' && filters.severity === 'Medium')
+              (card.key === 'm-crit' && severityFilter === 'Critical') || (card.key === 'm-high' && severityFilter === 'High')
                 ? 'border-[#e8681a] dark:border-[#e8681a] ring-1 ring-[#e8681a]/30'
                 : 'border-[#d0d7de] dark:border-[#30363d] hover:border-[#e8681a]/50 dark:hover:border-[#e8681a]/60'
             }`}>
@@ -345,6 +314,7 @@ export default function GdprTab() {
                 {card.icon === 'alert-circle' && <><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>}
                 {card.icon === 'device-desktop' && <><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></>}
                 {card.icon === 'list-check' && <><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><polyline points="3 6 4 7 6 5"/><polyline points="3 12 4 13 6 11"/><polyline points="3 18 4 19 6 17"/></>}
+                {card.icon === 'award' && <><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></>}
               </svg>
             </div>
             <div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-1 clear-both">{card.label}</div>
@@ -387,8 +357,7 @@ export default function GdprTab() {
             {SEV_ORDER.filter(s => sevDonut.find(x => x.name === s)?.value > 0).map(s => {
               const v = sevDonut.find(x => x.name === s)?.value || 0
               return (
-                <span key={s} onClick={() => setFilter('severity', s)}
-                  className={`flex items-center gap-1.5 text-[11px] cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] ${filters.severity === s ? 'ring-1 ring-[#e8681a]/30 bg-[#e8681a]/5' : ''} ${filters.severity && filters.severity !== s ? 'opacity-40' : ''}`}>
+                <span key={s} className="flex items-center gap-1.5 text-[11px] text-[#36454f] dark:text-[#c9d1d9] font-medium">
                   <span className="w-[10px] h-[10px] rounded flex-shrink-0" style={{ background: SEV_COLORS[s] }} />
                   {s} <span className="text-[#8b949e]">{v} ({Math.round((v / (totalEvents || 1)) * 100)}%)</span>
                 </span>
@@ -400,11 +369,7 @@ export default function GdprTab() {
               <ResponsiveContainer width="100%" height={130}>
                 <PieChart>
                   <Pie data={sevDonut} cx="50%" cy="50%" innerRadius={40} outerRadius={58} dataKey="value" stroke={isDark ? '#161b22' : '#ffffff'} strokeWidth={3}>
-                    {sevDonut.map((e, i) => (
-                      <Cell key={i} fill={e.color} style={{ cursor: 'pointer' }}
-                        onClick={() => setFilter('severity', e.name)}
-                      />
-                    ))}
+                    {sevDonut.map((e, i) => <Cell key={i} fill={e.color} />)}
                   </Pie>
                   <Tooltip content={<CustomTip />} />
                 </PieChart>
@@ -484,8 +449,7 @@ export default function GdprTab() {
                 const cnt = a.doc_count || a.events || 0
                 const pct = (cnt / maxAgent) * 100
                 return (
-                  <tr key={name} onClick={() => setFilter('agent', name)}
-                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${filters.agent === name ? 'bg-[#58a6ff]/5 ring-1 ring-inset ring-[#58a6ff]/30' : ''}`}>
+                  <tr key={name} onClick={() => openModal('ag-' + name)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{name}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
@@ -518,8 +482,7 @@ export default function GdprTab() {
                 { id: '571', desc: 'User login failed.', count: 16 },
                 { id: '562', desc: 'User authentication success.', count: 12 },
               ].map((r, i) => (
-                <tr key={r.id} onClick={() => setFilter('rule', r.id)}
-                  className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${filters.rule === r.id ? 'bg-[#e8681a]/5 ring-1 ring-inset ring-[#e8681a]/30' : ''}`}>
+                <tr key={r.id} onClick={() => openModal('rule-' + r.id)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
                   <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
                   <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-bold">{r.id}</td>
                   <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">{r.desc}</td>
@@ -556,45 +519,36 @@ export default function GdprTab() {
             </tr>
           </thead>
           <tbody>
-            {filteredLogs.slice((logPage - 1) * LOG_PAGE_SIZE, logPage * LOG_PAGE_SIZE).map((l, i) => {
+            {(() => {
+              const filtered = severityFilter ? LOG_DATA.filter(l => l.sev === severityFilter) : LOG_DATA
+              return filtered.slice((logPage - 1) * LOG_PAGE_SIZE, logPage * LOG_PAGE_SIZE).map((l, i) => {
               const idx = (logPage - 1) * LOG_PAGE_SIZE + i
               return (
                 <tr key={idx} onClick={() => openModal('log-' + idx)}
                   className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
                   <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{l.time}</td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
-                    <button onClick={(e) => { e.stopPropagation(); setFilter('agent', l.agent) }}
-                      className={`font-semibold text-left hover:underline ${filters.agent === l.agent ? 'text-[#58a6ff]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
-                      {l.agent}
-                    </button>
-                  </td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
-                    <button onClick={(e) => { e.stopPropagation(); setFilter('rule', l.rule) }}
-                      className={`font-bold text-left hover:underline ${filters.rule === l.rule ? 'text-[#e8681a] underline' : 'text-[#e8681a]'}`}>
-                      {l.rule}
-                    </button>
-                  </td>
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{l.agent}</td>
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-bold text-[#e8681a]">{l.rule}</td>
                   <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#e8681a]">{l.art}</td>
                   <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9] overflow-hidden text-ellipsis whitespace-nowrap">{l.desc}</td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
-                    <button onClick={(e) => { e.stopPropagation(); setFilter('severity', l.sev) }}><SevBadge s={l.sev} /></button>
-                  </td>
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]"><SevBadge s={l.sev} /></td>
                   <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-medium">{l.event}</td>
                   <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e] text-[9px] overflow-hidden text-ellipsis whitespace-nowrap">{l.file}</td>
                   <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] text-[9px] font-medium overflow-hidden text-ellipsis whitespace-nowrap">{l.groups}</td>
                 </tr>
               )
-            })}
-            {filteredLogs.length === 0 && (
-              <tr><td colSpan={9} className="text-center py-4 text-xs text-[#8b949e">No matching logs found</td></tr>
-            )}
+            })
+          })()}
+          {severityFilter && LOG_DATA.filter(l => l.sev === severityFilter).length === 0 && (
+            <tr><td colSpan={9} className="text-center py-4 text-xs text-[#8b949e]">No {severityFilter.toLowerCase()} logs found</td></tr>
+          )}
           </tbody>
         </table>
         <div className="flex items-center justify-between mt-2.5 flex-wrap gap-2">
           <div className="text-[#e8681a] text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
             onClick={() => openModal('all-logs')}>View all logs <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
           <div className="flex items-center gap-1 text-[11px] text-[#8b949e]">
-            <span className="mr-1">{(logPage - 1) * LOG_PAGE_SIZE + 1}-{Math.min(logPage * LOG_PAGE_SIZE, filteredLogs.length)} of {filteredLogs.length}</span>
+            <span className="mr-1">{(logPage - 1) * LOG_PAGE_SIZE + 1}-{Math.min(logPage * LOG_PAGE_SIZE, LOG_DATA.length)} of {LOG_DATA.length}</span>
             <button onClick={() => setLogPage(p => Math.max(1, p - 1))} disabled={logPage === 1}
               className="bg-transparent border border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>

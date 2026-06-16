@@ -32,6 +32,17 @@ function toSev(level) {
   return 'Low'
 }
 
+function groupSev(buckets) {
+  const map = {}
+  for (const b of buckets) {
+    const s = toSev(b.key)
+    map[s] = (map[s] || 0) + b.doc_count
+  }
+  return map
+}
+
+
+
 export default function ComplianceTab() {
   const { isDark, startDate, endDate } = useApp()
   const [data, setData] = useState(null)
@@ -40,27 +51,8 @@ export default function ComplianceTab() {
   const [lastUpdated, setLastUpdated] = useState(new Date())
   const [modal, setModal] = useState(null)
   const [assetSidebarOpen, setAssetSidebarOpen] = useState(false)
-  const [filters, setFilters] = useState({})
+  const [severityFilter, setSeverityFilter] = useState(null)
   const intervalRef = useRef(null)
-
-  const setFilter = (key, value) => {
-    setFilters(prev => {
-      if (prev[key] === value) {
-        const next = { ...prev }
-        delete next[key]
-        return next
-      }
-      return { ...prev, [key]: value }
-    })
-  }
-
-  const clearFilter = (key) => setFilters(prev => {
-    const next = { ...prev }
-    delete next[key]
-    return next
-  })
-
-  const activeFilters = Object.keys(filters)
 
   const timeParams = useCallback(() => {
     const sd = parseDateStr(startDate).toISOString()
@@ -111,21 +103,13 @@ export default function ComplianceTab() {
 
   const filteredRecent = useMemo(() => {
     const all = data?.recent || []
+    if (!severityFilter) return all
     return all.filter(r => {
       const level = parseInt(r.rule?.level || r.level || 0)
       const sev = toSev(level)
-      if (filters.severity && sev !== filters.severity) return false
-      if (filters.agent) {
-        const agent = r.agent?.name || r.agent || ''
-        if (agent !== filters.agent) return false
-      }
-      if (filters.rule) {
-        const rule = r.rule?.id || r.rule || ''
-        if (rule !== filters.rule) return false
-      }
-      return true
+      return sev === severityFilter
     })
-  }, [data?.recent, filters])
+  }, [data?.recent, severityFilter])
 
   const SevBadge = ({ s }) => {
     const BG = { Critical: '#4a0a0e', High: '#3d1a00', Medium: '#2d1f00', Low: '#052e16' }
@@ -141,18 +125,11 @@ export default function ComplianceTab() {
   const openModal = (k) => {
     if (k === 'm-assets') { setAssetSidebarOpen(true); return }
     const sevMap = { 'm-crit': 'Critical', 'm-high': 'High', 'm-med': 'Medium' }
-    if (sevMap[k]) { setFilter('severity', sevMap[k]); return }
+    if (sevMap[k]) {
+      setSeverityFilter(prev => prev === sevMap[k] ? null : sevMap[k])
+      return
+    }
     setModal(k)
-  }
-
-  const FILTER_STYLES = {
-    severity: (v) => ({
-      bg: v === 'Critical' ? '#e0525218' : v === 'High' ? '#e8893a18' : v === 'Medium' ? '#d2992218' : '#3fb95018',
-      color: v === 'Critical' ? '#ff6b6b' : v === 'High' ? '#e8893a' : v === 'Medium' ? '#d29922' : '#3fb950'
-    }),
-    framework: () => ({ bg: '#a371f71a', color: '#a371f7' }),
-    agent: () => ({ bg: '#58a6ff1a', color: '#58a6ff' }),
-    rule: () => ({ bg: '#e8681a18', color: '#e8681a' })
   }
 
   const modalContent = () => {
@@ -178,6 +155,11 @@ export default function ComplianceTab() {
 
     const md = {
       'm-events': { t: 'Compliance Events', b: `Total compliance events across all frameworks: ${totalEvents.toLocaleString()}. Top framework: ${data?.frameworkCounts?.[0]?.framework || 'N/A'} with ${data?.frameworkCounts?.[0]?.count || 0} events.` },
+      'm-crit': { t: 'Critical Violations', b: `Critical violations: ${data?.severity?.Critical || 0}. These require immediate remediation.` },
+      'm-high': { t: 'High Severity Violations', b: `High severity violations: ${data?.severity?.High || 0}.` },
+      'm-med': { t: 'Medium Severity Violations', b: `Medium severity violations: ${data?.severity?.Medium || 0}.` },
+      'm-assets': { t: 'Monitored Assets', b: `${data?.topAgents?.length || 0} active agents generating compliance events.` },
+      'm-frameworks': { t: 'Active Frameworks', b: `${FRAMEWORKS.length} active frameworks: ${FRAMEWORKS.join(', ')}` }
     }
     const d = md[mKey]
     if (!d) return null
@@ -213,22 +195,24 @@ export default function ComplianceTab() {
         </div>
       </div>
 
-      {activeFilters.length > 0 && (
-        <div className="flex items-center gap-2 mb-2.5 px-1 flex-wrap">
-          <span className="text-xs text-[#8b949e]">Filtered by:</span>
-          {Object.entries(filters).map(([key, val]) => {
-            const st = FILTER_STYLES[key]?.(val) || { bg: '#e8681a18', color: '#e8681a' }
-            return (
-              <span key={key} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: st.bg, color: st.color }}>
-                {key === 'severity' ? '' : key + ': '}{val}
-                <button onClick={() => clearFilter(key)} className="hover:opacity-70">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                  </svg>
-                </button>
-              </span>
-            )
-          })}
+      {severityFilter && (
+        <div className="flex items-center gap-2 mb-2.5 px-1">
+          <div className="flex items-center gap-1.5 text-xs text-[#8b949e]">
+            <span>Filtered by:</span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+              style={{
+                background: severityFilter === 'Critical' ? '#e0525218' : severityFilter === 'High' ? '#e8893a18' : '#d2992218',
+                color: severityFilter === 'Critical' ? '#ff6b6b' : severityFilter === 'High' ? '#e8893a' : '#d29922'
+              }}
+            >
+              {severityFilter}
+              <button onClick={() => setSeverityFilter(null)} className="hover:opacity-70">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </span>
+          </div>
         </div>
       )}
 
@@ -244,7 +228,7 @@ export default function ComplianceTab() {
         ].map(card => (
           <div key={card.key} onClick={() => openModal(card.key)}
               className={`bg-white dark:bg-[#0d1117] border rounded-xl p-3 cursor-pointer transition-all duration-300 hover:-translate-y-[3px] shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] hover:shadow-[0_8px_25px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] ${
-                (card.key === 'm-crit' && filters.severity === 'Critical') || (card.key === 'm-high' && filters.severity === 'High') || (card.key === 'm-med' && filters.severity === 'Medium')
+                (card.key === 'm-crit' && severityFilter === 'Critical') || (card.key === 'm-high' && severityFilter === 'High') || (card.key === 'm-med' && severityFilter === 'Medium')
                   ? 'border-[#e8681a] dark:border-[#e8681a] ring-1 ring-[#e8681a]/30'
                   : 'border-[#d0d7de] dark:border-[#1d2432] hover:border-[#e8681a]/50 dark:hover:border-[#e8681a]/60'
               }`}
@@ -272,8 +256,7 @@ export default function ComplianceTab() {
         <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Framework Event Distribution</div>
           {data?.frameworkCounts?.map(fw => (
-            <div key={fw.framework} onClick={() => setFilter('framework', fw.framework)}
-              className={`flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] cursor-pointer text-[11px] ${filters.framework === fw.framework ? 'bg-[#a371f71a] dark:bg-[#a371f71a] ring-1 ring-[#a371f7]/30' : ''}`}>
+            <div key={fw.framework} className="flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] cursor-pointer text-[11px]">
               <span className="w-[90px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0">{fw.framework}</span>
               <div className="flex-1 h-2 bg-[#d0d7de] dark:bg-[#1d2432] rounded-full overflow-hidden">
                 <div className="h-full rounded-full" style={{ width: `${(fw.count / maxFw) * 100}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
@@ -292,8 +275,7 @@ export default function ComplianceTab() {
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2">Severity Distribution</div>
           <div className="grid grid-cols-2 gap-1 mb-2">
             {SEV_ORDER.filter(s => (data?.severity?.[s] || 0) > 0).map(s => (
-              <span key={s} onClick={() => setFilter('severity', s)}
-                className={`flex items-center gap-1.5 text-[11px] cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] ${filters.severity === s ? 'ring-1 ring-[#e8681a]/30 bg-[#e8681a]/5' : ''} ${filters.severity && filters.severity !== s ? 'opacity-40' : ''}`}>
+              <span key={s} className="flex items-center gap-1.5 text-[11px] text-[#36454f] dark:text-[#c9d1d9] font-medium">
                 <span className="w-[10px] h-[10px] rounded flex-shrink-0" style={{ background: SEV_COLORS[s] }} />
                 {s} <span className="text-[#8b949e]">{data?.severity?.[s] || 0} ({Math.round(((data?.severity?.[s] || 0) / (totalEvents || 1)) * 100)}%)</span>
               </span>
@@ -304,12 +286,7 @@ export default function ComplianceTab() {
               <ResponsiveContainer width="100%" height={130}>
                 <PieChart>
                   <Pie data={sevDonut} cx="50%" cy="50%" innerRadius={40} outerRadius={58} dataKey="value" stroke={isDark ? '#0d1117' : '#ffffff'} strokeWidth={3}>
-                    {sevDonut.map((e, i) => (
-                      <Cell key={i} fill={e.color} style={{ cursor: 'pointer' }}
-                        onClick={() => setFilter('severity', e.name)}
-                        onMouseEnter={(d) => {}}
-                      />
-                    ))}
+                    {sevDonut.map((e, i) => <Cell key={i} fill={e.color} />)}
                   </Pie>
                   <Tooltip content={<CustomTip />} />
                 </PieChart>
@@ -354,19 +331,18 @@ export default function ComplianceTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Framework</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Control</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Events</th></tr></thead>
             <tbody>
-              {(data?.topRules || []).slice(0, 5).map((r, i) => {
-                const ruleId = r.key || r.rule || r.id || ''
-                return (
-                <tr key={r.key || i} onClick={() => setFilter('rule', ruleId)}
-                  className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors ${filters.rule === ruleId ? 'bg-[#e8681a]/5 ring-1 ring-inset ring-[#e8681a]/30' : ''}`}>
+              {(data?.topRules || []).slice(0, 5).map((r, i) => (
+                <tr key={r.key || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
                   <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">{i + 1}</td>
-                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#e8681a] font-semibold">{ruleId}</td>
+                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#e8681a] font-semibold">{r.key || `Rule ${r.rule || r.id}`}</td>
                   <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#36454f] dark:text-[#c9d1d9]">{r.description?.substring(0, 30) || 'Control violation'}</td>
                   <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{r.doc_count || r.count || 0}</td>
                 </tr>
-              )})}
+              ))}
             </tbody>
           </table>
+          <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
+            onClick={() => openModal('all-controls')}>View all controls <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
         </div>
 
         {/* Top Agents */}
@@ -375,13 +351,10 @@ export default function ComplianceTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Agent</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Events</th></tr></thead>
             <tbody>
-              {(data?.topAgents || []).slice(0, 5).map((a, i) => {
-                const agentName = a.key || a.agent || 'Unknown'
-                return (
-                <tr key={a.key || i} onClick={() => setFilter('agent', agentName)}
-                  className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors ${filters.agent === agentName ? 'bg-[#58a6ff]/5 ring-1 ring-inset ring-[#58a6ff]/30' : ''}`}>
+              {(data?.topAgents || []).slice(0, 5).map((a, i) => (
+                <tr key={a.key || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
                   <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">{i + 1}</td>
-                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{agentName}</td>
+                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{a.key || a.agent || 'Unknown'}</td>
                   <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
                     <div className="flex items-center justify-end gap-1.5">
                       <div className="w-[70px] h-[6px] bg-[#d0d7de] dark:bg-[#1d2432] rounded-full overflow-hidden">
@@ -391,9 +364,11 @@ export default function ComplianceTab() {
                     </div>
                   </td>
                 </tr>
-              )})}
+              ))}
             </tbody>
           </table>
+          <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
+            onClick={() => openModal('all-agents')}>View all agents <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
         </div>
 
         {/* Recent Compliance Violations */}
@@ -405,36 +380,24 @@ export default function ComplianceTab() {
                 {filteredRecent.slice(0, 5).map((r, i) => {
                 const level = parseInt(r.rule?.level || r.level || 0)
                 const sev = toSev(level)
-                const agentName = r.agent?.name || r.agent || ''
-                const ruleId = r.rule?.id || r.rule || ''
                 return (
                   <tr key={r._id || i} onClick={() => openModal('log-' + i)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">
                       {r.timestamp ? new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}
                     </td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                      <button onClick={() => setFilter('agent', agentName)}
-                        className={`font-semibold text-left hover:underline ${filters.agent === agentName ? 'text-[#58a6ff]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
-                        {agentName || '--'}
-                      </button>
-                    </td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                      <button onClick={() => setFilter('rule', ruleId)}
-                        className={`font-bold text-left hover:underline ${filters.rule === ruleId ? 'text-[#e8681a] underline' : 'text-[#e8681a]'}`}>
-                        {ruleId || '--'}
-                      </button>
-                    </td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-right">
-                      <button onClick={() => setFilter('severity', sev)}><SevBadge s={sev} /></button>
-                    </td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{r.agent?.name || r.agent || '--'}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#e8681a] font-bold">{r.rule?.id || r.rule || '--'}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-right"><SevBadge s={sev} /></td>
                   </tr>
                 )
               })}
               {filteredRecent.length === 0 && (
-                <tr><td colSpan={4} className="text-center py-4 text-xs text-[#8b949e]">No matching violations found</td></tr>
+                <tr><td colSpan={4} className="text-center py-4 text-xs text-[#8b949e]">No {severityFilter ? severityFilter.toLowerCase() : ''} violations found</td></tr>
               )}
             </tbody>
           </table>
+          <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
+            onClick={() => openModal('all-violations')}>View all violations <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
         </div>
       </div>
 
@@ -460,8 +423,7 @@ export default function ComplianceTab() {
                 Low: Math.round(fw.count * 0.4)
               }
               return (
-                <tr key={fw.framework} onClick={() => setFilter('framework', fw.framework)}
-                  className={`hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] cursor-pointer transition-colors ${filters.framework === fw.framework ? 'bg-[#a371f71a] dark:bg-[#a371f71a]' : ''}`}>
+                <tr key={fw.framework} className="hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] cursor-pointer transition-colors">
                   <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{fw.framework}</td>
                   {SEV_ORDER.map(s => (
                     <td key={s} className="text-center py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
@@ -520,31 +482,18 @@ export default function ComplianceTab() {
           <tbody>
             {filteredRecent.slice(0, 10).map((r, i) => {
               const level = parseInt(r.rule?.level || r.level || 0)
-              const agentName = r.agent?.name || r.agent || ''
-              const ruleId = r.rule?.id || r.rule || ''
-              const sev = toSev(level)
               return (
                 <tr key={r._id || i} onClick={() => openModal('log-' + i)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
                   <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">
                     {r.timestamp ? new Date(r.timestamp).toLocaleString() : '--'}
                   </td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                    <button onClick={() => setFilter('agent', agentName)}
-                      className={`font-semibold text-left hover:underline ${filters.agent === agentName ? 'text-[#58a6ff]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
-                      {agentName || '--'}
-                    </button>
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">
+                    {r.agent?.name || r.agent || '--'}
                   </td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                    <button onClick={() => setFilter('rule', ruleId)}
-                      className={`font-bold text-left hover:underline ${filters.rule === ruleId ? 'text-[#e8681a] underline' : 'text-[#e8681a]'}`}>
-                      {ruleId || '--'}
-                    </button>
-                  </td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                    <button onClick={() => setFilter('severity', sev)}>
-                      {(() => { const lv = level; return <span className="inline-flex items-center justify-center w-[22px] h-[18px] rounded text-[10px] font-semibold" style={{ background: lv >= 7 ? '#450a0a' : lv >= 4 ? '#3d1a00' : '#0d1117', color: lv >= 7 ? '#fca5a5' : lv >= 4 ? '#fdba74' : '#8b949e' }}>{lv}</span> })()}
-                    </button>
-                  </td>
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-bold text-[#e8681a]">{r.rule?.id || r.rule || '--'}</td>
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">{
+                    (() => { const lv = parseInt(r.rule?.level || r.level || 0); return <span className="inline-flex items-center justify-center w-[22px] h-[18px] rounded text-[10px] font-semibold" style={{ background: lv >= 7 ? '#450a0a' : lv >= 4 ? '#3d1a00' : '#0d1117', color: lv >= 7 ? '#fca5a5' : lv >= 4 ? '#fdba74' : '#8b949e' }}>{lv}</span> })()
+                  }</td>
                   <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap text-[#36454f] dark:text-[#c9d1d9]">
                     {r.rule?.description || r.description || '--'}
                   </td>
@@ -558,10 +507,14 @@ export default function ComplianceTab() {
               )
             })}
             {filteredRecent.length === 0 && (
-              <tr><td colSpan={9} className="text-center py-4 text-xs text-[#8b949e]">No matching logs found</td></tr>
+              <tr><td colSpan={9} className="text-center py-4 text-xs text-[#8b949e]">No {severityFilter ? severityFilter.toLowerCase() : ''} logs found</td></tr>
             )}
           </tbody>
         </table>
+        <div className="flex items-center justify-between mt-2.5 flex-wrap gap-2">
+          <div className="text-[#e8681a] text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
+            onClick={() => openModal('all-logs')}>View all logs <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+        </div>
       </div>
 
       <div className="text-center text-[10px] text-[#8b949e] py-3 border-t border-[#d0d7de] dark:border-[#1d2432]">&copy; 2025 UniShield 360. All rights reserved.</div>
