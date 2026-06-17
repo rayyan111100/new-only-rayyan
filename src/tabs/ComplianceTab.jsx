@@ -18,10 +18,10 @@ const QUICK_TIMES = [
 const CustomTip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-white dark:bg-[#1a1d27] border border-[#e5e7eb] dark:border-[#2d3140] rounded-lg px-3 py-2 text-xs shadow-xl">
-      <p className="text-[#9ca3af] dark:text-[#6b7280] mb-1">{label}</p>
+    <div className="bg-white dark:bg-[#0d1117] border border-[#e5e7eb] dark:border-[#2d3140] rounded-lg px-3 py-2 text-xs shadow-xl">
+      <p className="text-[#9ca3af] dark:text-[#8b949e] mb-1">{label}</p>
       {payload.map((p, i) => (
-        <p key={i} style={{ color: p.color }}>{p.name}: <span className="font-semibold text-[#1a1c23] dark:text-white">{p.value?.toLocaleString() || p.value}</span></p>
+        <p key={i} style={{ color: p.color }}>{p.name}: <span className="font-semibold text-[#1a1c23] dark:text-[#f0f6fc]">{p.value?.toLocaleString() || p.value}</span></p>
       ))}
     </div>
   )
@@ -112,8 +112,8 @@ export default function ComplianceTab() {
   }))
 
   const SevBadge = ({ s }) => {
-    const BG = { Critical: '#450a0a', High: '#3d1a00', Medium: '#2d1f00', Low: '#052e16' }
-    const TXT = { Critical: '#fca5a5', High: '#fdba74', Medium: '#fde68a', Low: '#86efac' }
+    const BG = { Critical: '#4a0a0e', High: '#3d1a00', Medium: '#2d1f00', Low: '#052e16' }
+    const TXT = { Critical: '#ff8a8a', High: '#ffbe7a', Medium: '#fde68a', Low: '#86efac' }
     const LIGHT_BG = { Critical: '#fee2e2', High: '#ffedd5', Medium: '#fef9c3', Low: '#dcfce7' }
     const LIGHT_TXT = { Critical: '#991b1b', High: '#9a3412', Medium: '#854d0e', Low: '#166534' }
     const bg = isDark ? BG[s] : LIGHT_BG[s]
@@ -139,7 +139,7 @@ export default function ComplianceTab() {
     if (!d) return null
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeModal}>
-        <div className="bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-xl p-5 w-[500px] max-h-[72vh] overflow-y-auto shadow-lg" onClick={e => e.stopPropagation()}>
+        <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-5 w-[500px] max-h-[72vh] overflow-y-auto shadow-lg dark:shadow-[0_8px_32px_rgba(0,0,0,0.6)]" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between mb-4">
             <span className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc]">{d.t}</span>
             <button onClick={closeModal} className="text-[#656d76] dark:text-[#8b949e] hover:text-[#1f2328] dark:hover:text-[#f0f6fc] text-lg leading-none">&times;</button>
@@ -162,7 +162,7 @@ export default function ComplianceTab() {
           <div className="text-xl font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">Compliance Management Overview</div>
         </div>
         <div className="flex items-center gap-2 mt-1.5">
-          <div className="flex items-center gap-1.5 text-[11px] text-[#8b949e] bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-md px-3 py-1.5 cursor-pointer font-medium">
+          <div className="flex items-center gap-1.5 text-[11px] text-[#8b949e] bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-md px-3 py-1.5 cursor-pointer font-medium hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40 transition-colors">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
             {formatDateRange(timeRange)}
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
@@ -173,11 +173,11 @@ export default function ComplianceTab() {
                 className={`px-2 py-1 text-[10px] font-medium rounded border transition-colors ${
                   timeRange === qt.value
                     ? 'bg-[#e8681a]/10 text-[#e8681a] border-[#e8681a]/30'
-                    : 'bg-transparent text-[#8b949e] border-transparent hover:bg-[#21262d]'
+                    : 'bg-transparent text-[#8b949e] border-transparent hover:bg-[#161b22] hover:border-[#1d2432]'
                 }`}>{qt.label}</button>
             ))}
           </div>
-          <button className="p-1.5 rounded border border-transparent hover:bg-[#21262d] text-[#8b949e] hover:text-[#e8681a] transition-colors">
+          <button className="p-1.5 rounded border border-transparent hover:bg-[#161b22] text-[#8b949e] hover:text-[#e8681a] transition-colors">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           </button>
         </div>
@@ -194,8 +194,8 @@ export default function ComplianceTab() {
           { key: 'm-frameworks', label: 'Active Frameworks', val: FRAMEWORKS.length, sub: FRAMEWORKS.join(', '), icon: 'layout-grid', iconBg: '#7c3aed1a', iconColor: '#7c3aed' },
         ].map(card => (
           <div key={card.key} onClick={() => openModal(card.key)}
-            className="bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-xl p-3 cursor-pointer hover:border-[#e8681a] transition-all hover:-translate-y-px shadow-lg"
-            style={{ boxShadow: '0 2px 12px rgba(0,0,0,.4)' }}>
+              className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 cursor-pointer hover:border-[#e8681a]/50 dark:hover:border-[#e8681a]/60 transition-all duration-300 hover:-translate-y-[3px] shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] hover:shadow-[0_8px_25px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)]"
+            style={{}}>
             <div className="float-right w-[34px] h-[34px] rounded-lg flex items-center justify-center text-lg" style={{ background: card.iconBg }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={card.iconColor} strokeWidth="2">
                 {card.icon === 'certificate' && <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></>}
@@ -216,12 +216,12 @@ export default function ComplianceTab() {
       {/* Tri Row */}
       <div className="grid grid-cols-[1.1fr_0.85fr_1.05fr] gap-2.5 mb-2.5">
         {/* Framework Event Distribution */}
-        <div className="bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-xl p-3 shadow-lg">
+        <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Framework Event Distribution</div>
           {data?.frameworkCounts?.map(fw => (
-            <div key={fw.framework} className="flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] cursor-pointer text-[11px]">
+            <div key={fw.framework} className="flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] cursor-pointer text-[11px]">
               <span className="w-[90px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0">{fw.framework}</span>
-              <div className="flex-1 h-2 bg-[#d0d7de] dark:bg-[#30363d] rounded-full overflow-hidden">
+              <div className="flex-1 h-2 bg-[#d0d7de] dark:bg-[#1d2432] rounded-full overflow-hidden">
                 <div className="h-full rounded-full" style={{ width: `${(fw.count / maxFw) * 100}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
               </div>
               <span className="w-7 text-right text-[#1f2328] dark:text-[#f0f6fc] font-bold">{fw.count}</span>
@@ -234,7 +234,7 @@ export default function ComplianceTab() {
         </div>
 
         {/* Severity Distribution Donut */}
-        <div className="bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-xl p-3 flex flex-col shadow-lg">
+        <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 flex flex-col shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2">Severity Distribution</div>
           <div className="grid grid-cols-2 gap-1 mb-2">
             {SEV_ORDER.filter(s => (data?.severity?.[s] || 0) > 0).map(s => (
@@ -248,7 +248,7 @@ export default function ComplianceTab() {
             {sevDonut.length > 0 && (
               <ResponsiveContainer width="100%" height={130}>
                 <PieChart>
-                  <Pie data={sevDonut} cx="50%" cy="50%" innerRadius={40} outerRadius={58} dataKey="value" stroke={isDark ? '#161b22' : '#ffffff'} strokeWidth={3}>
+                  <Pie data={sevDonut} cx="50%" cy="50%" innerRadius={40} outerRadius={58} dataKey="value" stroke={isDark ? '#0d1117' : '#ffffff'} strokeWidth={3}>
                     {sevDonut.map((e, i) => <Cell key={i} fill={e.color} />)}
                   </Pie>
                   <Tooltip content={<CustomTip />} />
@@ -260,7 +260,7 @@ export default function ComplianceTab() {
         </div>
 
         {/* Compliance Trend */}
-        <div className="bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-xl p-3 shadow-lg">
+        <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2 flex items-center justify-between">
             <span>Compliance Trend</span>
             <span className="text-[10px] text-[#8b949e] bg-[#f0f2f4] dark:bg-[#21262d] px-2 py-0.5 rounded font-medium normal-case cursor-pointer hover:bg-[#e5e7eb] dark:hover:bg-[#2d3140]">
@@ -275,7 +275,7 @@ export default function ComplianceTab() {
                   <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
                   <Tooltip content={<CustomTip />} />
-                  <Area type="monotone" dataKey="count" stroke="#e8681a" fill="url(#compGrad)" strokeWidth={2.5} dot={{ r: 3, fill: '#e8681a', stroke: isDark ? '#161b22' : '#ffffff', strokeWidth: 2 }} />
+                  <Area type="monotone" dataKey="count" stroke="#e8681a" fill="url(#compGrad)" strokeWidth={2.5} dot={{ r: 3, fill: '#e8681a', stroke: isDark ? '#0d1117' : '#ffffff', strokeWidth: 2 }} />
                 </AreaChart>
               </ResponsiveContainer>
             )}
@@ -289,17 +289,17 @@ export default function ComplianceTab() {
       {/* Three Table Row */}
       <div className="grid grid-cols-3 gap-2.5 mb-2.5">
         {/* Top Violated Controls */}
-        <div className="bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-xl p-3 shadow-lg">
+        <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Top Violated Controls</div>
           <table className="w-full text-[11px] border-collapse">
-            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Framework</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Control</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Events</th></tr></thead>
+            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Framework</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Control</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Events</th></tr></thead>
             <tbody>
               {(data?.topRules || []).slice(0, 5).map((r, i) => (
-                <tr key={r.key || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
-                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
-                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-semibold">{r.key || `Rule ${r.rule || r.id}`}</td>
-                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">{r.description?.substring(0, 30) || 'Control violation'}</td>
-                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{r.doc_count || r.count || 0}</td>
+                <tr key={r.key || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
+                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">{i + 1}</td>
+                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#e8681a] font-semibold">{r.key || `Rule ${r.rule || r.id}`}</td>
+                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#36454f] dark:text-[#c9d1d9]">{r.description?.substring(0, 30) || 'Control violation'}</td>
+                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{r.doc_count || r.count || 0}</td>
                 </tr>
               ))}
             </tbody>
@@ -309,18 +309,18 @@ export default function ComplianceTab() {
         </div>
 
         {/* Top Agents */}
-        <div className="bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-xl p-3 shadow-lg">
+        <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Top Agents</div>
           <table className="w-full text-[11px] border-collapse">
-            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Agent</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Events</th></tr></thead>
+            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Agent</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Events</th></tr></thead>
             <tbody>
               {(data?.topAgents || []).slice(0, 5).map((a, i) => (
-                <tr key={a.key || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
-                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
-                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{a.key || a.agent || 'Unknown'}</td>
-                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                <tr key={a.key || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
+                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">{i + 1}</td>
+                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{a.key || a.agent || 'Unknown'}</td>
+                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
                     <div className="flex items-center justify-end gap-1.5">
-                      <div className="w-[70px] h-[6px] bg-[#d0d7de] dark:bg-[#30363d] rounded-full overflow-hidden">
+                      <div className="w-[70px] h-[6px] bg-[#d0d7de] dark:bg-[#1d2432] rounded-full overflow-hidden">
                         <div className="h-full rounded-full" style={{ width: `${((a.doc_count || 0) / maxAgent) * 100}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
                       </div>
                       <span className="font-bold text-[#1f2328] dark:text-[#f0f6fc]">{a.doc_count || 0}</span>
@@ -335,22 +335,22 @@ export default function ComplianceTab() {
         </div>
 
         {/* Recent Compliance Violations */}
-        <div className="bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-xl p-3 shadow-lg">
+        <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Recent Violations</div>
           <table className="w-full text-[11px] border-collapse">
-            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Time</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Agent</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Rule</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Sev</th></tr></thead>
+            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Time</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Agent</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Rule</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Sev</th></tr></thead>
             <tbody>
               {(data?.recent || []).slice(0, 5).map((r, i) => {
                 const level = parseInt(r.rule?.level || r.level || 0)
                 const sev = toSev(level)
                 return (
-                  <tr key={r._id || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">
+                  <tr key={r._id || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">
                       {r.timestamp ? new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}
                     </td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{r.agent?.name || r.agent || '--'}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-bold">{r.rule?.id || r.rule || '--'}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right"><SevBadge s={sev} /></td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{r.agent?.name || r.agent || '--'}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#e8681a] font-bold">{r.rule?.id || r.rule || '--'}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-right"><SevBadge s={sev} /></td>
                   </tr>
                 )
               })}
@@ -366,12 +366,12 @@ export default function ComplianceTab() {
         <div className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc] mb-2.5 tracking-tight">Compliance Heatmap (Events by Severity)</div>
         <table className="w-full text-[11px] border-collapse">
           <thead>
-            <tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide bg-[#f0f2f4] dark:bg-[#21262d]">
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">Framework</th>
+            <tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide bg-[#f0f2f4] dark:bg-[#161b22]">
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Framework</th>
               {SEV_ORDER.map(s => (
-                <th key={s} className="text-center py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">{s}</th>
+                <th key={s} className="text-center py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">{s}</th>
               ))}
-              <th className="text-center py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">Total</th>
+              <th className="text-center py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Total</th>
             </tr>
           </thead>
           <tbody>
@@ -383,12 +383,12 @@ export default function ComplianceTab() {
                 Low: Math.round(fw.count * 0.4)
               }
               return (
-                <tr key={fw.framework} className="hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] cursor-pointer">
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{fw.framework}</td>
+                <tr key={fw.framework} className="hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] cursor-pointer transition-colors">
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{fw.framework}</td>
                   {SEV_ORDER.map(s => (
-                    <td key={s} className="text-center py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                    <td key={s} className="text-center py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
                       <span className="rounded px-2 py-0.5 font-semibold text-[10px] inline-block min-w-[28px]"
-                        style={{ background: isDark ? '#21262d' : '#f0f2f4', color: SEV_COLORS[s] }}>
+                        style={{ background: isDark ? '#161b22' : '#f0f2f4', color: SEV_COLORS[s] }}>
                         {sevSplit[s]}
                       </span>
                     </td>
@@ -399,17 +399,17 @@ export default function ComplianceTab() {
             })}
           </tbody>
           <tfoot>
-            <tr className="font-bold text-[#1f2328] dark:text-[#f0f6fc] bg-[#f0f2f4] dark:bg-[#21262d]">
-              <td className="py-1.5 px-2 border-t border-[#d0d7de] dark:border-[#30363d]">Total</td>
+            <tr className="font-bold text-[#1f2328] dark:text-[#f0f6fc] bg-[#f0f2f4] dark:bg-[#161b22]">
+              <td className="py-1.5 px-2 border-t border-[#d0d7de] dark:border-[#1d2432]">Total</td>
               {SEV_ORDER.map(s => (
-                <td key={s} className="text-center py-1.5 px-2 border-t border-[#d0d7de] dark:border-[#30363d]">
+                <td key={s} className="text-center py-1.5 px-2 border-t border-[#d0d7de] dark:border-[#1d2432]">
                   {data?.frameworkCounts?.reduce((sum, fw) => {
                     const split = { Critical: 0.05, High: 0.2, Medium: 0.35, Low: 0.4 }
                     return sum + Math.round(fw.count * (split[s] || 0))
                   }, 0) || 0}
                 </td>
               ))}
-              <td className="text-center py-1.5 px-2 border-t border-[#d0d7de] dark:border-[#30363d]">
+              <td className="text-center py-1.5 px-2 border-t border-[#d0d7de] dark:border-[#1d2432]">
                 {data?.frameworkCounts?.reduce((sum, fw) => sum + fw.count, 0) || 0}
               </td>
             </tr>
@@ -427,42 +427,42 @@ export default function ComplianceTab() {
             <col style={{ width: '140px' }} /><col style={{ width: '120px' }} /><col style={{ width: '150px' }} />
           </colgroup>
           <thead>
-            <tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide bg-[#f0f2f4] dark:bg-[#21262d]">
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">Time</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">Agent</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">Rule</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">Lvl</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">Description</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">Event</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">Frameworks</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">Control</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">File / Resource</th>
+            <tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide bg-[#f0f2f4] dark:bg-[#161b22]">
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Time</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Agent</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Rule</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Lvl</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Description</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Event</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Frameworks</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Control</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">File / Resource</th>
             </tr>
           </thead>
           <tbody>
             {(data?.recent || []).slice(0, 10).map((r, i) => {
               const level = parseInt(r.rule?.level || r.level || 0)
               return (
-                <tr key={r._id || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">
+                <tr key={r._id || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">
                     {r.timestamp ? new Date(r.timestamp).toLocaleString() : '--'}
                   </td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">
                     {r.agent?.name || r.agent || '--'}
                   </td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-bold text-[#e8681a]">{r.rule?.id || r.rule || '--'}</td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">{
-                    (() => { const lv = parseInt(r.rule?.level || r.level || 0); return <span className="inline-flex items-center justify-center w-[22px] h-[18px] rounded text-[10px] font-semibold" style={{ background: lv >= 7 ? '#450a0a' : lv >= 4 ? '#3d1a00' : '#21262d', color: lv >= 7 ? '#fca5a5' : lv >= 4 ? '#fdba74' : '#8b949e' }}>{lv}</span> })()
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-bold text-[#e8681a]">{r.rule?.id || r.rule || '--'}</td>
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">{
+                    (() => { const lv = parseInt(r.rule?.level || r.level || 0); return <span className="inline-flex items-center justify-center w-[22px] h-[18px] rounded text-[10px] font-semibold" style={{ background: lv >= 7 ? '#450a0a' : lv >= 4 ? '#3d1a00' : '#0d1117', color: lv >= 7 ? '#fca5a5' : lv >= 4 ? '#fdba74' : '#8b949e' }}>{lv}</span> })()
                   }</td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] overflow-hidden text-ellipsis whitespace-nowrap text-[#36454f] dark:text-[#c9d1d9]">
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap text-[#36454f] dark:text-[#c9d1d9]">
                     {r.rule?.description || r.description || '--'}
                   </td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-medium">
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#e8681a] font-medium">
                     {r.rule?.groups?.[0] || r.event_type || '--'}
                   </td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e] font-medium">PCI-DSS, HIPAA</td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">--</td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e] text-[9px] overflow-hidden text-ellipsis whitespace-nowrap">--</td>
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e] font-medium">PCI-DSS, HIPAA</td>
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">--</td>
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e] text-[9px] overflow-hidden text-ellipsis whitespace-nowrap">--</td>
                 </tr>
               )
             })}
@@ -474,7 +474,7 @@ export default function ComplianceTab() {
         </div>
       </div>
 
-      <div className="text-center text-[10px] text-[#8b949e] py-3 border-t border-[#d0d7de] dark:border-[#30363d]">&copy; 2025 UniShield 360. All rights reserved.</div>
+      <div className="text-center text-[10px] text-[#8b949e] py-3 border-t border-[#d0d7de] dark:border-[#1d2432]">&copy; 2025 UniShield 360. All rights reserved.</div>
 
       {modalContent()}
     </motion.div>

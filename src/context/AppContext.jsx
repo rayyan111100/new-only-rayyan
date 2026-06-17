@@ -36,6 +36,7 @@ export function AppProvider({ children }) {
   const [refreshActive, setRefreshActive] = useState(false)
   const [pendingRuleId, setPendingRuleId] = useState(null)
   const [activeGroup, setActiveGroup] = useState(null)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [selectedRules, setSelectedRules] = useState([])
   const [filterMatch, setFilterMatch] = useState('and')
   const [warning, setWarning] = useState(null)
@@ -357,6 +358,7 @@ export function AppProvider({ children }) {
     activeGroup, setActiveGroup,
     selectedRules, setSelectedRules,
     filterMatch, setFilterMatch,
+    sidebarOpen, setSidebarOpen,
     warning, setWarning, clearAllFilters,
     selectRule, deselectRule,
     selectAllRules, deselectAllRules,

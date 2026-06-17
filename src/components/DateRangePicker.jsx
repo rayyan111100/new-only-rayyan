@@ -40,8 +40,14 @@ function getCal(year, month) {
 
 function sameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate() }
 
-export default function DateRangePicker() {
-  const { startDate, setStartDate, endDate, setEndDate, doSearch, isDark } = useApp()
+export default function DateRangePicker({ startDate: propStart, onStartChange, endDate: propEnd, onEndChange, onSearch: propSearch } = {}) {
+  const ctx = useApp()
+  const isDark = ctx.isDark
+  const startDate = propStart !== undefined ? propStart : ctx.startDate
+  const endDate = propEnd !== undefined ? propEnd : ctx.endDate
+  const setStartDate = onStartChange || ctx.setStartDate
+  const setEndDate = onEndChange || ctx.setEndDate
+  const doSearch = propSearch || ctx.doSearch
   const wrap = useRef(null)
   const timeRef = useRef(null)
   const [open, setOpen] = useState(false)
@@ -118,7 +124,7 @@ export default function DateRangePicker() {
     <div className="relative" ref={wrap}>
       <button
         onClick={() => setOpen(!open)}
-        className={`flex items-center gap-1.5 px-2.5 py-1 text-xs border border-soc-border dark:border-soc-darkborder rounded whitespace-nowrap transition-colors bg-white dark:bg-[#2d2d2d] text-soc-darktext dark:text-soc-darktext`}
+        className={`flex items-center gap-1.5 px-2.5 py-1 text-xs border border-soc-border dark:border-soc-darkborder rounded whitespace-nowrap transition-colors bg-white dark:bg-[#2d2d2d] text-[#1f2328] dark:text-[#f0f6fc] font-medium`}
       >
         <span className="font-medium">{label}</span>
         <span className={`text-[10px] ${txt}`}>{open ? <svg className="w-2.5 h-2.5 inline" viewBox="0 0 24 24" fill="currentColor"><polyline points="18 15 12 9 6 15"/></svg> : <svg className="w-2.5 h-2.5 inline" viewBox="0 0 24 24" fill="currentColor"><polyline points="6 9 12 15 18 9"/></svg>}</span>
