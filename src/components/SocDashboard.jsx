@@ -3,20 +3,14 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import { motion } from 'framer-motion'
 import { api } from '../api'
 import { useApp } from '../context/AppContext'
+import DateRangePicker from './DateRangePicker'
 import { parseDateStr, formatPretty } from '../utils'
 
 const SEV_LABELS = { Critical: { color: '#dc2626', min: 15 }, High: { color: '#ea580c', min: 12 }, Medium: { color: '#ca8a04', min: 7 }, Low: { color: '#16a34a', min: 1 }, Info: { color: '#e0752a', min: 0 } }
 const SEV_ORDER = ['Critical', 'High', 'Medium', 'Low', 'Info']
 const CHART_COLORS = ['#EF843C', '#8b5cf6', '#06b6d4', '#22c55e', '#eab308', '#f97316']
 
-const QUICK_TIMES = [
-  { label: '1h', value: 'now-1h' },
-  { label: '6h', value: 'now-6h' },
-  { label: '24h', value: 'now-24h' },
-  { label: '7d', value: 'now-7d' },
-  { label: '30d', value: 'now-30d' },
-  { label: '90d', value: 'now-90d' }
-]
+
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
@@ -30,13 +24,18 @@ const CustomTooltip = ({ active, payload, label }) => {
   )
 }
 
-function FilterBtn({ field, value, label }) {
-  const { addFilter } = useApp()
-  const handle = (e) => { e.stopPropagation(); addFilter(field, value, false) }
+function FilterBtns({ field, value, operator, label }) {
+  const { addFilter, doSearch } = useApp()
+  const hFilter = (e, negate) => { e.stopPropagation(); addFilter(field, value, negate, operator); doSearch() }
   return (
-    <button onClick={handle} className="ml-auto p-1 rounded hover:bg-[#EF843C]/20 text-[#9ca3af] dark:text-[#6b7280] hover:text-[#EF843C] dark:hover:text-[#EF843C] transition-all shrink-0 opacity-0 group-hover:opacity-100" title={'Filter by ' + label}>
-      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 7h3.5a.5.5 0 1 1 0 1H8v3.5a.5.5 0 1 1-1 0V8H3.5a.5.5 0 0 1 0-1H7V3.5a.5.5 0 0 1 1 0V7Z"/></svg>
-    </button>
+    <span className="inline-flex items-center gap-0.5 ml-auto shrink-0 opacity-0 group-hover:opacity-100 transition-all">
+      <button onClick={e => hFilter(e, false)} className="p-1 rounded hover:bg-[#EF843C]/20 text-[#9ca3af] dark:text-[#6b7280] hover:text-[#EF843C] dark:hover:text-[#EF843C] transition-all" title={'Filter by ' + label}>
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 7h3.5a.5.5 0 1 1 0 1H8v3.5a.5.5 0 1 1-1 0V8H3.5a.5.5 0 0 1 0-1H7V3.5a.5.5 0 0 1 1 0V7Z"/></svg>
+      </button>
+      <button onClick={e => hFilter(e, true)} className="p-1 rounded hover:bg-red-500/20 text-[#9ca3af] dark:text-[#6b7280] hover:text-red-500 transition-all" title={'Filter out ' + label}>
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 7h8a.5.5 0 1 1 0 1h-8a.5.5 0 0 1 0-1Z"/></svg>
+      </button>
+    </span>
   )
 }
 
@@ -64,11 +63,11 @@ const SEV_RANGES = {
 }
 
 export default function SocDashboard() {
+  const { startDate, endDate } = useApp()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(new Date())
-  const [timeRange, setTimeRange] = useState('now-24h')
   const timerRef = useRef(null)
 
   const [drillFilters, setDrillFilters] = useState([])
@@ -80,8 +79,8 @@ export default function SocDashboard() {
     if (filters.length === 0) { setDrillResults(null); setDrillLoading(false); return }
     setDrillLoading(true)
     try {
-      const sd = parseDateStr(timeRange).toISOString()
-      const ed = parseDateStr('now').toISOString()
+      const sd = parseDateStr(startDate).toISOString()
+      const ed = parseDateStr(endDate).toISOString()
       const hasWildcard = filters.some(f => f.field === '*' && f.value === '*')
       const effective = hasWildcard ? [] : filters
       let q = '*'
@@ -95,7 +94,7 @@ export default function SocDashboard() {
       setDrillResults(res)
     } catch { setDrillResults({ results: [], total: 0 }) }
     setDrillLoading(false)
-  }, [timeRange])
+  }, [startDate, endDate])
 
   const addDrill = useCallback((field, value) => {
     setDrillFilters(prev => {
@@ -124,8 +123,8 @@ export default function SocDashboard() {
   }, [])
 
   const fetchDashboard = () => {
-    const sd = parseDateStr(timeRange).toISOString()
-    const ed = parseDateStr('now').toISOString()
+    const sd = parseDateStr(startDate).toISOString()
+    const ed = parseDateStr(endDate).toISOString()
     api('dashboard', { index: 'unishield360-alerts-4.x-*', start_date: sd, end_date: ed })
       .then(d => { setData(d); setError(null) })
       .catch(e => setError(e.message))
@@ -137,11 +136,11 @@ export default function SocDashboard() {
     fetchDashboard()
     timerRef.current = setInterval(fetchDashboard, 60000)
     return () => clearInterval(timerRef.current)
-  }, [timeRange])
+  }, [startDate, endDate])
 
   if (loading) return (
     <div className="space-y-3">
-      <div className="flex gap-1.5 flex-wrap">{QUICK_TIMES.map(qt => <div key={qt.value} className="h-7 w-10 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-lg animate-pulse" />)}</div>
+        <div className="flex gap-1.5 flex-wrap"><div className="h-7 w-44 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-lg animate-pulse" /></div>
       <div className="grid grid-cols-5 gap-2.5">{[1,2,3,4,5].map(i => <div key={i} className="gcard p-4"><div className="h-16 bg-[#f3f4f6] dark:bg-[#2d3140] rounded animate-pulse"/></div>)}</div>
       <div className="grid grid-cols-3 gap-3">{[1,2,3].map(i => <div key={i} className="gcard p-4"><div className="h-40 bg-[#f3f4f6] dark:bg-[#2d3140] rounded animate-pulse"/></div>)}</div>
     </div>
@@ -181,14 +180,7 @@ export default function SocDashboard() {
             <span className="gchip text-[9px] bg-[#EF843C]/10 text-[#EF843C] dark:text-[#EF843C]">{'Drill: ' + drillFilters.length}</span>
           )}
         </div>
-        <div className="flex items-center gap-1 flex-wrap">
-          {QUICK_TIMES.map(qt => (
-            <button key={qt.value} onClick={() => setTimeRange(qt.value)}
-              className={'gbtn text-[10px] px-2 py-1 ' + (timeRange === qt.value ? 'gbtn-primary' : 'gbtn-ghost')}>
-              {qt.label}
-            </button>
-          ))}
-        </div>
+        <div className="-mr-1.5"><DateRangePicker /></div>
       </motion.div>
 
       <div className="grid grid-cols-5 gap-2.5">
@@ -231,23 +223,25 @@ export default function SocDashboard() {
             {sevData.map(s => {
               const pct = sevTotal ? Math.round((s.value / sevTotal) * 100) : 0
               return (
-                <button key={s.name} onClick={() => addDrill('rule.level', SEV_RANGES[s.name])}
-                  className="w-full text-left group">
-                  <div className="flex items-center justify-between text-xs mb-0.5">
-                    <span className="flex items-center gap-1.5 text-[#1a1c23] dark:text-[#e4e6eb]">
-                      <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-                      <span className="font-medium">{s.name}</span>
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="font-semibold" style={{ color: s.color }}>{s.value.toLocaleString()}</span>
-                      <span className="text-[#9ca3af] dark:text-[#6b7280] text-[10px]">({pct}%)</span>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[#d1d5db] dark:text-[#4b5563] opacity-0 group-hover:opacity-100 transition-opacity ml-0.5"><path d="M9 5l7 7-7 7"/></svg>
-                    </span>
-                  </div>
-                  <div className="w-full h-1.5 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-full overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-500" style={{ width: pct + '%', backgroundColor: s.color }} />
-                  </div>
-                </button>
+                <div key={s.name} className="group">
+                  <button onClick={() => addDrill('rule.level', SEV_RANGES[s.name])}
+                    className="w-full text-left">
+                    <div className="flex items-center justify-between text-xs mb-0.5">
+                      <span className="flex items-center gap-1.5 text-[#1a1c23] dark:text-[#e4e6eb]">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                        <span className="font-medium">{s.name}</span>
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="font-semibold" style={{ color: s.color }}>{s.value.toLocaleString()}</span>
+                        <span className="text-[#9ca3af] dark:text-[#6b7280] text-[10px]">({pct}%)</span>
+                        <FilterBtns field="rule.level" value={String(SEV_LABELS[s.name].min)} operator="is greater than or equal" label={s.name + ' severity'} />
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-500" style={{ width: pct + '%', backgroundColor: s.color }} />
+                    </div>
+                  </button>
+                </div>
               )
             })}
             {sevData.length === 0 && <div className="text-xs text-[#9ca3af] dark:text-[#6b7280] py-4 text-center">No data</div>}
@@ -257,7 +251,7 @@ export default function SocDashboard() {
         <div className="gcard p-4 lg:col-span-2">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Alert Timeline</h3>
-            <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">{formatPretty(timeRange, 'now')}</span>
+            <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">{formatPretty(startDate, endDate)}</span>
           </div>
           <div className="h-44">
             {timelineData.length === 0 ? (
@@ -302,7 +296,7 @@ export default function SocDashboard() {
                       <div className="h-full rounded-full bg-[#EF843C] dark:bg-[#EF843C] transition-all duration-700" style={{ width: (r.count / maxRule) * 100 + '%' }} />
                     </div>
                   </div>
-                  <FilterBtn field="rule.id" value={r.name} label={r.name} />
+                  <FilterBtns field="rule.id" value={r.name} label={r.name} />
                 </button>
               ))}
             </div>
@@ -333,7 +327,7 @@ export default function SocDashboard() {
                       <div className="h-full rounded-full bg-[#8b5cf6] transition-all duration-700" style={{ width: (a.count / maxAgent) * 100 + '%' }} />
                     </div>
                   </div>
-                  <FilterBtn field="agent.name" value={a.name} label={a.name} />
+                  <FilterBtns field="agent.name" value={a.name} label={a.name} />
                 </button>
               ))}
             </div>
@@ -430,7 +424,7 @@ export default function SocDashboard() {
                         <span className="text-[#6b7280] dark:text-[#9ca3af] truncate max-w-[160px] block text-[10px]">{r.rule?.description || '--'}</span>
                       </td>
                       <td className="py-2.5 px-4 text-right">
-                        <FilterBtn field="_id" value={r._id} label={'alert ' + (i + 1)} />
+                        <FilterBtns field="_id" value={r._id} label={'alert ' + (i + 1)} />
                       </td>
                     </tr>
                   )

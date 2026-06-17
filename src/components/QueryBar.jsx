@@ -76,46 +76,46 @@ function FilterChip({ filter, onEdit, onRemove, onToggle, onToggleDisabled, onTo
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: disabled ? 0.4 : 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.9 }}
-      className={`relative inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-xxs font-medium border group transition-all ${
+      className={`relative inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold border-2 group transition-all shadow-md ${
         disabled
-          ? 'bg-gray-50 border-gray-200 text-gray-400 dark:bg-gray-800/30 dark:border-gray-700 dark:text-gray-500 line-through'
+          ? 'bg-gray-100 border-gray-300 text-gray-400 dark:bg-gray-800/50 dark:border-gray-600 dark:text-gray-500 line-through'
           : isNeg
-            ? 'bg-red-50 border-red-200 text-red-700 dark:bg-red-900/20 dark:border-red-800 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/30'
-            : 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/30'
-      } ${pinned ? 'ring-1 ring-purple-400 dark:ring-purple-600' : ''}`}
+            ? 'bg-red-100 border-red-400 text-red-800 dark:bg-red-900/40 dark:border-red-600 dark:text-red-200 hover:bg-red-200 dark:hover:bg-red-900/60'
+            : 'bg-blue-100 border-blue-400 text-blue-800 dark:bg-blue-900/40 dark:border-blue-600 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-900/60'
+      } ${pinned ? 'ring-2 ring-purple-500 dark:ring-purple-400' : ''}`}
       title={`${disabled ? '[Disabled] ' : ''}${pinned ? '[Pinned] ' : ''}${isNeg ? 'NOT ' : ''}${filter.field} ${opLabel} ${displayVal || ''}`}
     >
       {pinned && <span className="text-[8px] mr-0.5" title="Pinned"><svg className="w-2.5 h-2.5 inline-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2z"/></svg></span>}
-      <span className="flex items-center gap-0.5 cursor-pointer" onClick={() => onEdit?.(filter)}>
-        {isNeg && <span className="font-bold text-[9px] uppercase mr-0.5">NOT</span>}
-        <span className="max-w-[90px] truncate">{filter.customLabel || filter.field}</span>
-        <span className="opacity-60 mx-0.5">{opLabel}</span>
-        {displayVal && <span className="max-w-[80px] truncate">{displayVal}</span>}
+      <span className="flex items-center gap-1 cursor-pointer" onClick={() => onEdit?.(filter)}>
+        {isNeg && <span className="font-black text-[10px] uppercase mr-0.5 px-1 py-0.5 rounded bg-red-200 dark:bg-red-800">NOT</span>}
+        <span className="max-w-[100px] truncate font-bold">{filter.customLabel || filter.field}</span>
+        <span className="opacity-70 mx-0.5">{opLabel}</span>
+        {displayVal && <span className="max-w-[90px] truncate font-semibold">{displayVal}</span>}
       </span>
 
-      <span className="ml-0.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      <span className="ml-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         {isNeg && !disabled && (
           <button onClick={e => { e.stopPropagation(); onToggle?.(filter.id, false) }}
-            className="w-3.5 h-3.5 flex items-center justify-center rounded font-bold leading-none text-[9px] transition-colors bg-blue-200 text-blue-800 dark:bg-blue-700 dark:text-blue-200"
+            className="w-6 h-6 flex items-center justify-center rounded-lg font-black leading-none text-sm transition-all bg-blue-500 text-white hover:bg-blue-600 hover:scale-125 hover:shadow-lg shadow-sm"
             title="Filter for (include)">+</button>
         )}
         {!isNeg && !disabled && (
           <button onClick={e => { e.stopPropagation(); onToggle?.(filter.id, true) }}
-            className="w-3.5 h-3.5 flex items-center justify-center rounded font-bold leading-none text-[9px] transition-colors bg-red-200 text-red-800 dark:bg-red-700 dark:text-red-200"
+            className="w-6 h-6 flex items-center justify-center rounded-lg font-black leading-none text-sm transition-all bg-red-500 text-white hover:bg-red-600 hover:scale-125 hover:shadow-lg shadow-sm"
             title="Filter out (exclude)">&ndash;</button>
         )}
         <button onClick={e => { e.stopPropagation(); onToggleDisabled?.(filter.id) }}
-          className={`w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-black/10 dark:hover:bg-white/10 font-bold leading-none text-[9px] transition-colors ${disabled ? 'text-green-500' : 'text-soc-stext dark:text-soc-darkstext'}`}
-          title={disabled ? 'Enable' : 'Disable'}>{disabled ? <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> : <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>}</button>
+          className={`w-5 h-5 flex items-center justify-center rounded-md hover:bg-black/20 dark:hover:bg-white/20 font-bold leading-none text-[11px] transition-all ${disabled ? 'text-green-500 hover:text-green-600' : 'text-soc-stext dark:text-soc-darkstext'}`}
+          title={disabled ? 'Enable' : 'Disable'}>{disabled ? <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> : <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>}</button>
         <button onClick={e => { e.stopPropagation(); onTogglePin?.(filter.id) }}
-          className={`w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-black/10 dark:hover:bg-white/10 text-[9px] transition-colors ${pinned ? 'text-purple-500' : 'text-soc-stext dark:text-soc-darkstext'}`}
-          title={pinned ? 'Unpin' : 'Pin'}><svg className="w-2.5 h-2.5 inline-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2z"/></svg></button>
+          className={`w-5 h-5 flex items-center justify-center rounded-md hover:bg-black/20 dark:hover:bg-white/20 text-[11px] transition-all ${pinned ? 'text-purple-500' : 'text-soc-stext dark:text-soc-darkstext'}`}
+          title={pinned ? 'Unpin' : 'Pin'}><svg className="w-3 h-3 inline-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2z"/></svg></button>
         <button onClick={e => { e.stopPropagation(); onInvert?.(filter.id) }}
-          className="w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-black/10 dark:hover:bg-white/10 text-[9px] transition-colors"
-          title="Invert"><svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg></button>
+          className="w-5 h-5 flex items-center justify-center rounded-md hover:bg-black/20 dark:hover:bg-white/20 text-[11px] transition-all"
+          title="Invert"><svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg></button>
         <div className="relative">
           <button onClick={e => { e.stopPropagation(); setShowMenu(!showMenu) }}
-            className="w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-black/10 dark:hover:bg-white/10 text-[9px] transition-colors"
+            className="w-5 h-5 flex items-center justify-center rounded-md hover:bg-black/20 dark:hover:bg-white/20 text-xs font-bold transition-all"
             title="More">...</button>
           {showMenu && (
             <>
@@ -413,12 +413,12 @@ export default function QueryBar() {
         </div>
       </div>
 
-      <div className="flex items-center gap-1 flex-wrap">
+      <div className={`flex items-center gap-1.5 flex-wrap px-3 py-2 rounded-xl border-2 ${bg} ${isDark ? 'border-soc-darkborder' : 'border-soc-border'} shadow-lg`}>
         <div className="relative">
           <button
             onClick={() => { setShowAddFilter(!showAddFilter); setEditingFilter(null) }}
-            className={`px-1.5 py-0.5 text-[10px] border rounded ${bg} ${isDark ? 'text-soc-darkstext' : 'text-soc-stext'}`}
-            title="Add filter"><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></button>
+            className="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-[#EF843C] text-white hover:bg-[#e0752a] active:bg-[#d4661e] transition-all shadow-md hover:shadow-lg"
+            title="Add filter"><svg className="w-4 h-4 inline-block mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg> Filter</button>
           <AnimatePresence>
             {showAddFilter && (
               <FilterEditor
@@ -434,10 +434,10 @@ export default function QueryBar() {
         {filters.length > 1 && (
           <button
             onClick={toggleMatchMode}
-            className={`text-[9px] font-bold uppercase px-1 py-0.5 rounded border transition-colors ${
+            className={`text-[11px] font-black uppercase px-2.5 py-1.5 rounded-xl border-2 transition-all shadow-md hover:shadow-lg hover:scale-105 ${
               filterMatch === 'and'
-                ? 'bg-indigo-50 border-indigo-200 text-indigo-600 dark:bg-indigo-900/30 dark:border-indigo-700 dark:text-indigo-300'
-                : 'bg-amber-50 border-amber-200 text-amber-600 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-300'
+                ? 'bg-indigo-200 border-indigo-500 text-indigo-800 dark:bg-indigo-900/50 dark:border-indigo-400 dark:text-indigo-200 hover:bg-indigo-300 dark:hover:bg-indigo-900/70'
+                : 'bg-amber-200 border-amber-500 text-amber-800 dark:bg-amber-900/50 dark:border-amber-400 dark:text-amber-200 hover:bg-amber-300 dark:hover:bg-amber-900/70'
             }`}
             title={`Filters match mode: ${filterMatch === 'and' ? 'ALL (AND)' : 'ANY (OR)'}. Click to toggle.`}
           >
@@ -485,14 +485,14 @@ export default function QueryBar() {
           ))}
         </AnimatePresence>
 
-        <button onClick={() => { setShowAddFilter(true); setEditingFilter(null) }} className="text-[10px] text-[#EF843C] dark:text-[#EF843C] hover:underline px-1">+ Add filter</button>
+        <button onClick={() => { setShowAddFilter(true); setEditingFilter(null) }} className="text-xs font-bold text-white bg-[#EF843C] hover:bg-[#e0752a] active:bg-[#d4661e] px-3 py-1.5 rounded-xl transition-all shadow-md hover:shadow-lg hover:scale-105">+ Add filter</button>
 
         {filters.length > 0 && (
           <button onClick={() => {
             const unpinned = filters.filter(f => !f.pinned)
             unpinned.forEach(f => removeFilter(f.id))
             if (unpinned.length > 0) doSearch()
-          }} className="text-[10px] text-[#9ca3af] hover:text-red-500 dark:hover:text-red-400 px-1 transition-colors" title="Clear all (pinned filters stay)">
+          }} className="text-xs font-bold text-red-500 hover:text-white hover:bg-red-500 dark:text-red-400 dark:hover:text-white dark:hover:bg-red-500 px-2.5 py-1.5 rounded-xl border-2 border-red-300 dark:border-red-700 transition-all shadow-sm hover:shadow-md hover:scale-105" title="Clear all (pinned filters stay)">
             Clear
           </button>
         )}

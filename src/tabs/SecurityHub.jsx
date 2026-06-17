@@ -3,16 +3,10 @@ import { motion } from 'framer-motion'
 import { api } from '../api'
 import { useApp } from '../context/AppContext'
 import { parseDateStr, formatPretty } from '../utils'
+import DateRangePicker from '../components/DateRangePicker'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
-const QUICK_TIMES = [
-  { label: '1h', value: 'now-1h' },
-  { label: '6h', value: 'now-6h' },
-  { label: '24h', value: 'now-24h' },
-  { label: '7d', value: 'now-7d' },
-  { label: '30d', value: 'now-30d' },
-  { label: '90d', value: 'now-90d' }
-]
+
 
 const SEV_LABELS = { Critical: { color: '#dc2626', min: 12 }, High: { color: '#ea580c', min: 7 }, Medium: { color: '#ca8a04', min: 3 }, Low: { color: '#16a34a', min: 1 } }
 const SEV_ORDER = ['Critical', 'High', 'Medium', 'Low']
@@ -78,7 +72,7 @@ function PulseDot({ color = '#22c55e' }) {
 }
 
 export default function SecurityHub() {
-  const [timeRange, setTimeRange] = useState('now-24h')
+  const { startDate, endDate } = useApp()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -91,10 +85,10 @@ export default function SecurityHub() {
   const drillRef = useRef([])
 
   const timeParams = useCallback(() => {
-    const sd = parseDateStr(timeRange).toISOString()
-    const ed = parseDateStr('now').toISOString()
+    const sd = parseDateStr(startDate).toISOString()
+    const ed = parseDateStr(endDate).toISOString()
     return { start_date: sd, end_date: ed }
-  }, [timeRange])
+  }, [startDate, endDate])
 
   const runDrillSearch = useCallback(async (filters) => {
     if (filters.length === 0) { setDrillResults(null); setDrillLoading(false); return }
@@ -192,7 +186,7 @@ export default function SecurityHub() {
 
   if (loading) return (
     <div className="space-y-3">
-      <div className="flex gap-1.5 flex-wrap">{QUICK_TIMES.map(qt => <div key={qt.value} className="h-7 w-10 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-lg animate-pulse" />)}</div>
+      <div className="flex gap-1.5 flex-wrap"><div className="h-7 w-28 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-lg animate-pulse" /></div>
       <div className="grid grid-cols-5 gap-2.5">{[1,2,3,4,5].map(i => <div key={i} className="gcard p-4"><div className="h-16 bg-[#f3f4f6] dark:bg-[#2d3140] rounded animate-pulse"/></div>)}</div>
       <div className="grid grid-cols-3 gap-3">{[1,2,3].map(i => <div key={i} className="gcard p-4"><div className="h-40 bg-[#f3f4f6] dark:bg-[#2d3140] rounded animate-pulse"/></div>)}</div>
     </div>
@@ -217,14 +211,7 @@ export default function SecurityHub() {
             <span className="gchip text-[9px] bg-[#EF843C]/10 text-[#EF843C] dark:text-[#EF843C]">{'Drill: ' + drillFilters.length}</span>
           )}
         </div>
-        <div className="flex items-center gap-1 flex-wrap">
-          {QUICK_TIMES.map(qt => (
-            <button key={qt.value} onClick={() => setTimeRange(qt.value)}
-              className={'gbtn text-[10px] px-2 py-1 ' + (timeRange === qt.value ? 'gbtn-primary' : 'gbtn-ghost')}>
-              {qt.label}
-            </button>
-          ))}
-        </div>
+        <DateRangePicker />
       </motion.div>
 
       <div className="grid grid-cols-5 gap-2.5">
@@ -293,7 +280,7 @@ export default function SecurityHub() {
         <div className="gcard p-4 lg:col-span-2">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">Alert Timeline</h3>
-            <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">{formatPretty(timeRange, 'now')}</span>
+            <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">{formatPretty(startDate, endDate)}</span>
           </div>
           <div className="h-44">
             {timelineData.length === 0 ? (

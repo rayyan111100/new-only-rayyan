@@ -11,7 +11,9 @@ export default function useRealtime(enabled = true) {
     if (!enabled) return
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const url = `${protocol}//${window.location.hostname}:${window.location.port || 3000}/ws`
+    const hostname = window.location.hostname
+    const port = window.location.port || (protocol === 'wss:' ? 443 : 80)
+    const url = `${protocol}//${hostname}:${port}/ws`
     let ws
     let reconnectTimer
     let retries = 0
@@ -36,9 +38,9 @@ export default function useRealtime(enabled = true) {
             setConnected(true)
             setStats({ alertCount: data.alertCount || 0, matchCount: data.matchCount || 0, clients: data.clients || 0 })
           }
-          if (data.type === 'match') {
+          if (data.type === 'alert' || data.type === 'match') {
             setMatches(prev => [{ ...data, id: data.id || Date.now() }, ...prev].slice(0, maxItems))
-            setStats(s => ({ ...s, matchCount: data.matchCount || s.matchCount + 1 }))
+            setStats(s => ({ ...s, alertCount: data.id || s.alertCount + 1, matchCount: data.type === 'match' ? (s.matchCount + 1) : s.matchCount }))
           }
           if (data.type === 'pong') {}
         } catch {}
