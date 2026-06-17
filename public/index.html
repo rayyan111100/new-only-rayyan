@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>UniShield360 SOC Dashboard</title>
+<style>
+:root{--bg:#0f1923;--bg2:#1a2633;--bg3:#0d151e;--text:#e0e0e0;--text2:#78909c;--border:#263238;--accent:#00bcd4;--hover:#263238;--card-border:#00bcd4;--tbl-hover:#1a2633}
+[data-theme="light"]{--bg:#f5f5f5;--bg2:#ffffff;--bg3:#e8e8e8;--text:#212121;--text2:#757575;--border:#bdbdbd;--accent:#00838f;--hover:#e0e0e0;--card-border:#00838f;--tbl-hover:#f0f0f0}
+@media(prefers-color-scheme:light){
+  [data-theme="system"]{--bg:#f5f5f5;--bg2:#ffffff;--bg3:#e8e8e8;--text:#212121;--text2:#757575;--border:#bdbdbd;--accent:#00838f;--hover:#e0e0e0;--card-border:#00838f;--tbl-hover:#f0f0f0}
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--text);padding:20px;transition:background .3s,color .3s}
+h1{color:var(--accent);font-weight:300;letter-spacing:1px;display:inline-block}
+.sub{color:var(--text2);font-size:13px;margin-left:12px;display:inline-block}
+.theme-switch{float:right;display:flex;gap:4px;background:var(--bg2);border-radius:8px;padding:3px;border:1px solid var(--border)}
+.theme-switch button{padding:6px 12px;border:none;border-radius:6px;cursor:pointer;font-size:13px;background:0 0;color:var(--text2);transition:.2s}
+.theme-switch button.active{background:var(--accent);color:#fff}
+.tabs{display:flex;gap:4px;margin:16px 0;border-bottom:2px solid var(--border);padding-bottom:0}
+.tab{padding:10px 20px;cursor:pointer;border-radius:6px 6px 0 0;font-size:13px;font-weight:600;color:var(--text2);background:0 0;border:none;transition:.2s}
+.tab:hover{color:var(--text);background:var(--bg2)}
+.tab.active{color:var(--accent);background:var(--bg2);border-bottom:2px solid var(--accent);margin-bottom:-2px}
+.panel{display:none;margin-top:16px}
+.panel.active{display:block}
+.filter-bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.filter-bar button{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;transition:.2s}
+.filter-bar button:hover{transform:translateY(-1px);opacity:.85}
+.crit{background:#d32f2f;color:#fff}.high{background:#e65100;color:#fff}.med{background:#f9a825;color:#000}.low{background:#2e7d32;color:#fff}.all{background:#1565c0;color:#fff}.cust{background:#6a1b9a;color:#fff}.info{background:#00838f;color:#fff}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px}
+.stat-card{background:var(--bg2);border-radius:8px;padding:16px;border-left:4px solid var(--card-border);transition:background .3s}
+.stat-card .label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text2)}
+.stat-card .value{font-size:28px;font-weight:600;color:var(--text);margin-top:4px}
+.results{background:var(--bg3);border-radius:8px;padding:16px;overflow-x:auto;transition:background .3s}
+.results table{width:100%;border-collapse:collapse;font-size:13px}
+.results th{text-align:left;padding:8px;color:var(--accent);border-bottom:2px solid var(--border);white-space:nowrap}
+.results td{padding:8px;border-bottom:1px solid var(--border)}
+.results tr:hover td{background:var(--tbl-hover)}
+.level-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-weight:600;font-size:12px}
+.lvl-15{background:#d32f2f;color:#fff}.lvl-12{background:#e65100;color:#fff}.lvl-7{background:#f9a825;color:#000}.lvl-0{background:#2e7d32;color:#fff}
+.custom-inputs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:end}
+.custom-inputs input,.custom-inputs select{background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px;transition:background .3s,color .3s}
+.custom-inputs input::placeholder{color:var(--text2)}
+.custom-inputs label{font-size:12px;color:var(--text2);display:block;margin-bottom:2px}
+.loading{color:var(--text2);font-style:italic;padding:16px}
+.error{color:#f44336;padding:16px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.bar{border-radius:4px;overflow:hidden;background:var(--bg3);height:28px;margin:6px 0;display:flex}
+.bar-fill{height:100%;display:flex;align-items:center;padding-left:8px;font-size:12px;font-weight:600;color:#fff;transition:width .4s}
+.bar-label{display:flex;justify-content:space-between;font-size:13px;color:var(--text);margin-top:8px}
+.geo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.geo-card{background:var(--bg2);border-radius:8px;padding:14px;border-left:4px solid #00838f;transition:background .3s}
+.geo-card .country{font-size:16px;font-weight:600;color:var(--accent)}
+.geo-card .detail{font-size:12px;color:var(--text2);margin-top:4px}
+.disc-layout{display:flex;gap:16px;min-height:60vh}
+.disc-fields{width:260px;flex-shrink:0;background:var(--bg2);border-radius:8px;padding:12px;overflow-y:auto;max-height:calc(100vh - 200px)}
+.disc-fields input{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12px;margin-bottom:8px}
+.dfs-source{display:flex;gap:4px;margin-bottom:10px}
+.dfs-source select{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:12px;cursor:pointer}
+.dfs-refresh{background:var(--bg3);border:1px solid var(--border);color:var(--accent);border-radius:6px;cursor:pointer;padding:4px 8px;font-size:16px}
+.dfs-refresh:hover{background:var(--hover)}
+.dfs-title{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.disc-fields .field-row{display:flex;justify-content:space-between;padding:5px 8px;border-radius:4px;cursor:pointer;font-size:12px;transition:.15s}
+.disc-fields .field-row:hover{background:var(--hover)}
+.disc-fields .field-row .count{color:var(--text2);font-size:11px;background:var(--bg3);padding:1px 6px;border-radius:4px}
+.disc-fields .field-row .name{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}
+.disc-fields .field-row.selected{background:var(--accent);color:#fff}
+.disc-fields .field-row.selected .name{color:#fff}
+.disc-fields .field-row.selected .count{background:rgba(255,255,255,.2);color:#fff}
+.disc-main{flex:1;min-width:0}
+
+.filter-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.filter-chip{background:var(--bg2);border:1px solid var(--accent);color:var(--accent);padding:4px 10px;border-radius:16px;font-size:12px;display:flex;align-items:center;gap:6px}
+.filter-chip .close{cursor:pointer;opacity:.7;font-size:14px}.filter-chip .close:hover{opacity:1}
+.histogram{background:var(--bg2);border-radius:8px;padding:16px;margin-bottom:12px;overflow-x:auto}
+.histogram .bars{display:flex;align-items:end;gap:2px;height:80px}
+.histogram .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;min-width:20px}
+.histogram .bar-col .h-bar{width:100%;background:var(--accent);border-radius:2px 2px 0 0;transition:height .3s;min-height:1px;opacity:.7}
+.histogram .bar-col .h-bar:hover{opacity:1}
+.histogram .bar-col .h-label{font-size:9px;color:var(--text2);margin-top:2px;white-space:nowrap;transform:rotate(-45deg)}
+.disc-toggle{font-size:11px;color:var(--text2);cursor:pointer;padding:2px 6px;border-radius:4px;border:1px solid var(--border);background:0 0;margin-bottom:8px;display:inline-block}
+.disc-toggle:hover{background:var(--hover)}
+[data-theme="light"] .crit,[data-theme="system"] .crit{background:#d32f2f}
+.osdDocActionBtn{cursor:pointer;background:none;border:none;color:var(--text2);padding:2px;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;transition:.15s}
+.osdDocActionBtn:hover{color:var(--accent);background:var(--hover)}
+td.osdDocViewer__buttons{white-space:nowrap;width:80px}
+td.osdDocViewer__field{padding:4px 8px}
+.doc-tab{background:var(--bg3);border:none;padding:8px 16px;cursor:pointer;font-size:12px;color:var(--text2);border-bottom:2px solid transparent;transition:.15s}
+.doc-tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600;background:var(--bg2)}
+.doc-tab:hover{color:var(--text1);background:var(--bg2)}
+.qbar{border:1px solid var(--border);border-radius:8px;background:var(--bg2);margin-bottom:8px;overflow:hidden}
+.qbar-row{display:flex;align-items:center;gap:6px;padding:4px 8px;flex-wrap:nowrap}
+.qbar-btn,.qbar-saved-btn{background:0 0;border:none;color:var(--text2);cursor:pointer;padding:4px;border-radius:4px;display:flex;align-items:center;justify-content:center;transition:.15s}
+.qbar-btn:hover,.qbar-saved-btn:hover{background:var(--hover);color:var(--text)}
+.qbar-input-wrap{flex:1;display:flex;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:6px;overflow:hidden;min-width:0}
+.qbar-popover-wrap{display:flex;align-items:center;padding:0 4px;border-right:1px solid var(--border);height:100%;flex-shrink:0}
+.qbar-textarea{flex:1;background:0 0;border:none;color:var(--text);padding:6px 8px;font-size:13px;font-family:monospace;resize:none;outline:0;min-height:28px;line-height:1.4}
+.qbar-lang-switch{display:flex;align-items:center;border-left:1px solid var(--border);flex-shrink:0}
+.qbar-lang-btn{background:0 0;border:none;color:var(--accent);font-size:11px;font-weight:600;padding:4px 8px;cursor:pointer;letter-spacing:.5px;transition:.15s}
+.qbar-lang-btn:hover{color:var(--text)}
+.qbar-datepicker{display:flex;align-items:center;gap:4px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:2px 6px;flex-shrink:0}
+.qbar-date-btn{background:0 0;border:none;color:var(--text2);cursor:pointer;padding:2px;border-radius:3px;display:flex}
+.qbar-date-btn:hover{color:var(--text)}
+.qbar-date-range{background:0 0;border:none;color:var(--text);font-size:12px;cursor:pointer;padding:2px 4px;border-radius:3px;white-space:nowrap}
+.qbar-date-range:hover{background:var(--hover)}
+.qbar-date-sep{color:var(--text2);font-size:11px}
+.qbar-time-select,.qbar-limit-select{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:6px;font-size:11px;cursor:pointer;flex-shrink:0}
+.qbar-refresh{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;flex-shrink:0;transition:.15s}
+.qbar-refresh:hover{opacity:.85}
+.filter-bar-row{padding:6px 12px 10px;display:flex;align-items:center;border-top:1px solid var(--border)}
+.filter-bar-left{display:flex;align-items:center;gap:8px;flex-wrap:wrap;width:100%}
+.filter-badges{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.filter-badge{display:inline-flex;align-items:center;gap:4px;background:0 0;border:1px solid var(--accent);border-radius:16px;padding:3px 10px;font-size:12px;color:var(--accent)}
+.filter-badge-label{color:var(--accent);font-size:12px}
+.filter-badge-label-val{color:var(--text)}
+.filter-badge-close{background:0 0;border:none;color:var(--text2);cursor:pointer;font-size:14px;padding:0 0 0 4px;line-height:1;transition:.15s;display:inline-flex;align-items:center}
+.filter-badge-close:hover{color:var(--text)}
+.qbar-add-filter{background:0 0;border:none;color:var(--accent);font-size:12px;cursor:pointer;padding:4px 8px;border-radius:4px;display:flex;align-items:center;gap:4px;transition:.15s}
+.qbar-add-filter:hover{background:var(--hover)}
+@media(max-width:700px){.grid-2{grid-template-columns:1fr}.disc-layout{flex-direction:column}.disc-fields{width:100%;max-height:200px}}
+</style>
+</head>
+<body>
+
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+<div><h1>UniShield360 SOC Dashboard</h1><span class="sub" id="healthBadge">● checking...</span></div>
+<div class="theme-switch">
+  <button onclick="setTheme('dark')" id="tDark">🌙 Dark</button>
+  <button onclick="setTheme('system')" id="tSys">💻 System</button>
+  <button onclick="setTheme('light')" id="tLight">☀️ Light</button>
+</div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-tab="discover">🔎 Discover</button>
+  <button class="tab" data-tab="scan">🔍 Scan</button>
+  <button class="tab" data-tab="search">📝 Search</button>
+  <button class="tab" data-tab="analytics">📊 Analytics</button>
+  <button class="tab" data-tab="indices">🗄️ Indices</button>
+  <button class="tab" data-tab="geo">🌍 Geo</button>
+  <button class="tab" data-tab="health">❤️ Health</button>
+</div>
+
+<div class="panel active" id="panel-discover">
+  <div class="qbar">
+    <div class="qbar-row">
+      <button class="qbar-btn" onclick="discoverSearch()" title="Refresh results" aria-label="Refresh">↻</button>
+      <div class="qbar-input-wrap">
+        <div class="qbar-popover-wrap">
+          <button class="qbar-saved-btn" title="See saved queries" aria-label="See saved queries">
+            <svg width="14" height="14" viewBox="0 0 16 16"><path d="M5.008 2H2.282c-.181 0-.245.002-.275.007-.005.03-.007.094-.007.275v11.436c0 .181.002.245.007.275.03.005.094.007.275.007h11.436c.181 0 .245-.002.275-.007.005-.03.007-.094.007-.275V4.62c0-.13-.001-.18-.004-.204a2.654 2.654 0 0 0-.141-.147L11.73 2.145a2.654 2.654 0 0 0-.147-.141A2.654 2.654 0 0 0 11.38 2h-.388c.005.08.008.172.008.282v2.436c0 .446-.046.607-.134.77a.909.909 0 0 1-.378.378c-.163.088-.324.134-.77.134H6.282c-.446 0-.607-.046-.77-.134a.909.909 0 0 1-.378-.378C5.046 5.325 5 5.164 5 4.718V2.282c0-.11.003-.202.008-.282Z" fill="currentColor"/><path d="M2.282 1h9.098c.259 0 .348.01.447.032a.87.87 0 0 1 .273.113c.086.054.156.11.338.293l2.124 2.124c.182.182.239.252.293.338a.87.87 0 0 1 .113.273c.023.1.032.188.032.447v9.098c0 .446-.046.607-.134.77a.909.909 0 0 1-.378.378c-.163.088-.324.134-.77.134H2.282c-.446 0-.607-.046-.77-.134a.909.909 0 0 1-.378-.378c-.088-.163-.134-.324-.134-.77V2.282c0-.446.046-.607.134-.77a.909.909 0 0 1 .378-.378c.163-.088.324-.134.77-.134ZM6 2.282v2.436c0 .181.002.245.007.275.03.005.094.007.275.007h3.436c.181 0 .245-.002.275-.007.005-.03.007-.094.007-.275V2.282c0-.181-.002-.245-.007-.275A2.248 2.248 0 0 0 9.718 2H6.282c-.181 0-.245.002-.275.007-.005.03-.007.094-.007.275Z" fill="currentColor"/></svg>
+          </button>
+        </div>
+        <textarea id="dqlInput" class="qbar-textarea" rows="1" placeholder="Search" spellcheck="false" aria-label="Start typing to search and filter the discover page"></textarea>
+        <div class="qbar-lang-switch">
+          <button class="qbar-lang-btn" title="Change query language">DQL</button>
+        </div>
+      </div>
+      <div class="qbar-datepicker">
+        <button class="qbar-date-btn" title="Date quick select" aria-label="Date quick select">
+          <svg width="14" height="14" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M14 4v-.994C14 2.45 13.55 2 12.994 2H11v1h-1V2H6v1H5V2H3.006C2.45 2 2 2.45 2 3.006v9.988C2 13.55 2.45 14 3.006 14h9.988C13.55 14 14 13.55 14 12.994V5H2V4h12zm-3-3h1.994C14.102 1 15 1.897 15 3.006v9.988A2.005 2.005 0 0 1 12.994 15H3.006A2.005 2.005 0 0 1 1 12.994V3.006C1 1.898 1.897 1 3.006 1H5V0h1v1h4V0h1v1zM4 7h2v1H4V7zm3 0h2v1H7V7zm3 0h2v1h-2V7zM4 9h2v1H4V9zm3 0h2v1H7V9zm3 0h2v1h-2V9zm-6 2h2v1H4v-1zm3 0h2v1H7v-1zm3 0h2v1h-2v-1z" fill="currentColor"></path></svg>
+        </button>
+        <button class="qbar-date-range" id="dStartBtn" onclick="document.getElementById('dTime').focus()" title="Start date">~ a day ago</button>
+        <span class="qbar-date-sep">→</span>
+        <button class="qbar-date-range" id="dEndBtn" onclick="document.getElementById('dTime').focus()" title="End date">now</button>
+      </div>
+      <select id="dTime" class="qbar-time-select" onchange="updateDateLabels();discoverSearch()">
+        <option value="1h">Last 1 hour</option>
+        <option value="24h" selected>Last 24 hours</option>
+        <option value="7d">Last 7 days</option>
+        <option value="30d">Last 30 days</option>
+        <option value="all">All time</option>
+      </select>
+      <select id="dLimit" class="qbar-limit-select">
+        <option>20</option><option selected>50</option><option>100</option><option>200</option><option>500</option>
+      </select>
+      <button class="qbar-refresh" onclick="discoverSearch()" title="Refresh">
+        <svg width="14" height="14" viewBox="0 0 16 16"><path d="M11.228 2.942a.5.5 0 1 1-.538.842A5 5 0 1 0 13 8a.5.5 0 1 1 1 0 6 6 0 1 1-2.772-5.058ZM14 1.5v3A1.5 1.5 0 0 1 12.5 6h-3a.5.5 0 0 1 0-1h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 1 1 1 0Z" fill="currentColor"></path></svg>
+        <span>Refresh</span>
+      </button>
+    </div>
+  </div>
+  <div class="filter-bar-row" id="dFilterBar">
+    <div class="filter-bar-left">
+      <div class="qbar-popover-wrap">
+        <button class="qbar-saved-btn" title="Filter actions" aria-label="Filter actions">
+          <svg width="14" height="14" viewBox="0 0 16 16"><path fill-rule="evenodd" d="m9.759 12.652-1.8 2.25-.78-.625 1.8-2.25A.1.1 0 0 0 9 11.965V8.362a1 1 0 0 1 .232-.64l4.631-5.558A.1.1 0 0 0 13.787 2H2.213a.1.1 0 0 0-.077.164l4.631 5.558a1 1 0 0 1 .232.64v5.853a.1.1 0 0 0 .178.062l.781.625c-.65.812-1.959.353-1.959-.687V8.362L1.368 2.804C.771 2.088 1.281 1 2.214 1h11.573c.932 0 1.442 1.088.845 1.804L10 8.362v3.603a1.1 1.1 0 0 1-.241.687Z" fill="currentColor"></path></svg>
+        </button>
+      </div>
+      <div class="filter-badges" id="dFilterBadges">
+        <span class="filter-badge" id="dActiveFilter" style="display:none">
+          <span class="filter-badge-label" id="dFilterLabel"><span class="filter-badge-label-val"></span></span>
+          <button class="filter-badge-close" onclick="clearFilter()" aria-label="Delete" title="Delete"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.293 8 3.146 3.854a.5.5 0 1 1 .708-.708L8 7.293l4.146-4.147a.5.5 0 0 1 .708.708L8.707 8l4.147 4.146a.5.5 0 0 1-.708.708L8 8.707l-4.146 4.147a.5.5 0 0 1-.708-.708L7.293 8Z"></path></svg></button>
+        </span>
+      </div>
+      <button class="qbar-add-filter" onclick="addDiscoverFilter()">+ Add filter</button>
+    </div>
+  </div>
+  <div class="filter-chips" id="dChips"></div>
+  <div class="disc-layout">
+    <div class="disc-fields" id="dFields">
+      <div class="dfs-source">
+        <select id="dIndex" onchange="discoverSearch()">
+          <option>unishield360-alerts-4.x-*</option>
+          <option>unishield360-alerts-*</option>
+          <option>unishield360-archives-*</option>
+        </select>
+        <button class="dfs-refresh" onclick="discoverSearch()" title="Refresh">↻</button>
+      </div>
+      <div class="dfs-title">Available Fields</div>
+      <div class="loading">Loading fields...</div>
+    </div>
+    <div class="disc-main">
+      <div class="histogram" id="dHistogram"></div>
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <span id="dTotal" style="color:var(--text2);font-size:14px">0 results</span>
+        <button class="disc-toggle" onclick="discoverAddColumn()">+ Add column</button>
+        <button class="disc-toggle" onclick="discoverSearch()">↻ Refresh</button>
+      </div>
+      <div class="results" id="dResults"><div class="loading">Run a search to see results</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="panel-scan">
+  <div class="filter-bar">
+    <button class="crit" onclick="scan('Critical',{min_level:15,max_level:20})">🔴 Critical (15-20)</button>
+    <button class="high" onclick="scan('High',{min_level:12,max_level:14})">🟠 High (12-14)</button>
+    <button class="med" onclick="scan('Medium',{min_level:7,max_level:11})">🟡 Medium (7-11)</button>
+    <button class="low" onclick="scan('Low',{min_level:0,max_level:6})">🟢 Low (0-6)</button>
+    <button class="all" onclick="scan('All',{min_level:1,max_level:15,limit:100})">📊 All</button>
+    <button class="info" onclick="scan('Failed Logons',{event_id:'4625',min_level:12})">🔑 Failed Logons</button>
+    <button class="info" onclick="scan('Logons',{event_id:'4624'})">👤 Logons</button>
+    <button class="cust" onclick="scan('Brute Force',{rule_id:'60204'})">💀 Brute Force</button>
+    <button class="cust" onclick="scan('PowerShell',{event_id:'4104'})">⚡ PowerShell</button>
+    <button class="cust" onclick="scan('Log Cleared',{event_id:'1102'})">🧹 Log Cleared</button>
+  </div>
+  <div class="custom-inputs">
+    <div><label>Event ID</label><input id="evtId" placeholder="4625"/></div>
+    <div><label>Rule ID</label><input id="ruleId" placeholder="60204"/></div>
+    <div><label>Description</label><input id="desc" placeholder="keyword..."/></div>
+    <div><label>Min</label><input id="minLv" value="1" style="width:60px"/></div>
+    <div><label>Max</label><input id="maxLv" value="15" style="width:60px"/></div>
+    <div><label>Limit</label><input id="limit" value="100" style="width:60px"/></div>
+    <button class="cust" onclick="customScan()">🎯 Custom Scan</button>
+  </div>
+  <div class="stats" id="sStats"></div>
+  <div class="results" id="sResults"><div class="loading">Select a filter to scan</div></div>
+</div>
+
+<div class="panel" id="panel-search">
+  <div class="custom-inputs">
+    <div style="flex:1"><label>DQL Query</label><input id="dql" placeholder='rule.level:[12 TO 15] OR data.win.system.eventID:"4625"' style="width:100%"/></div>
+    <div><label>Index</label><select id="sIdx"><option>unishield360-alerts-4.x-*</option></select></div>
+    <div><label>Limit</label><input id="sLimit" value="50" style="width:60px"/></div>
+    <button class="all" onclick="dqlSearch()">🔍 Search</button>
+  </div>
+  <div class="stats" id="qStats"></div>
+  <div class="results" id="qResults"></div>
+</div>
+
+<div class="panel" id="panel-analytics">
+  <div class="custom-inputs">
+    <div><label>Field</label><select id="aField">
+      <option value="rule.level">Rule Level</option>
+      <option value="rule.id">Rule ID</option><option value="agent.name">Agent Name</option>
+      <option value="rule.groups">Rule Groups</option>
+      <option value="data.win.system.eventID">Event ID</option>
+      <option value="data.vulnerability.severity">Vuln Severity</option>
+    </select></div>
+    <div><label>Type</label><select id="aType">
+      <option value="terms">Top Terms</option>
+      <option value="date_histogram">Over Time</option>
+    </select></div>
+    <div><label>Limit</label><input id="aLimit" value="15" style="width:60px"/></div>
+    <button class="all" onclick="loadAggregate()">📊 Load</button>
+  </div>
+  <div class="grid-2">
+    <div><h3 style="color:var(--accent);font-weight:300;margin-bottom:8px">Distribution</h3><div id="aChart"></div></div>
+    <div><h3 style="color:var(--accent);font-weight:300;margin-bottom:8px">Data</h3><div class="results" id="aResults"></div></div>
+  </div>
+</div>
+
+<div class="panel" id="panel-indices">
+  <div class="stats" id="iStats"></div>
+  <div class="results" id="iResults"></div>
+</div>
+
+<div class="panel" id="panel-geo">
+  <div class="stats" id="gStats"></div>
+  <div class="geo-grid" id="gResults"></div>
+</div>
+
+<div class="panel" id="panel-health">
+  <div class="stats" id="hStats"></div>
+  <div class="results" id="hResults"></div>
+</div>
+
+<script>
+const saved=localStorage.getItem('theme')||'dark'
+function setTheme(t){
+  document.documentElement.setAttribute('data-theme',t)
+  localStorage.setItem('theme',t)
+  document.querySelectorAll('.theme-switch button').forEach(b=>b.classList.remove('active'))
+  document.getElementById('t'+t.charAt(0).toUpperCase()+t.slice(1)).classList.add('active')
+}
+setTheme(saved)
+
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'))
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'))
+  t.classList.add('active')
+  document.getElementById('panel-'+t.dataset.tab).classList.add('active')
+}))
+
+async function api(path,params={}){
+  const q=new URLSearchParams()
+  for(const[k,v]of Object.entries(params))if(v!=null&&v!=='')q.set(k,v)
+  const r=await fetch(`/api/${path}?${q}`)
+  if(!r.ok)throw new Error(`HTTP ${r.status}`)
+  return r.json()
+}
+
+async function loadHealth(){
+  try{
+    const h=await api('health')
+    document.getElementById('healthBadge').innerHTML=`● ${h.cluster_status} | ${h.status} | ${h.nodes} node(s)`
+    document.getElementById('hStats').innerHTML=`
+      <div class="stat-card" style="border-left-color:#4caf50"><div class="label">Status</div><div class="value" style="font-size:20px">${h.status}</div></div>
+      <div class="stat-card" style="border-left-color:var(--accent)"><div class="label">Cluster</div><div class="value" style="font-size:20px">${h.cluster}</div></div>
+      <div class="stat-card" style="border-left-color:${h.cluster_status==='green'?'#4caf50':'#ff9800'}"><div class="label">Cluster Status</div><div class="value" style="font-size:20px">${h.cluster_status}</div></div>
+      <div class="stat-card" style="border-left-color:#1565c0"><div class="label">Nodes</div><div class="value">${h.nodes}</div></div>
+      <div class="stat-card" style="border-left-color:var(--text2)"><div class="label">API Version</div><div class="value" style="font-size:20px">${h.api_version}</div></div>
+      <div class="stat-card" style="border-left-color:var(--text2)"><div class="label">Timestamp</div><div class="value" style="font-size:14px">${h.timestamp}</div></div>`
+  }catch(e){document.getElementById('healthBadge').innerHTML='● offline'}
+}
+loadHealth()
+
+async function scan(label,params){
+  document.getElementById('sStats').innerHTML='<div class="loading">⏳ Scanning...</div>'
+  document.getElementById('sResults').innerHTML='<div class="loading">⏳ Loading alerts...</div>'
+  try{
+    const d=await api('scan',params)
+    renderScan(d,label)
+  }catch(e){
+    document.getElementById('sResults').innerHTML=`<div class="error">❌ ${e.message}</div>`
+    document.getElementById('sStats').innerHTML=''
+  }
+}
+
+function customScan(){
+  const p={}
+  const e=document.getElementById('evtId').value.trim()
+  const r=document.getElementById('ruleId').value.trim()
+  const d=document.getElementById('desc').value.trim()
+  if(e)p.event_id=e;if(r)p.rule_id=r;if(d)p.description=d
+  p.min_level=parseInt(document.getElementById('minLv').value)||1
+  p.max_level=parseInt(document.getElementById('maxLv').value)||15
+  p.limit=parseInt(document.getElementById('limit').value)||100
+  scan(e?`Event ${e}`:r?`Rule ${r}`:d?`"${d}"`:'Custom',p)
+}
+
+function renderScan(data,label){
+  const total=data.total||0,alerts=data.results||[]
+  document.getElementById('sStats').innerHTML=`
+    <div class="stat-card" style="border-left-color:var(--accent)"><div class="label">Filter</div><div class="value" style="font-size:18px">${label}</div></div>
+    <div class="stat-card" style="border-left-color:#4caf50"><div class="label">Total</div><div class="value">${total}</div></div>
+    <div class="stat-card" style="border-left-color:#ff9800"><div class="label">Showing</div><div class="value">${alerts.length}</div></div>`
+  if(!alerts.length){document.getElementById('sResults').innerHTML='<div class="loading">✅ No alerts</div>';return}
+  let h=`<table><thead><tr><th>Timestamp</th><th>Level</th><th>Rule</th><th>Event ID</th><th>Description</th><th>Agent</th><th>MITRE</th></tr></thead><tbody>`
+  alerts.slice(0,200).forEach(a=>{
+    const lv=a.rule?.level||0
+    const lvCls=lv>=15?'lvl-15':lv>=12?'lvl-12':lv>=7?'lvl-7':'lvl-0'
+    const mitre=a.rule?.mitre?.id?.join(', ')||''
+    h+=`<tr>
+      <td style="white-space:nowrap;color:var(--text2);font-size:12px">${a['@timestamp']||a.timestamp||''}</td>
+      <td><span class="level-badge ${lvCls}">${lv}</span></td>
+      <td style="color:var(--accent)">${a.rule?.id||''}</td>
+      <td>${a.data?.win?.system?.eventID||a.data?.win?.eventdata?.eventId||''}</td>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${a.rule?.description||''}</td>
+      <td>${a.agent?.name||''}</td>
+      <td style="font-size:11px;color:var(--text2)">${mitre}</td>
+    </tr>`
+  })
+  h+='</tbody></table>'
+  document.getElementById('sResults').innerHTML=h
+}
+
+async function dqlSearch(){
+  const q=document.getElementById('dql').value.trim()
+  const params={q,limit:parseInt(document.getElementById('sLimit').value)||50,index:document.getElementById('sIdx').value}
+  document.getElementById('qStats').innerHTML='<div class="loading">⏳ Searching...</div>'
+  try{
+    const d=await api('search',params)
+    const total=d.total||0,results=d.results||[]
+    document.getElementById('qStats').innerHTML=`
+      <div class="stat-card" style="border-left-color:var(--accent)"><div class="label">Query</div><div class="value" style="font-size:14px">${q||'*'}</div></div>
+      <div class="stat-card" style="border-left-color:#4caf50"><div class="label">Total</div><div class="value">${total}</div></div>
+      <div class="stat-card" style="border-left-color:#ff9800"><div class="label">Showing</div><div class="value">${results.length}</div></div>`
+    if(!results.length){document.getElementById('qResults').innerHTML='<div class="loading">✅ No results</div>';return}
+    let h=`<table><thead><tr><th>Timestamp</th><th>Level</th><th>Rule</th><th>Description</th><th>Agent</th></tr></thead><tbody>`
+    results.slice(0,200).forEach(a=>{
+      const lv=a.rule?.level||0
+      const lvCls=lv>=15?'lvl-15':lv>=12?'lvl-12':lv>=7?'lvl-7':'lvl-0'
+      h+=`<tr>
+        <td style="white-space:nowrap;color:var(--text2);font-size:12px">${a['@timestamp']||a.timestamp||''}</td>
+        <td><span class="level-badge ${lvCls}">${lv}</span></td>
+        <td style="color:var(--accent)">${a.rule?.id||''}</td>
+        <td>${(a.rule?.description||'').substring(0,80)}</td>
+        <td>${a.agent?.name||''}</td>
+      </tr>`
+    })
+    h+='</tbody></table>'
+    document.getElementById('qResults').innerHTML=h
+  }catch(e){document.getElementById('qResults').innerHTML=`<div class="error">❌ ${e.message}</div>`}
+}
+
+async function loadAggregate(){
+  const field=document.getElementById('aField').value
+  const type=document.getElementById('aType').value
+  const limit=parseInt(document.getElementById('aLimit').value)||15
+  const params={field,type,limit}
+  try{
+    const d=await api('aggregate',params)
+    const buckets=d.buckets||[]
+    document.getElementById('aResults').innerHTML=buckets.length?`<table><thead><tr><th>Key</th><th>Count</th></tr></thead><tbody>${
+      buckets.map(b=>`<tr><td>${b.key}</td><td>${b.doc_count}</td></tr>`).join('')}</tbody></table>`:'<div class="loading">No data</div>'
+    renderChart(buckets,field,type)
+  }catch(e){document.getElementById('aResults').innerHTML=`<div class="error">${e.message}</div>`}
+}
+
+function renderChart(buckets,field,type){
+  if(!buckets.length){document.getElementById('aChart').innerHTML='<div class="loading">No data</div>';return}
+  const max=Math.max(...buckets.map(b=>b.doc_count))
+  const colors=['#d32f2f','#e65100','#f9a825','#2e7d32','#1565c0','#6a1b9a','#00838f','#4caf50','#ff9800','var(--accent)','var(--text2)','#e91e63']
+  let html=type==='date_histogram'?'<div class="loading">Time chart</div>':buckets.map((b,i)=>{
+    const pct=(b.doc_count/max*100).toFixed(0)
+    return `<div class="bar-label"><span>${b.key}</span><span>${b.doc_count.toLocaleString()}</span></div>
+      <div class="bar"><div class="bar-fill" style="width:${pct}%;background:${colors[i%colors.length]}">${pct}%</div></div>`
+  }).join('')
+  document.getElementById('aChart').innerHTML=html
+}
+
+async function loadIndices(){
+  document.getElementById('iStats').innerHTML='<div class="loading">⏳ Loading indices...</div>'
+  try{
+    const d=await api('indices')
+    const patterns=d.patterns||[]
+    const total=d.total_indices||0
+    document.getElementById('iStats').innerHTML=`
+      <div class="stat-card" style="border-left-color:#4caf50"><div class="label">Total Indices</div><div class="value">${total}</div></div>
+      <div class="stat-card" style="border-left-color:var(--accent)"><div class="label">Patterns</div><div class="value">${patterns.length}</div></div>`
+    let h=`<table><thead><tr><th>Pattern</th><th>Indices</th><th>Total Docs</th></tr></thead><tbody>`
+    patterns.forEach(p=>{
+      h+=`<tr><td style="color:var(--accent)">${p.pattern}</td><td>${p.count}</td><td>${p.total_docs.toLocaleString()}</td></tr>`
+    })
+    h+='</tbody></table>'
+    document.getElementById('iResults').innerHTML=h
+  }catch(e){document.getElementById('iResults').innerHTML=`<div class="error">${e.message}</div>`}
+}
+loadIndices()
+
+async function loadGeo(){
+  document.getElementById('gStats').innerHTML='<div class="loading">⏳ Loading geo data...</div>'
+  try{
+    const d=await api('geo',{limit:100})
+    const results=d.results||[]
+    document.getElementById('gStats').innerHTML=`
+      <div class="stat-card" style="border-left-color:#00838f"><div class="label">Geo Locations</div><div class="value">${results.length}</div></div>`
+    if(!results.length){document.getElementById('gResults').innerHTML='<div class="loading">No geo data found</div>';return}
+    document.getElementById('gResults').innerHTML=results.map(r=>`
+      <div class="geo-card">
+        <div class="country">${r.country||'Unknown'}</div>
+        <div class="detail">📍 ${r.city||'N/A'} | ${r.ip||'N/A'}</div>
+        <div class="detail">🛡️ Agent: ${r.agent||'N/A'} | Level: ${r.level||0}</div>
+        <div class="detail">🕐 ${r.timestamp||''}</div>
+      </div>`).join('')
+  }catch(e){document.getElementById('gResults').innerHTML=`<div class="error">${e.message}</div>`}
+}
+loadGeo()
+
+// ==================== DISCOVER ====================
+let dColumns=['@timestamp','rule.id','rule.level','rule.description','agent.name']
+let dFieldList=[],dFieldCache=null
+
+async function discoverLoadFields(){
+  try{
+    const idx=document.getElementById('dIndex').value
+    const d=await api('fields',{index:idx})
+    dFieldList=d.fields||[]
+    dFieldCache=dFieldList
+    renderFields(dFieldList)
+  }catch(e){document.getElementById('dFields').innerHTML=`<div class="dfs-source">${dsHTML()}</div><div class="dfs-title">Available Fields</div><div class="error">${e.message}</div>`}
+}
+
+function dsHTML(){const v=document.getElementById('dIndex')?.value||'unishield360-alerts-4.x-*';return `<select id="dIndex" onchange="discoverSearch()"><option ${v==='unishield360-alerts-4.x-*'?'selected':''}>unishield360-alerts-4.x-*</option><option ${v==='unishield360-alerts-*'?'selected':''}>unishield360-alerts-*</option><option ${v==='unishield360-archives-*'?'selected':''}>unishield360-archives-*</option></select><button class="dfs-refresh" onclick="discoverSearch()" title="Refresh">↻</button>`}
+
+function renderFields(fields){
+  const sel=document.getElementById('dFields')
+  if(!fields||!fields.length){sel.innerHTML=dsHTML()+`<div class="dfs-title">Available Fields</div><div class="loading">No fields</div>`;return}
+  sel.innerHTML=dsHTML()+`<div class="dfs-title">Available Fields (${fields.length})</div>
+    <input id="dFieldSearch" oninput="filterFields(this.value)" placeholder="Search fields..." />
+    ${dColumns.map(c=>`<div class="field-row selected" onclick="toggleFieldColumn('${c}')"><span class="name">${c}</span><span class="count">column</span></div>`).join('')}
+    <div style="border-top:1px solid var(--border);margin:6px 0"></div>
+    ${fields.filter(f=>!dColumns.includes(f.name)).slice(0,150).map(f=>`
+      <div class="field-row" onclick="toggleFieldColumn('${f.name}')" title="Click to add column">
+        <span class="name">${f.name}</span>
+        <span class="count">${f.type}</span>
+      </div>`).join('')}`
+}
+
+function filterFields(val){
+  const q=val.toLowerCase()
+  const filtered=q?dFieldList.filter(f=>f.name.toLowerCase().includes(q)):dFieldList
+  renderFields(filtered)
+}
+
+function toggleFieldColumn(name){
+  const idx=dColumns.indexOf(name)
+  if(idx>=0)dColumns.splice(idx,1);else dColumns.push(name)
+  if(dColumns.length<1)dColumns=['@timestamp']
+  renderFields(dFieldList)
+  discoverSearch()
+}
+
+function discoverAddColumn(){
+  const f=prompt('Enter field name (e.g. rule.level):')
+  if(f&&f.trim()){dColumns.push(f.trim());renderFields(dFieldList);discoverSearch()}
+}
+
+async function discoverSearch(){
+  updateDateLabels()
+  const q=document.getElementById('dqlInput').value.trim()
+  const timeRange=document.getElementById('dTime').value
+  const limit=parseInt(document.getElementById('dLimit').value)||50
+  const index=document.getElementById('dIndex').value
+  const params={q,limit,index}
+
+  if(timeRange!=='all'){
+    const now=new Date()
+    const m=parseInt(timeRange)
+    if(timeRange.includes('h'))params.start_date=new Date(now-m*3600000).toISOString()
+    else if(timeRange.includes('d'))params.start_date=new Date(now-m*86400000).toISOString()
+    params.end_date=now.toISOString()
+  }
+
+  try{
+    document.getElementById('dResults').innerHTML='<div class="loading">⏳ Searching...</div>'
+    const d=await api('search',params)
+    const total=d.total||0,results=d.results||[]
+    document.getElementById('dTotal').innerHTML=`<b>${total.toLocaleString()}</b> results (${results.length} shown)`
+    document.getElementById('dResults').innerHTML=discoverRenderTable(results)
+    discoverLoadHistogram(params)
+    discoverLoadFields()
+  }catch(e){document.getElementById('dResults').innerHTML=`<div class="error">❌ ${e.message}</div>`}
+}
+
+function discoverRenderTable(results){
+  if(!results.length)return '<div class="loading">No results</div>'
+  let h=`<table><thead><tr><th style="width:30px"></th>${dColumns.map(c=>`<th onclick="dColumns.splice(dColumns.indexOf('${c}'),1);renderFields(dFieldList);discoverSearch()" style="cursor:pointer" title="Remove column">${c} ×</th>`).join('')}</tr></thead><tbody>`
+  results.slice(0,200).forEach((a,i)=>{
+    const rowId='dr'+i, tabId='dt'+i
+    const jsonStr=JSON.stringify(a,null,2).replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    const fieldsHtml=Object.entries(flattenObj(a)).map(([k,v])=>{
+      const val=String(v??'').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      const escK=k.replace(/</g,'&lt;')
+      const t=typeof v
+      let tokenSvg=''
+      if(t==='number'||(!isNaN(v)&&v!==''&&v!==true&&v!==false&&v!==null&&v!==undefined)){
+        tokenSvg='<svg width="16" height="16" viewBox="0 0 16 16" class="euiIcon euiIcon--medium" focusable="false" role="img" aria-label="Number field"><title>Number field</title><path d="M7.8 9.812h-.842l-.78 2.335H5.031l.78-2.335H4.6l.182-1.043h1.373l.507-1.504H5.454l.188-1.042h1.367l.792-2.37H8.94l-.792 2.37h.849l.792-2.37h1.145l-.792 2.37H11.4l-.182 1.042H9.8L9.293 8.77h1.248l-.183 1.043H8.946l-.775 2.335H7.026L7.8 9.812Zm-.5-1.043h.842l.513-1.504h-.849L7.3 8.77Z" fill="currentColor"></path></svg>'
+      }else if(t==='boolean'){
+        tokenSvg='<svg width="16" height="16" viewBox="0 0 16 16" class="euiIcon euiIcon--medium" focusable="false" role="img" aria-label="Boolean field"><title>Boolean field</title><path fill-rule="evenodd" d="M8 13A5 5 0 1 1 8 3a5 5 0 0 1 0 10Zm-2.828-2.172a4 4 0 0 1 5.656-5.656c.004.013-5.645 5.674-5.656 5.656Z" fill="currentColor"></path></svg>'
+      }else if(v instanceof Date||k==='@timestamp'||k==='timestamp'){
+        tokenSvg='<svg width="16" height="16" viewBox="0 0 16 16" class="euiIcon euiIcon--medium" focusable="false" role="img" aria-label="Date field"><title>Date field</title><path fill-rule="evenodd" d="M13 11.567C13 12.36 12.36 13 11.567 13H4.433C3.64 13 3 12.36 3 11.567V4.433C3 3.64 3.64 3 4.433 3H6v-.495a.51.51 0 0 1 .412-.497L6.5 2c.276 0 .5.214.5.505V3h2v-.495a.51.51 0 0 1 .412-.497L9.5 2c.276 0 .5.214.5.505V3h1.567C12.36 3 13 3.64 13 4.433v7.134ZM4 6v5.33c0 .37.3.67.67.67h6.66c.37 0 .67-.3.67-.67V6H4Zm1.5 4c.245 0 .45.183.492.412L6 10.5c0 .245-.183.45-.412.492L5.5 11a.505.505 0 0 1-.5-.5c0-.245.183-.45.412-.492L5.5 10ZM8 10c.245 0 .45.183.492.412l.008.088c0 .245-.183.45-.412.492L8 11a.505.505 0 0 1-.5-.5c0-.245.183-.45.412-.492L8 10Zm2.5 0c.245 0 .45.183.492.412L11 10.5c0 .245-.183.45-.412.492L10.5 11a.505.505 0 0 1-.5-.5c0-.245.183-.45.412-.492L10.5 10Zm-5-1.5c.245 0 .45.183.492.412L6 9c0 .245-.183.45-.412.492L5.5 9.5A.505.505 0 0 1 5 9c0-.245.183-.45.412-.492L5.5 8.5Zm2.5 0c.245 0 .45.183.492.412L8.5 9c0 .245-.183.45-.412.492L8 9.5a.505.505 0 0 1-.5-.5c0-.245.183-.45.412-.492L8 8.5Zm2.5 0c.245 0 .45.183.492.412L11 9c0 .245-.183.45-.412.492L10.5 9.5A.505.505 0 0 1 10 9c0-.245.183-.45.412-.492L10.5 8.5ZM5.5 7c.245 0 .45.183.492.412L6 7.5c0 .245-.183.45-.412.492L5.5 8a.505.505 0 0 1-.5-.5c0-.245.183-.45.412-.492L5.5 7ZM8 7c.245 0 .45.183.492.412L8.5 7.5c0 .245-.183.45-.412.492L8 8a.505.505 0 0 1-.5-.5c0-.245.183-.45.412-.492L8 7Zm2.5 0c.245 0 .45.183.492.412L11 7.5c0 .245-.183.45-.412.492L10.5 8a.505.505 0 0 1-.5-.5c0-.245.183-.45.412-.492L10.5 7ZM4 5h8v-.33c0-.37-.3-.67-.67-.67H4.67C4.3 4 4 4.3 4 4.67V5Z" fill="currentColor"></path></svg>'
+      }else{
+        tokenSvg='<svg width="16" height="16" viewBox="0 0 16 16" class="euiIcon euiIcon--medium" focusable="false" role="img" aria-label="String field"><title>String field</title><path d="m9.147 4.297-.255 1.455h.936l-.222 1.266h-.935l-.455 2.688c-.025.184-.013.323.036.417.048.093.17.144.365.151.075.004.23-.005.465-.027l-.13 1.32c-.3.097-.618.142-.957.135-.552-.007-.965-.17-1.239-.487-.274-.317-.386-.748-.335-1.293l.476-2.904h-.725l.216-1.266h.725l.254-1.455h1.78Z" fill="currentColor"></path></svg>'
+      }
+      const escVal=val.replace(/'/g,"\\'").replace(/"/g,'&quot;')
+      return `<tr style="border-bottom:1px solid var(--border)" data-test-subj="tableDocViewRow-${escK.replace(/\./g,'-')}">
+        <td class="osdDocViewer__buttons" style="white-space:nowrap;padding:4px 6px;width:80px"><button onclick="filterForValue('${escK}','${escVal}')" class="osdDocActionBtn" title="Filter for value" aria-label="Filter for value"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7 6h2.5a.5.5 0 0 1 0 1H7v2.5a.5.5 0 0 1-1 0V7H3.5a.5.5 0 0 1 0-1H6V3.5a.5.5 0 0 1 1 0V6Zm3.24 4.74c0-.117.04-.225.107-.31A5.478 5.478 0 0 0 12 6.5 5.5 5.5 0 1 0 6.5 12a.5.5 0 1 1 0 1 6.5 6.5 0 1 1 4.936-2.27l4.419 4.418a.5.5 0 0 1-.707.707l-4.768-4.768a.499.499 0 0 1-.14-.347Z"></path></svg></button>
+        <button onclick="filterOutValue('${escK}','${escVal}')" class="osdDocActionBtn" title="Filter out value" aria-label="Filter out value"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M9.5 6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1 0-1h6Zm.74 4.74c0-.117.04-.225.107-.31A5.478 5.478 0 0 0 12 6.5 5.5 5.5 0 1 0 6.5 12a.5.5 0 1 1 0 1 6.5 6.5 0 1 1 4.936-2.27l4.419 4.418a.5.5 0 0 1-.707.707l-4.768-4.768a.499.499 0 0 1-.14-.347Z"></path></svg></button>
+        <button onclick="toggleColumn('${escK}')" class="osdDocActionBtn" title="Toggle column in table" aria-label="Toggle column in table"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 1v14h14V1H1zM0 0h16v16H0V0zm9 1v14h1V1H9zM3 3.5h4v-1H3v1zm0 3h4v-1H3v1zm0 3h4v-1H3v1z"></path></svg></button>
+        <button onclick="filterExists('${escK}')" class="osdDocActionBtn" title="Filter for field present" aria-label="Filter for field present"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M12 2H2v11h6v1H1V1h12v6h-1V2ZM5 5h5.999V4H5v1ZM3 5V4h1v1H3Zm2 3V7h3v1H5ZM3 8V7h1v1H3Zm2 3v-1h2v1H5Zm5-1H8v1h2v2h1v-2h2v-1h-2V8h-1v2Zm-7 1v-1h1v1H3Zm7.5-5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9Z"></path></svg></button></td>
+        <td class="osdDocViewer__field" style="padding:4px 8px"><div style="display:flex;align-items:center;gap:6px"><span style="flex-shrink:0;display:flex;color:var(--text2)">${tokenSvg}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;font-size:12px;font-family:monospace;color:var(--accent)">${escK}</span></div></td>
+        <td style="padding:4px 8px;font-size:12px;word-break:break-all">${val.length>300?val.substring(0,300)+'…':val}</td></tr>`
+    }).join('')
+    h+=`<tr onclick="toggleRow('${rowId}','${tabId}')" style="cursor:pointer">`
+    h+=`<td style="color:var(--text2);font-size:12px" id="${tabId}icon">▶</td>`
+    h+=dColumns.map(c=>{
+      let v=resolveField(a,c),td=''
+      if(c==='rule.level'){const l=parseInt(v)||0;td=`<span class="level-badge ${l>=15?'lvl-15':l>=12?'lvl-12':l>=7?'lvl-7':'lvl-0'}">${v}</span>`}
+      else if(c==='@timestamp'||c==='timestamp')td=`<span style="white-space:nowrap;color:var(--text2);font-size:12px">${(v||'').substring(0,19)}</span>`
+      else{if(v&&String(v).length>80)v=String(v).substring(0,80)+'…';td=v||'—'}
+      return `<td>${td}</td>`
+    }).join('')+'</tr>'
+    h+=`<tr id="${rowId}" style="display:none"><td colspan="${dColumns.length+1}" style="padding:0;background:var(--bg3)">
+      <div style="border-bottom:1px solid var(--border);display:flex;gap:0">
+        <button onclick="switchDocView('${tabId}','table')" id="${tabId}btn-table" class="doc-tab active">Table</button>
+        <button onclick="switchDocView('${tabId}','json')" id="${tabId}btn-json" class="doc-tab">JSON</button>
+      </div>
+      <div id="${tabId}table"><table style="width:100%;font-size:12px">${fieldsHtml}</table></div>
+      <div id="${tabId}json" style="display:none"><pre style="padding:16px;margin:0;font-size:12px;overflow-x:auto;max-height:400px">${jsonStr}</pre></div>
+    </td></tr>`
+  })
+  return h+'</tbody></table>'
+}
+
+function flattenObj(obj,prefix=''){
+  let result={}
+  for(const[k,v]of Object.entries(obj||{})){
+    const key=prefix?`${prefix}.${k}`:k
+    if(v&&typeof v==='object'&&!Array.isArray(v))Object.assign(result,flattenObj(v,key))
+    else result[key]=v
+  }
+  return result
+}
+
+function toggleRow(rowId,tabId){
+  const row=document.getElementById(rowId)
+  const icon=document.getElementById(tabId+'icon')
+  if(row.style.display==='none'){row.style.display='table-row';icon.textContent='▼'}
+  else{row.style.display='none';icon.textContent='▶'}
+}
+
+function switchDocView(tabId,view){
+  document.getElementById(tabId+'btn-table').className='doc-tab'
+  document.getElementById(tabId+'btn-json').className='doc-tab'
+  document.getElementById(tabId+'table').style.display='none'
+  document.getElementById(tabId+'json').style.display='none'
+  document.getElementById(tabId+`btn-${view}`).className='doc-tab active'
+  document.getElementById(tabId+view).style.display='block'
+}
+
+function filterForValue(path,val){
+  const inp=document.getElementById('dqlInput')
+  const field=path.replace(/&lt;/g,'<')
+  const cleanVal=val.replace(/&quot;/g,'"').replace(/&#39;/g,"'")
+  inp.value=(inp.value||'')+` ${field}:"${cleanVal}"`
+  setActiveFilter(`${field}: "${cleanVal}"`)
+  discoverSearch()
+}
+function filterOutValue(path,val){
+  const inp=document.getElementById('dqlInput')
+  const field=path.replace(/&lt;/g,'<')
+  const cleanVal=val.replace(/&quot;/g,'"').replace(/&#39;/g,"'")
+  inp.value=(inp.value||'')+` NOT ${field}:"${cleanVal}"`
+  setActiveFilter(`NOT ${field}: "${cleanVal}"`)
+  discoverSearch()
+}
+function filterExists(path){
+  const inp=document.getElementById('dqlInput')
+  const field=path.replace(/&lt;/g,'<')
+  inp.value=(inp.value||'')+` ${field}:*`
+  setActiveFilter(`${field}: *`)
+  discoverSearch()
+}
+function toggleColumn(path){
+  const field=path.replace(/&lt;/g,'<')
+  const idx=dColumns.indexOf(field)
+  if(idx>=0)dColumns.splice(idx,1)
+  else dColumns.push(field)
+  renderFields(dFieldList);discoverSearch()
+}
+function setActiveFilter(label){
+  dActiveFilter=label
+  const colonIdx=label.indexOf(':')
+  if(colonIdx>=0){
+    const key=label.substring(0,colonIdx)
+    const val=label.substring(colonIdx+1)
+    document.getElementById('dFilterLabel').innerHTML=key+': <span class="filter-badge-label-val">'+val+'</span>'
+  }else{
+    document.getElementById('dFilterLabel').textContent=label
+  }
+  document.getElementById('dActiveFilter').style.display='inline-flex'
+}
+function updateDateLabels(){
+  const val=document.getElementById('dTime').value
+  const labels={1h:'~ an hour ago',24h:'~ a day ago',7d:'~ 7 days ago',30d:'~ 30 days ago',all:'The beginning'}
+  document.getElementById('dStartBtn').textContent=labels[val]||'Custom'
+  document.getElementById('dEndBtn').textContent=val==='all'?'now':'now'
+}
+let dActiveFilter=null
+function clearFilter(){
+  dActiveFilter=null
+  document.getElementById('dActiveFilter').style.display='none'
+  document.getElementById('dqlInput').value=''
+  discoverSearch()
+}
+function addDiscoverFilter(){
+  const f=prompt('Enter filter (e.g. agent.name: "chat-bot"):')
+  if(f&&f.trim()){
+    document.getElementById('dqlInput').value=f.trim()
+    setActiveFilter(f.trim())
+    discoverSearch()
+  }
+}
+function resolveField(obj,path){
+  try{return path.split('.').reduce((o,p)=>o?.[p],obj)??''}catch(e){return ''}
+}
+
+async function discoverLoadHistogram(params){
+  try{
+    const hParams={...params,field:'@timestamp',type:'date_histogram',interval:'1h',limit:48}
+    delete hParams.q;delete hParams.limit
+    const d=await api('aggregate',{...hParams,field:'@timestamp',type:'date_histogram',limit:48})
+    const buckets=d.buckets||[]
+    if(!buckets.length){document.getElementById('dHistogram').innerHTML='<div style="color:var(--text2);font-size:13px">No histogram data</div>';return}
+    const max=Math.max(...buckets.map(b=>b.doc_count))
+    document.getElementById('dHistogram').innerHTML=`<div class="bars">${buckets.slice(-48).map(b=>{
+      const pct=Math.max((b.doc_count/max*100),1)
+      const time=new Date(b.key).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})
+      return `<div class="bar-col" title="${b.key_as_string||new Date(b.key).toISOString()}: ${b.doc_count}"><div class="h-bar" style="height:${pct}%"></div><div class="h-label">${time}</div></div>`
+    }).join('')}</div>`
+  }catch(e){document.getElementById('dHistogram').innerHTML=''}
+}
+
+setTimeout(discoverSearch,500)
+</script>
+</body>
+</html>

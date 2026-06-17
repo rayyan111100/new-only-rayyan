@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { @apply antialiased; }
+  body { @apply font-sans transition-colors duration-200 text-sm; font-weight: 460; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-[#c4c7cc] dark:bg-[#374151] rounded-full border-[2px] border-solid border-transparent bg-clip-content; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-[#a8abb3] dark:bg-[#6b7280]; }
+  ::-webkit-scrollbar-corner { background: transparent; }
+  * { scrollbar-width: thin; scrollbar-color: #c4c7cc transparent; }
+  .dark * { scrollbar-color: #374151 transparent; }
+  input, select, textarea, button { font-family: inherit; }
+  *:focus { outline: none !important; }
+  *:focus-visible { outline: none !important; }
+  .recharts-sector, .recharts-bar-rectangle, .recharts-pie-sector, .recharts-layer, .recharts-cursor, .recharts-active-sector {
+    outline: none !important;
+    user-select: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+    stroke: transparent !important;
+  }
+  .recharts-sector:hover, .recharts-bar-rectangle:hover, .recharts-pie-sector:hover,
+  .recharts-sector:active, .recharts-bar-rectangle:active, .recharts-pie-sector:active,
+  .recharts-sector:focus, .recharts-bar-rectangle:focus, .recharts-pie-sector:focus {
+    stroke: transparent !important;
+    opacity: 1 !important;
+  }
+}
+@layer components {
+  .gcard { @apply bg-white dark:bg-[#1e2337] border border-[#e8eaed] dark:border-[#2a3042] rounded-xl shadow-sm transition-all duration-300; }
+  .gcard:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.12); border-color: rgba(232,104,26,0.3); }
+  .dark .gcard:hover { box-shadow: 0 8px 30px rgba(232,104,26,0.12); border-color: rgba(232,104,26,0.4); }
+  .ginput { @apply bg-white dark:bg-[#151a28] border border-[#e8eaed] dark:border-[#2a3042] rounded-lg text-xs text-[#324059] dark:text-[#e4e6eb] placeholder-[#9ca3af] dark:placeholder-[#6b7280] outline-none focus:border-[#EF843C] dark:focus:border-[#EF843C] transition-colors; }
+  .gbtn { @apply px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-150 select-none; }
+  .gbtn-primary { @apply gbtn bg-[#EF843C] text-white hover:bg-[#e0752a] active:bg-[#d4661e]; }
+  .gbtn-ghost { @apply gbtn text-[#5f6368] dark:text-[#9aa0b0] hover:bg-[#f1f3f4] dark:hover:bg-[#2a3042]; }
+  .gchip { @apply inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border transition-all; }
+  .th-act { @apply inline-flex items-center justify-center w-5 h-5 rounded cursor-pointer opacity-0 transition-all duration-150 hover:scale-110; }
+  .th-wrap:hover .th-act { opacity: .5; }
+  .th-act:hover { opacity: 1 !important; @apply text-[#EF843C] dark:text-[#EF843C]; }
+  .th-act-danger:hover { @apply text-[#dc2626] !important; }
+  .cell-filters { @apply hidden absolute top-0 right-0 bg-white dark:bg-[#1e2337] border border-[#e8eaed] dark:border-[#2a3042] rounded-lg shadow-md; }
+  .cell-val-wrap:hover .cell-filters { @apply flex; }
+  .badge { @apply inline-flex items-center px-1.5 py-0.5 rounded text-xxs font-medium; }
+  .badge-critical { @apply bg-[#fef2f2] text-[#dc2626] dark:bg-[#dc26261a] dark:text-[#fca5a5]; }
+  .badge-high { @apply bg-[#fff7ed] text-[#ea580c] dark:bg-[#ea580c1a] dark:text-[#fdba74]; }
+  .badge-medium { @apply bg-[#fefce8] text-[#ca8a04] dark:bg-[#ca8a041a] dark:text-[#fde047]; }
+  .badge-low { @apply bg-[#f0fdf4] text-[#16a34a] dark:bg-[#16a34a1a] dark:text-[#86efac]; }
+  .badge-info { @apply bg-[#eff6ff] text-[#2563eb] dark:bg-[#3b82f61a] dark:text-[#93c5fd]; }
+}

@@ -1,0 +1,5 @@
+✔ SQLite database initialized
+✔ UniShield360 Dashboard at http://localhost:30001
+✔ Proxy → http://192.168.1.77:9999
+✔ WebSocket server ready at /ws
+✔ Realtime engine polling every 15000ms
