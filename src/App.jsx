@@ -31,6 +31,7 @@ import PcidssTab from './tabs/PcidssTab'
 import HipaaTab from './tabs/HipaaTab'
 import GdprTab from './tabs/GdprTab'
 import TscTab from './tabs/TscTab'
+import MitreAttackTab from './tabs/MitreAttackTab'
 import LoginModal from './components/LoginModal'
 import ErrorBoundary from './components/ErrorBoundary'
 
@@ -55,7 +56,8 @@ const TABS = {
   pcidss: PcidssTab,
   hipaa: HipaaTab,
   gdpr: GdprTab,
-  tscsoc2: TscTab
+  tscsoc2: TscTab,
+  mitreattack: MitreAttackTab
 }
 
 function DashboardShell() {
@@ -64,7 +66,7 @@ function DashboardShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
   const TabComponent = TABS[tab] || DiscoverTab
-  const showQueryBar = true
+  const showQueryBar = tab === 'discover' || tab === 'search' || tab === 'ruleview'
   const showFields = tab === 'discover' || tab === 'search' || tab === 'ruleview' || tab === 'analytics'
 
   useEffect(() => {

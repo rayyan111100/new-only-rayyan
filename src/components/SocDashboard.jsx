@@ -134,7 +134,7 @@ export default function SocDashboard() {
   useEffect(() => {
     setLoading(true)
     fetchDashboard()
-    timerRef.current = setInterval(fetchDashboard, 60000)
+    timerRef.current = setInterval(fetchDashboard, 30000)
     return () => clearInterval(timerRef.current)
   }, [startDate, endDate])
 
@@ -378,7 +378,7 @@ export default function SocDashboard() {
               </div>
               <div className="flex items-center gap-2">
                 <PulseDot color="#EF843C" />
-                <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">60s refresh</span>
+                <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">30s refresh</span>
               </div>
             </div>
           </div>
@@ -531,7 +531,7 @@ export default function SocDashboard() {
 
       <div className="flex items-center justify-between text-[10px] text-[#9ca3af] dark:text-[#6b7280] pt-1">
         <div className="flex items-center gap-3">
-          <span><svg className="w-3 h-3 inline mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> Dashboard &middot; Drill-down &middot; 60s refresh</span>
+          <span><svg className="w-3 h-3 inline mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> Dashboard &middot; Drill-down &middot; 30s refresh</span>
           <span className="hidden sm:inline">Last: {lastUpdated.toLocaleTimeString()}</span>
         </div>
         <button onClick={fetchDashboard} className="gbtn-ghost gap-1 inline-flex items-center">

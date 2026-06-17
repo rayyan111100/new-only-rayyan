@@ -1,15 +1,19 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { api } from '../api'
 
 export default function IndicesTab() {
   const [indices, setIndices] = useState([])
   const [loading, setLoading] = useState(true)
+  const intervalRef = useRef(null)
+  const fetchData = async () => {
+    try { const d = await api('indices', {}); setIndices(d.indices || d.results || d) }
+    catch {}
+    finally { setLoading(false) }
+  }
   useEffect(() => {
-    (async () => {
-      try { const d = await api('indices', {}); setIndices(d.indices || d.results || d) }
-      catch {}
-      finally { setLoading(false) }
-    })()
+    fetchData()
+    intervalRef.current = setInterval(fetchData, 30000)
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [])
   if (loading) return <div className="text-xs text-soc-stext dark:text-soc-darkstext p-4">{'\u23F3'} Loading...</div>
   return (

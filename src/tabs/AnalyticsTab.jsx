@@ -1,20 +1,29 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { api } from '../api'
 import { motion } from 'framer-motion'
+import { useApp } from '../context/AppContext'
+import { parseDateStr } from '../utils'
 
 export default function AnalyticsTab() {
+  const { startDate, endDate } = useApp()
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
+  const intervalRef = useRef(null)
+  const fetchDataRef = useRef(null)
+  const fetchData = async () => {
+    try {
+      const d = await api('count', { index: 'unishield360-alerts-4.x-*', field: 'rule.level', min_doc_count: 1, size: 20, start_date: parseDateStr(startDate).toISOString(), end_date: parseDateStr(endDate).toISOString() })
+      setData((d.buckets || []).slice(0, 15).map(b => ({ level: b.key, count: b.doc_count })))
+    } catch {}
+    finally { setLoading(false) }
+  }
+  fetchDataRef.current = fetchData
   useEffect(() => {
-    (async () => {
-      try {
-        const d = await api('count', { index: 'unishield360-alerts-4.x-*', field: 'rule.level', min_doc_count: 1, size: 20 })
-        setData((d.buckets || []).slice(0, 15).map(b => ({ level: b.key, count: b.doc_count })))
-      } catch {}
-      finally { setLoading(false) }
-    })()
-  }, [])
+    fetchData()
+    intervalRef.current = setInterval(() => fetchDataRef.current(), 30000)
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+  }, [startDate, endDate])
   return (
     <div className="space-y-4">
       <div className="gcard p-4">

@@ -1,0 +1,71 @@
+✔ SQLite database initialized
+✔ UniShield360 Dashboard at http://localhost:3000
+✔ Proxy → http://192.168.1.77:9999
+✔ WebSocket server ready at /ws
+✔ Realtime engine polling every 15000ms
+[compliance] framework=all count24=6900339 count7d=6900351 recent=20 totalRecent=20
+[compliance] framework=PCI-DSS count24=6390140 count7d=6390140 recent=20 totalRecent=20
+[compliance] framework=HIPAA count24=6361283 count7d=6361283 recent=19 totalRecent=20
+[compliance] framework=GDPR count24=6879400 count7d=6879400 recent=20 totalRecent=20
+[compliance] framework=all count24=6900368 count7d=6900368 recent=20 totalRecent=20
+[compliance] framework=all count24=6900368 count7d=6900368 recent=20 totalRecent=20
+[compliance] framework=HIPAA count24=6361295 count7d=6361295 recent=8 totalRecent=20
+⬇ Fetching MITRE ATT&CK data from CTI repository...
+✔ MITRE data loaded: 189 groups, 824 software, 268 mitigations, 15 tactics, 858 techniques
+[compliance] framework=all count24=6900368 count7d=6900368 recent=0 totalRecent=0
+[compliance] framework=PCI-DSS count24=6390155 count7d=6390155 recent=0 totalRecent=0
+[compliance] framework=GDPR count24=0 count7d=6879414 recent=0 totalRecent=0
+[compliance] framework=TSC (SOC 2) count24=6389689 count7d=6389689 recent=8 totalRecent=20
+[compliance] framework=GDPR count24=6879415 count7d=6879415 recent=8 totalRecent=20
+[compliance] framework=all count24=6900369 count7d=6900369 recent=20 totalRecent=20
+[compliance] framework=TSC (SOC 2) count24=6389689 count7d=6389689 recent=8 totalRecent=20
+[compliance] framework=all count24=6900368 count7d=6900368 recent=20 totalRecent=20
+[compliance] framework=TSC (SOC 2) count24=6389689 count7d=6389689 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=6900369 count7d=6900369 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=GDPR count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=GDPR count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=GDPR count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=GDPR count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=GDPR count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=GDPR count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=GDPR count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=GDPR count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=GDPR count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=GDPR count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=GDPR count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=GDPR count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=GDPR count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=HIPAA count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=PCI-DSS count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=PCI-DSS count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0

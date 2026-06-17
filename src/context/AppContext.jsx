@@ -49,7 +49,7 @@ export function AppProvider({ children }) {
   const realtimeMergeKey = useRef(0)
   useEffect(() => {
     const msgs = realtimeMatches
-    if (msgs.length === 0 || tab !== 'discover') return
+    if (msgs.length === 0) return
     const newDocs = msgs.filter(m => m.doc).map(m => m.doc)
     if (newDocs.length === 0) return
     const key = newDocs[0]?.['@timestamp'] || newDocs[0]?.timestamp || ''

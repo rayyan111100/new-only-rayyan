@@ -558,7 +558,7 @@ export default function WindowsEventTab() {
   useEffect(() => {
     setLoading(true)
     fetchData()
-    intervalRef.current = setInterval(fetchData, 60000)
+    intervalRef.current = setInterval(fetchData, 30000)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [fetchData])
 
@@ -734,7 +734,7 @@ export default function WindowsEventTab() {
       )}
 
       <div className="flex items-center justify-between text-[10px] text-[#9ca3af] dark:text-[#6b7280] pt-1">
-        <span>Windows Event Dashboard &middot; Drag to reorder &middot; 60s refresh</span>
+        <span>Windows Event Dashboard &middot; Drag to reorder &middot; 30s refresh</span>
         <span>Last: {formatTime(lastUpdated)}</span>
       </div>
     </div>

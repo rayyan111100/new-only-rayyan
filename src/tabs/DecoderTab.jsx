@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../api'
 import { useApp } from '../context/AppContext'
 import { decodeLog } from '../services/decoderEngine'
+import { parseDateStr } from '../utils'
 import { createRule, updateRule } from '../services/ruleStorage'
 
 const FORMAT_COLORS = {
@@ -29,7 +30,7 @@ function FormatBadge({ format }) {
 }
 
 export default function DecoderTab() {
-  const { isDark, setTab, setPendingRuleId } = useApp()
+  const { isDark, setTab, setPendingRuleId, startDate, endDate } = useApp()
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
@@ -38,11 +39,12 @@ export default function DecoderTab() {
   const [decoded, setDecoded] = useState(null)
   const [copyMsg, setCopyMsg] = useState('')
   const [showRaw, setShowRaw] = useState(false)
+  const intervalRef = useRef(null)
 
   const fetchArchives = useCallback(async () => {
     setLoading(true)
     try {
-      const params = { index: 'unishield360-archives-4.x-*', limit, sort: '@timestamp', order: 'desc' }
+      const params = { index: 'unishield360-archives-4.x-*', limit, sort: '@timestamp', order: 'desc', start_date: parseDateStr(startDate).toISOString(), end_date: parseDateStr(endDate).toISOString() }
       if (query.trim()) params.q = query.trim()
       const d = await api('search', params)
       const results = d.results || []
@@ -62,9 +64,13 @@ export default function DecoderTab() {
       setLogs([])
     }
     setLoading(false)
-  }, [query, limit])
+  }, [query, limit, startDate, endDate])
 
-  useEffect(() => { fetchArchives() }, [])
+  useEffect(() => {
+    fetchArchives()
+    intervalRef.current = setInterval(fetchArchives, 30000)
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+  }, [fetchArchives])
 
   const handleSelect = (idx) => {
     setSelectedIdx(idx)

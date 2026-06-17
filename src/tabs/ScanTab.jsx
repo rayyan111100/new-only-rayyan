@@ -203,7 +203,7 @@ export default function SecurityDashboard() {
   useEffect(() => {
     setLoading(true)
     fetchData()
-    intervalRef.current = setInterval(fetchData, 60000)
+    intervalRef.current = setInterval(fetchData, 30000)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [fetchData])
 
@@ -469,7 +469,7 @@ export default function SecurityDashboard() {
               </div>
               <div className="flex items-center gap-2">
                 <PulseDot color="#EF843C" />
-                <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">60s refresh</span>
+                <span className="text-[9px] text-[#9ca3af] dark:text-[#6b7280]">30s refresh</span>
               </div>
             </div>
           </div>
@@ -622,7 +622,7 @@ export default function SecurityDashboard() {
 
       <div className="flex items-center justify-between text-[10px] text-[#9ca3af] dark:text-[#6b7280] pt-1">
         <div className="flex items-center gap-3">
-          <span><svg className="w-3 h-3 inline mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> SOC Security &middot; Drill-down &middot; 60s refresh</span>
+          <span><svg className="w-3 h-3 inline mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> SOC Security &middot; Drill-down &middot; 30s refresh</span>
           <span className="hidden sm:inline">Last: {lastUpdated.toLocaleTimeString()}</span>
         </div>
         <button onClick={fetchData} className="gbtn-ghost gap-1 inline-flex items-center">

@@ -291,38 +291,70 @@ app.get('/api/windows-dashboard', async (req, res) => {
   }
 });
 
+// In-memory cache for compliance endpoint
+const complianceCache = new Map();
+const COMPLIANCE_CACHE_TTL = 25000;
+
+const FRAMEWORK_FIELDS = {
+  'PCI-DSS': 'rule.pci_dss',
+  'HIPAA': 'rule.hipaa',
+  'GDPR': 'rule.gdpr',
+  'TSC (SOC 2)': 'rule.tsc',
+  'MITRE ATT&CK': 'rule.mitre_attack'
+};
+const FRAMEWORK_CONTROLS = {
+  'PCI-DSS': { '11.5': 54, '6.4.2': 39, '10.5.5': 30, '8.2.3': 22, '3.4.1': 14 },
+  'HIPAA': { '164.312(a)(1)': 42, '164.312(c)(1)': 28, '164.312(e)(1)': 18, '164.308(a)(1)': 14, '164.310(a)(1)': 11 },
+  'GDPR': { 'II_5.1.f': 42, 'IV_35.7.d': 28, 'II_5.2.c': 18, 'III_32.1.b': 14, 'VI_30.1': 11 },
+  'TSC (SOC 2)': { 'CC6.1': 42, 'CC6.8': 28, 'CC7.2': 18, 'CC7.3': 14, 'PI1.4': 11 },
+  'MITRE ATT&CK': { 'T1078': 35, 'T1136': 22, 'T1098': 15, 'T1059': 12, 'T1053': 8 }
+};
+
+const FRAMEWORK_NAMES = Object.keys(FRAMEWORK_FIELDS);
+const allComplianceQ = FRAMEWORK_NAMES.map(f => FRAMEWORK_FIELDS[f] + ':*').join(' OR ');
+
+function classifyDocFrameworks(doc) {
+  const fws = [];
+  for (const fw of FRAMEWORK_NAMES) {
+    const field = FRAMEWORK_FIELDS[fw];
+    const parts = field.split('.');
+    let val = doc;
+    for (const p of parts) { if (val) val = val[p]; }
+    if (val && val.toString().trim()) fws.push(fw);
+  }
+  return fws;
+}
+
 // Compliance Dashboard Aggregation Endpoint
 app.get('/api/compliance', async (req, res) => {
   const { index, start_date, end_date, framework } = req.query;
   const idx = index || 'unishield360-alerts-4.x-*';
   const sd = start_date || 'now-24h';
   const ed = end_date || 'now';
-  const baseQ = 'rule.groups:compliance OR rule.groups:syscheck OR rule.groups:syslog OR rule.groups:authentication_failed OR rule.groups:authentication_success OR rule.groups:syscheck_entry_modified OR rule.groups:syscheck_file';
-  const frameworkQ = framework ? baseQ + ' AND (rule.groups:*' + framework.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase().replace(/__+/g, '_') + '* OR rule.description:*' + framework.replace(/[^a-zA-Z0-9]/g, '') + '*)' : baseQ;
-  const compQ = frameworkQ;
-  const frameworks = ['PCI-DSS', 'HIPAA', 'GDPR', 'TSC (SOC 2)', 'MITRE ATT&CK'];
+  const cacheKey = `compliance:${framework || '__all__'}:${sd}:${ed}`;
+
+  const cached = complianceCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < COMPLIANCE_CACHE_TTL) {
+    return res.json(cached.data);
+  }
+
+  const fwField = framework ? FRAMEWORK_FIELDS[framework] : null;
+  const fwQ = fwField ? fwField + ':*' : allComplianceQ;
   try {
     const [
       count24, count7d,
       byLevel, topRules, topAgents,
       timeline, categories, recent
     ] = await Promise.all([
-      api.get('/count', { params: { index: idx, q: compQ, start_date: sd, end_date: ed } }).catch(() => ({ data: { count: 0 } })),
-      api.get('/count', { params: { index: idx, q: compQ, start_date: 'now-7d', end_date: 'now' } }).catch(() => ({ data: { count: 0 } })),
-      api.get('/aggregate', { params: { index: idx, q: compQ, field: 'rule.level', type: 'terms', start_date: sd, end_date: ed, limit: 20 } }).catch(() => ({ data: { buckets: [] } })),
-      api.get('/aggregate', { params: { index: idx, q: compQ, field: 'rule.id', type: 'terms', start_date: sd, end_date: ed, limit: 20 } }).catch(() => ({ data: { buckets: [] } })),
-      api.get('/aggregate', { params: { index: idx, q: compQ, field: 'agent.name', type: 'terms', start_date: sd, end_date: ed, limit: 10 } }).catch(() => ({ data: { buckets: [] } })),
-      api.get('/aggregate', { params: { index: idx, q: compQ, field: '@timestamp', type: 'date_histogram', interval: '1h', start_date: sd, end_date: ed, limit: 48 } }).catch(() => ({ data: { buckets: [] } })),
-      api.get('/aggregate', { params: { index: idx, q: compQ, field: 'rule.category', type: 'terms', start_date: sd, end_date: ed, limit: 10 } }).catch(() => ({ data: { buckets: [] } })),
-      api.get('/search', { params: { index: idx, q: compQ, limit: 20, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } }))
+      api.get('/count', { params: { index: idx, q: fwQ, start_date: sd, end_date: ed } }).catch(() => ({ data: { count: 0 } })),
+      api.get('/count', { params: { index: idx, q: fwQ, start_date: 'now-7d', end_date: 'now' } }).catch(() => ({ data: { count: 0 } })),
+      api.get('/aggregate', { params: { index: idx, q: fwQ, field: 'rule.level', type: 'terms', start_date: sd, end_date: ed, limit: 20 } }).catch(() => ({ data: { buckets: [] } })),
+      api.get('/aggregate', { params: { index: idx, q: fwQ, field: 'rule.id', type: 'terms', start_date: sd, end_date: ed, limit: 20 } }).catch(() => ({ data: { buckets: [] } })),
+      api.get('/aggregate', { params: { index: idx, q: fwQ, field: 'agent.name', type: 'terms', start_date: sd, end_date: ed, limit: 10 } }).catch(() => ({ data: { buckets: [] } })),
+      api.get('/aggregate', { params: { index: idx, q: fwQ, field: '@timestamp', type: 'date_histogram', interval: '1h', start_date: sd, end_date: ed, limit: 48 } }).catch(() => ({ data: { buckets: [] } })),
+      api.get('/aggregate', { params: { index: idx, q: fwQ, field: 'rule.category', type: 'terms', start_date: sd, end_date: ed, limit: 10 } }).catch(() => ({ data: { buckets: [] } })),
+      api.get('/search', { params: { index: idx, limit: 20, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } }))
     ]);
-
-    // Count per framework (simulated by rule.group match)
-    const frameworkCounts = !framework ? await Promise.all(
-      frameworks.map(fw => {
-        return api.get('/count', { params: { index: idx, q: baseQ, start_date: sd, end_date: ed } }).catch(() => ({ data: { count: Math.floor(Math.random() * 200) + 50 } }));
-      })
-    ) : [];
 
     const severityMap = {};
     for (const b of (byLevel.data.buckets || [])) {
@@ -331,21 +363,40 @@ app.get('/api/compliance', async (req, res) => {
       severityMap[cat] = (severityMap[cat] || 0) + b.doc_count;
     }
 
-    const pciControls = { '11.5': 54, '6.4.2': 39, '10.5.5': 30, '8.2.3': 22, '3.4.1': 14 };
+    const controls = FRAMEWORK_CONTROLS[framework] || FRAMEWORK_CONTROLS['PCI-DSS'];
+    const controlKeys = Object.keys(controls);
     const resolvedControls = (topRules.data.buckets || []).slice(0, 8).map((r, i) => ({
-      control: Object.keys(pciControls)[i % Object.keys(pciControls).length],
+      control: controlKeys[i % controlKeys.length],
       ruleId: r.key,
       count: r.doc_count || 0,
       description: r.description || 'Control violation'
     }));
 
-    res.json({
-      count24: count24.data.count || 0,
-      count7d: count7d.data.count || 0,
+    const frameworkCounts = !framework ? await Promise.all(
+      FRAMEWORK_NAMES.map(fw => {
+        const q = FRAMEWORK_FIELDS[fw] + ':*';
+        return api.get('/count', { params: { index: idx, q, start_date: sd, end_date: ed } }).catch(() => ({ data: { count: 0 } }));
+      })
+    ) : [];
+
+    const rawRecent = (recent.data?.results || []).slice(0, 20);
+    const recentDocs = rawRecent.map(doc => ({
+      ...doc,
+      _frameworks: classifyDocFrameworks(doc)
+    }));
+    const filteredRecent = framework ? recentDocs.filter(d => d._frameworks.includes(framework)) : recentDocs;
+
+    const count24val = count24.data.count || 0;
+    const count7dval = count7d.data.count || 0;
+    console.log(`[compliance] framework=${framework || 'all'} count24=${count24val} count7d=${count7dval} recent=${filteredRecent.length} totalRecent=${recentDocs.length}`);
+
+    const body = {
+      count24: count24val,
+      count7d: count7dval,
       severity: severityMap,
-      frameworkCounts: !framework ? frameworks.map((fw, i) => ({
+      frameworkCounts: !framework ? FRAMEWORK_NAMES.map((fw, i) => ({
         framework: fw,
-        count: frameworkCounts[i]?.data?.count || Math.floor(Math.random() * 150) + 30
+        count: frameworkCounts[i]?.data?.count || 0
       })) : [],
       topRules: resolvedControls,
       topAgents: (topAgents.data.buckets || []).slice(0, 8),
@@ -354,9 +405,12 @@ app.get('/api/compliance', async (req, res) => {
         count: b.doc_count || 0
       })),
       categories: (categories.data.buckets || []).slice(0, 8),
-      recent: (recent.data.results || []).slice(0, 20),
-      recentTotal: recent.data.total || 0
-    });
+      recent: filteredRecent,
+      recentTotal: filteredRecent.length
+    };
+
+    complianceCache.set(cacheKey, { data: body, ts: Date.now() });
+    res.json(body);
   } catch (err) {
     console.error('Compliance error:', err.message);
     res.status(500).json({ error: err.message });
@@ -407,6 +461,107 @@ app.get('/api/settings', auth.authMiddleware, (req, res) => {
     jwtExpiry: process.env.JWT_EXPIRY || '24h',
     user: req.user
   })
+})
+
+// ─── MITRE ATT&CK Knowledge Base (fetched from MITRE CTI) ───
+const MITRE_TACTIC_ORDER = ['reconnaissance', 'resource-development', 'initial-access', 'execution', 'persistence', 'privilege-escalation', 'defense-evasion', 'credential-access', 'discovery', 'lateral-movement', 'collection', 'command-and-control', 'exfiltration', 'impact']
+const MITRE_TACTIC_NAMES = ['Reconnaissance', 'Resource Development', 'Initial Access', 'Execution', 'Persistence', 'Privilege Escalation', 'Defense Evasion', 'Credential Access', 'Discovery', 'Lateral Movement', 'Collection', 'Command and Control', 'Exfiltration', 'Impact']
+
+let mitreCache = null
+let mitreCacheTime = 0
+
+app.get('/api/mitre-data', async (req, res) => {
+  try {
+    if (mitreCache && Date.now() - mitreCacheTime < 3600000) return res.json(mitreCache)
+
+    console.log('⬇ Fetching MITRE ATT&CK data from CTI repository...')
+    const { data: stix } = await axios.get('https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json', { timeout: 120000 })
+    const objects = stix.objects || []
+
+    const groups = objects.filter(o => o.type === 'intrusion-set').map(o => ({
+      id: o.external_references?.find(r => r.source_name === 'mitre-attack')?.external_id || '',
+      name: o.name,
+      type: 'Threat Actor',
+      country: o.x_mitre_aliases?.[0] || '',
+      countryName: o.aliases?.[0] || (o.description?.match(/[A-Z][a-z]+/)?.[0] || 'Unknown'),
+      firstSeen: o.first_seen?.split('T')[0] || o.created?.split('T')[0] || '',
+      lastSeen: o.last_seen?.split('T')[0] || o.modified?.split('T')[0] || '',
+      status: 'Active',
+      aliases: o.aliases || [],
+      campaigns: o.external_references?.length || 0,
+      techniques: (o.kill_chain_phases || []).length || o.external_references?.length || 0,
+      software: [],
+      sectors: o.x_mitre_target_sectors || [],
+      confidence: 75,
+      actorType: o.x_mitre_resource_level || 'Unknown',
+      motivation: (o.x_mitre_primary_motivations || [o.x_mitre_motivation])?.[0] || 'Unknown',
+      desc: o.description?.substring(0, 500) || '',
+      citation: o.external_references?.[0]?.source_name || '',
+      notes: ''
+    }))
+
+    const software = objects.filter(o => o.type === 'malware' || o.type === 'tool').map(o => ({
+      id: o.external_references?.find(r => r.source_name === 'mitre-attack')?.external_id || '',
+      name: o.name,
+      type: o.type === 'malware' ? 'Malware' : 'Tool',
+      platforms: o.x_mitre_platforms || [],
+      techniquesUsed: (o.kill_chain_phases || []).length || 0,
+      groupsUsing: [],
+      desc: o.description?.substring(0, 300) || ''
+    }))
+
+    const mitigations = objects.filter(o => o.type === 'course-of-action').map(o => ({
+      id: o.external_references?.find(r => r.source_name === 'mitre-attack')?.external_id || '',
+      name: o.name,
+      desc: o.description?.substring(0, 300) || '',
+      techniquesAddressed: (o.kill_chain_phases || []).length || 0,
+      domain: 'Enterprise'
+    }))
+
+    const shortToName = {}
+    MITRE_TACTIC_ORDER.forEach((s, i) => { shortToName[s] = MITRE_TACTIC_NAMES[i] })
+
+    const tacticsLookup = {}
+    objects.filter(o => o.type === 'x-mitre-tactic').forEach(o => {
+      const short = o.x_mitre_shortname
+      const name = shortToName[short] || o.name
+      tacticsLookup[short] = {
+        id: o.external_references?.find(r => r.source_name === 'mitre-attack')?.external_id || '',
+        name,
+        shortDesc: o.description?.split('.')[0] || '',
+        techniqueCount: 0,
+        order: MITRE_TACTIC_ORDER.indexOf(short) + 1 || 99
+      }
+    })
+
+    objects.filter(o => o.type === 'attack-pattern').forEach(o => {
+      const phases = o.kill_chain_phases || []
+      phases.forEach(p => {
+        if (tacticsLookup[p.phase_name]) tacticsLookup[p.phase_name].techniqueCount++
+      })
+    })
+
+    const tactics = Object.values(tacticsLookup).sort((a, b) => a.order - b.order)
+
+    const techniques = objects.filter(o => o.type === 'attack-pattern').map(o => ({
+      id: o.external_references?.find(r => r.source_name === 'mitre-attack')?.external_id || '',
+      name: o.name,
+      tactic: shortToName[o.kill_chain_phases?.[0]?.phase_name] || o.kill_chain_phases?.[0]?.phase_name || '',
+      platforms: o.x_mitre_platforms || [],
+      subCount: o.x_mitre_is_subtechnique ? 0 : (o.x_mitre_techniques?.length || 0),
+      desc: o.description?.substring(0, 300) || ''
+    }))
+
+    const result = { groups, software, mitigations, tactics, techniques }
+    mitreCache = result
+    mitreCacheTime = Date.now()
+    console.log(`✔ MITRE data loaded: ${groups.length} groups, ${software.length} software, ${mitigations.length} mitigations, ${tactics.length} tactics, ${techniques.length} techniques`)
+    res.json(result)
+  } catch (err) {
+    console.error('✖ MITRE data fetch error:', err.message)
+    if (mitreCache) return res.json(mitreCache)
+    res.status(502).json({ error: 'Failed to fetch MITRE data: ' + err.message })
+  }
 })
 
 // SPA fallback: serve index.html for any non-API route

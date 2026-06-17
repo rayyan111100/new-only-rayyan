@@ -1,19 +1,32 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { api } from '../api'
+import { useApp } from '../context/AppContext'
+import { parseDateStr } from '../utils'
 
 export default function SearchTab() {
+  const { startDate, endDate } = useApp()
   const [q, setQ] = useState('')
   const [limit, setLimit] = useState(50)
   const [results, setResults] = useState(null)
   const [loading, setLoading] = useState(false)
+  const intervalRef = useRef(null)
+  const doSearchRef = useRef(null)
   const doSearch = async () => {
     setLoading(true)
     try {
-      const d = await api('search', { q: q || undefined, limit, index: 'unishield360-alerts-4.x-*', start_date: 'now-24h', end_date: 'now' })
+      const d = await api('search', { q: q || undefined, limit, index: 'unishield360-alerts-4.x-*', start_date: parseDateStr(startDate).toISOString(), end_date: parseDateStr(endDate).toISOString() })
       setResults(d)
     } catch (e) { setResults({ error: e.message }) }
     finally { setLoading(false) }
   }
+  doSearchRef.current = doSearch
+
+  useEffect(() => {
+    intervalRef.current = setInterval(() => {
+      if (q === '') doSearchRef.current()
+    }, 30000)
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+  }, [q])
   return (
     <div className="space-y-4">
       <div className="gcard p-4">

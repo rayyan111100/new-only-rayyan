@@ -1,18 +1,27 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { api } from '../api'
+import { useApp } from '../context/AppContext'
+import { parseDateStr } from '../utils'
 
 export default function GeoTab() {
+  const { startDate, endDate } = useApp()
   const [geo, setGeo] = useState([])
   const [loading, setLoading] = useState(true)
+  const intervalRef = useRef(null)
+  const fetchDataRef = useRef(null)
+  const fetchData = async () => {
+    try {
+      const d = await api('geo', { index: 'unishield360-alerts-4.x-*', field: 'GeoLocation.country_name', size: 50, start_date: parseDateStr(startDate).toISOString(), end_date: parseDateStr(endDate).toISOString() })
+      setGeo(d.buckets || d.results || [])
+    } catch {}
+    finally { setLoading(false) }
+  }
+  fetchDataRef.current = fetchData
   useEffect(() => {
-    (async () => {
-      try {
-        const d = await api('geo', { index: 'unishield360-alerts-4.x-*', field: 'GeoLocation.country_name', size: 50 })
-        setGeo(d.buckets || d.results || [])
-      } catch {}
-      finally { setLoading(false) }
-    })()
-  }, [])
+    fetchData()
+    intervalRef.current = setInterval(() => fetchDataRef.current(), 30000)
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+  }, [startDate, endDate])
   if (loading) return <div className="text-xs text-soc-stext dark:text-soc-darkstext p-4"><svg className="w-3 h-3 inline animate-spin mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Loading...</div>
   if (!geo.length) return <div className="text-xs text-soc-stext dark:text-soc-darkstext p-4">No geo data</div>
   return (

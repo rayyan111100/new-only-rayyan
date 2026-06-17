@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { api } from '../api'
 import { useApp } from '../context/AppContext'
-import { parseDateStr } from '../utils'
 import DateRangePicker from '../components/DateRangePicker'
 import AssetSidebar from '../components/AssetSidebar'
 import LogDetailModal from '../components/LogDetailModal'
+import useCompliance from '../hooks/useCompliance'
 import { PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 const SEV_COLORS = { Critical: '#f85149', High: '#e8681a', Medium: '#d29922', Low: '#3fb950' }
@@ -27,18 +26,7 @@ const HIPAA_CONTROLS = [
   { req: '164.312.a.2.i', desc: 'Access Control' }
 ]
 
-const LOG_DATA = [
-  { time: '2025-05-24 12:15:34', agent: 'suyash-window', rule: '550', ctrl: '164.312.c.1', desc: 'Integrity checksum changed.', sev: 'High', event: 'modified', file: 'c:\\users\\smart resource\\...\\vulndetectionlab.jsx', groups: 'syscheck, syscheck_entry_modified' },
-  { time: '2025-05-24 12:13:22', agent: 'WIN-DC01', rule: '554', ctrl: '164.312.c.2', desc: 'File added to system.', sev: 'Medium', event: 'added', file: 'c:\\windows\\system32\\drivers\\etc\\hosts', groups: 'syscheck, syscheck_file' },
-  { time: '2025-05-24 12:11:09', agent: 'SRV-DB01', rule: '553', ctrl: '164.312.c.2', desc: 'File deleted from system.', sev: 'Medium', event: 'deleted', file: 'c:\\users\\smart resource\\...\\config.js', groups: 'syscheck, syscheck_file' },
-  { time: '2025-05-24 12:10:02', agent: 'linux-server01', rule: '571', ctrl: '164.308.a.1', desc: 'User login failed.', sev: 'High', event: 'authentication_failed', file: 'sshd', groups: 'syslog, authentication_failed' },
-  { time: '2025-05-24 12:08:47', agent: 'web-server02', rule: '562', ctrl: '164.312.a.2.i', desc: 'User authentication success.', sev: 'Low', event: 'authentication_success', file: 'nginx', groups: 'syslog, authentication_success' },
-  { time: '2025-05-24 12:06:30', agent: 'suyash-window', rule: '550', ctrl: '164.312.c.1', desc: 'Integrity checksum changed.', sev: 'Critical', event: 'modified', file: 'c:\\program files\\hipaaapp\\bin\\agent.exe', groups: 'syscheck, syscheck_entry_modified' },
-  { time: '2025-05-24 12:04:15', agent: 'WIN-DC01', rule: '554', ctrl: '164.306.a', desc: 'New file in monitored directory.', sev: 'Medium', event: 'added', file: 'c:\\inetpub\\wwwroot\\data\\records.bak', groups: 'syscheck, syscheck_file' },
-  { time: '2025-05-24 12:02:50', agent: 'SRV-DB01', rule: '550', ctrl: '164.312.c.1', desc: 'Integrity checksum changed.', sev: 'Critical', event: 'modified', file: '/etc/postgresql/pg_hba.conf', groups: 'syscheck, syscheck_entry_modified' },
-  { time: '2025-05-24 12:00:12', agent: 'linux-server01', rule: '571', ctrl: '164.308.a.1', desc: 'Multiple login failures.', sev: 'High', event: 'authentication_failed', file: 'sshd', groups: 'syslog, authentication_failed' },
-  { time: '2025-05-24 11:58:44', agent: 'web-server02', rule: '553', ctrl: '164.312.c.2', desc: 'Audit log cleared.', sev: 'Critical', event: 'deleted', file: '/var/log/hipaa_audit.log', groups: 'syscheck, syscheck_file' },
-]
+
 
 const CustomTip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
@@ -53,58 +41,58 @@ const CustomTip = ({ active, payload, label }) => {
 }
 
 export default function HipaaTab() {
-  const { isDark, startDate, endDate } = useApp()
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const { isDark } = useApp()
   const [modal, setModal] = useState(null)
   const [assetSidebarOpen, setAssetSidebarOpen] = useState(false)
-  const [severityFilter, setSeverityFilter] = useState(null)
-  const intervalRef = useRef(null)
+  const [filters, setFilters] = useState({})
   const [logPage, setLogPage] = useState(1)
   const LOG_PAGE_SIZE = 5
-  const totalLogPages = Math.ceil(LOG_DATA.length / LOG_PAGE_SIZE)
+  const { data, loading, error, toSev, refresh } = useCompliance('HIPAA')
 
-  const timeParams = useCallback(() => {
-    const sd = parseDateStr(startDate).toISOString()
-    const ed = parseDateStr(endDate).toISOString()
-    return { start_date: sd, end_date: ed }
-  }, [startDate, endDate])
+  const setFilter = (key, value) => {
+    setFilters(prev => {
+      if (prev[key] === value) {
+        const next = { ...prev }
+        delete next[key]
+        return next
+      }
+      return { ...prev, [key]: value }
+    })
+  }
 
-  const fetchData = useCallback(async () => {
-    try {
-      const tp = timeParams()
-      const d = await api('compliance', { index: 'unishield360-alerts-4.x-*', start_date: tp.start_date, end_date: tp.end_date, framework: 'HIPAA' })
-      setData({
-        count24: d.count24 || 0,
-        count7d: d.count7d || 0,
-        severity: d.severity || {},
-        topRules: (d.topRules || []).slice(0, 8),
-        topAgents: (d.topAgents || []).slice(0, 8),
-        timeline: (d.timeline || []).map(b => ({
-          time: new Date(b.time || b.key).toLocaleDateString([], { month: 'short', day: 'numeric' }),
-          count: b.count || b.doc_count || 0
-        })),
-        recent: (d.recent || []).slice(0, 20)
-      })
-      setError(null)
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-    }
-  }, [timeParams])
+  const clearFilter = (key) => setFilters(prev => {
+    const next = { ...prev }
+    delete next[key]
+    return next
+  })
 
-  useEffect(() => {
-    setLoading(true)
-    fetchData()
-    intervalRef.current = setInterval(fetchData, 60000)
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [fetchData])
+  const activeFilters = Object.keys(filters)
 
-  useEffect(() => { setLogPage(1) }, [severityFilter])
+  const toLogEntry = (r) => ({
+    time: r['@timestamp'] || r.timestamp || '--',
+    agent: r.agent?.name || r.agent || '--',
+    rule: r.rule?.id || r.rule || '--',
+    sev: toSev(parseInt(r.rule?.level || r.level || 0)),
+    desc: r.rule?.description || r.description || '--',
+    event: r.rule?.groups?.[0] || r.event_type || '--',
+    file: r.data?.file || r.file || '--',
+    groups: r.rule?.groups?.join(', ') || '--',
+    ctrl: r.rule?.hipaa || r.control || r.hipaa_standard || '--'
+  })
 
-  const totalEvents = data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 276
+  useEffect(() => { setLogPage(1) }, [activeFilters.join()])
+
+  const allLogs = (data?.recent || []).map(toLogEntry)
+  const filteredLogs = allLogs.filter(l => {
+    if (filters.severity && l.sev !== filters.severity) return false
+    if (filters.agent && l.agent !== filters.agent) return false
+    if (filters.rule && l.rule !== filters.rule) return false
+    return true
+  })
+
+  const totalLogPages = Math.ceil(filteredLogs.length / LOG_PAGE_SIZE)
+
+  const totalEvents = data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
   const maxAgent = data ? Math.max(...data.topAgents.map(a => a.doc_count || 0), 1) : 1
   const maxControl = Math.max(...HIPAA_CONTROLS.map(c => {
     const r = data?.topRules?.find(r => r.control === c.req)
@@ -114,6 +102,15 @@ export default function HipaaTab() {
   const sevDonut = SEV_ORDER.filter(s => (data?.severity?.[s] || 0) > 0).map(s => ({
     name: s, value: data.severity[s] || 0, color: SEV_COLORS[s]
   }))
+
+  const FILTER_STYLES = {
+    severity: (v) => ({
+      bg: v === 'Critical' ? '#e0525218' : v === 'High' ? '#e8893a18' : v === 'Medium' ? '#d2992218' : '#3fb95018',
+      color: v === 'Critical' ? '#ff6b6b' : v === 'High' ? '#e8893a' : v === 'Medium' ? '#d29922' : '#3fb950'
+    }),
+    agent: () => ({ bg: '#58a6ff1a', color: '#58a6ff' }),
+    rule: () => ({ bg: '#e8681a18', color: '#e8681a' })
+  }
 
   const SevBadge = ({ s }) => {
     const BG = { Critical: '#450a0a', High: '#3d1a00', Medium: '#2d1f00', Low: '#052e16' }
@@ -129,10 +126,7 @@ export default function HipaaTab() {
   const openModal = (k) => {
     if (k === 'm-assets') { setAssetSidebarOpen(true); return }
     const sevMap = { 'm-crit': 'Critical', 'm-high': 'High' }
-    if (sevMap[k]) {
-      setSeverityFilter(prev => prev === sevMap[k] ? null : sevMap[k])
-      return
-    }
+    if (sevMap[k]) { setFilter('severity', sevMap[k]); return }
     setModal(k)
   }
 
@@ -151,7 +145,7 @@ export default function HipaaTab() {
     }
     if (mKey.startsWith('log-')) {
       const idx = parseInt(mKey.replace('log-', ''))
-      const l = LOG_DATA[idx]
+      const l = filteredLogs[idx]
       if (!l) return null
       return <LogDetailModal log={l} onClose={closeModal} label="HIPAA Log" />
     }
@@ -183,30 +177,28 @@ export default function HipaaTab() {
         </div>
         <div className="flex items-center gap-2 mt-1.5">
           <DateRangePicker />
-          <button className="p-1.5 rounded border border-transparent hover:bg-[#21262d] text-[#8b949e] hover:text-[#e8681a] transition-colors">
+          <button onClick={() => refresh()} className="p-1.5 rounded border border-transparent hover:bg-[#21262d] text-[#8b949e] hover:text-[#e8681a] transition-colors">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           </button>
         </div>
       </div>
 
-      {severityFilter && (
-        <div className="flex items-center gap-2 mb-2.5 px-1">
-          <div className="flex items-center gap-1.5 text-xs text-[#8b949e]">
-            <span>Filtered by:</span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
-              style={{
-                background: severityFilter === 'Critical' ? '#e0525218' : '#e8893a18',
-                color: severityFilter === 'Critical' ? '#ff6b6b' : '#e8893a'
-              }}
-            >
-              {severityFilter}
-              <button onClick={() => setSeverityFilter(null)} className="hover:opacity-70">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </span>
-          </div>
+      {activeFilters.length > 0 && (
+        <div className="flex items-center gap-2 mb-2.5 px-1 flex-wrap">
+          <span className="text-xs text-[#8b949e]">Filtered by:</span>
+          {Object.entries(filters).map(([key, val]) => {
+            const st = FILTER_STYLES[key]?.(val) || { bg: '#e8681a18', color: '#e8681a' }
+            return (
+              <span key={key} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: st.bg, color: st.color }}>
+                {key === 'severity' ? '' : key + ': '}{val}
+                <button onClick={() => clearFilter(key)} className="hover:opacity-70">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </span>
+            )
+          })}
         </div>
       )}
 
@@ -217,12 +209,12 @@ export default function HipaaTab() {
           { key: 'm-crit', label: 'Critical Violations', val: (data?.severity?.Critical || 14).toLocaleString(), change: '12%', up: true, icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b' },
           { key: 'm-high', label: 'High Severity Violations', val: (data?.severity?.High || 41).toLocaleString(), change: '17%', up: true, icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a' },
           { key: 'm-assets', label: 'Monitored Assets', val: 18, sub: 'Active agents', icon: 'device-desktop', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
-          { key: 'm-controls', label: 'Controls Violated', val: HIPAA_CONTROLS.length, sub: 'Unique HIPAA controls', icon: 'list-check', iconBg: '#3fb95018', iconColor: '#3fb950' },
-          { key: 'm-top-ctrl', label: 'Most Active Control', val: HIPAA_CONTROLS[0].req, sub: HIPAA_CONTROLS[0].desc + ' · 54 Events', icon: 'award', iconBg: '#3fb95018', iconColor: '#3fb950', valSize: 'text-base' },
+          { key: 'm-controls', label: 'Controls Violated', val: data?.topRules?.length || '--', sub: 'Unique HIPAA controls', icon: 'list-check', iconBg: '#3fb95018', iconColor: '#3fb950' },
+          { key: 'm-top-ctrl', label: 'Most Active Control', val: (data?.topRules?.[0]?.ruleId || '--'), sub: ((data?.topRules?.[0]?.description || '').substring(0, 30) + ' · ' + (data?.topRules?.[0]?.count || '0') + ' Events'), icon: 'award', iconBg: '#3fb95018', iconColor: '#3fb950', valSize: 'text-base' },
         ].map(card => (
           <div key={card.key} onClick={() => openModal(card.key)}
             className={`bg-white dark:bg-[#161b22] border rounded-xl p-3 cursor-pointer transition-all duration-300 hover:-translate-y-[3px] shadow-lg hover:shadow-[0_8px_25px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] ${
-              (card.key === 'm-crit' && severityFilter === 'Critical') || (card.key === 'm-high' && severityFilter === 'High')
+              (card.key === 'm-crit' && filters.severity === 'Critical') || (card.key === 'm-high' && filters.severity === 'High')
                 ? 'border-[#e8681a] dark:border-[#e8681a] ring-1 ring-[#e8681a]/30'
                 : 'border-[#d0d7de] dark:border-[#30363d] hover:border-[#e8681a]/50 dark:hover:border-[#e8681a]/60'
             }`}
@@ -252,8 +244,8 @@ export default function HipaaTab() {
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Events by HIPAA Requirement (Top 5)</div>
           {HIPAA_CONTROLS.map(c => {
             const r = data?.topRules?.find(t => t.control === c.req)
-            const count = r?.count || [54, 31, 24, 18, 12][HIPAA_CONTROLS.indexOf(c)]
-            const pct = (count / [54, 31, 24, 18, 12][0]) * 100
+            const count = r?.count || 0
+            const pct = (count / Math.max(...HIPAA_CONTROLS.map(x => { const xr = data?.topRules?.find(t => t.control === x.req); return xr?.count || 1 }), 1)) * 100
             return (
               <div key={c.req} onClick={() => openModal('ctrl-' + c.req)}
                 className="flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] cursor-pointer text-[11px]">
@@ -276,7 +268,8 @@ export default function HipaaTab() {
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2">Severity Distribution</div>
           <div className="grid grid-cols-2 gap-1 mb-2">
             {SEV_ORDER.filter(s => (data?.severity?.[s] || 0) > 0).map(s => (
-              <span key={s} className="flex items-center gap-1.5 text-[11px] text-[#36454f] dark:text-[#c9d1d9] font-medium">
+              <span key={s} onClick={() => setFilter('severity', s)}
+                className={`flex items-center gap-1.5 text-[11px] cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] ${filters.severity === s ? 'ring-1 ring-[#e8681a]/30 bg-[#e8681a]/5' : ''} ${filters.severity && filters.severity !== s ? 'opacity-40' : ''}`}>
                 <span className="w-[10px] h-[10px] rounded flex-shrink-0" style={{ background: SEV_COLORS[s] }} />
                 {s} <span className="text-[#8b949e]">{data?.severity?.[s] || 0} ({Math.round(((data?.severity?.[s] || 0) / (totalEvents || 1)) * 100)}%)</span>
               </span>
@@ -287,7 +280,11 @@ export default function HipaaTab() {
               <ResponsiveContainer width="100%" height={130}>
                 <PieChart>
                   <Pie data={sevDonut} cx="50%" cy="50%" innerRadius={40} outerRadius={58} dataKey="value" stroke={isDark ? '#161b22' : '#ffffff'} strokeWidth={3}>
-                    {sevDonut.map((e, i) => <Cell key={i} fill={e.color} />)}
+                    {sevDonut.map((e, i) => (
+                      <Cell key={i} fill={e.color} style={{ cursor: 'pointer' }}
+                        onClick={() => setFilter('severity', e.name)}
+                      />
+                    ))}
                   </Pie>
                   <Tooltip content={<CustomTip />} />
                 </PieChart>
@@ -334,7 +331,7 @@ export default function HipaaTab() {
             <tbody>
               {HIPAA_CONTROLS.map((c, i) => {
                 const r = data?.topRules?.find(t => t.control === c.req)
-                const count = r?.count || [54, 31, 24, 18, 12][i]
+                const count = r?.count || 0
                 return (
                   <tr key={c.req} onClick={() => openModal('ctrl-' + c.req)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
@@ -356,11 +353,13 @@ export default function HipaaTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Agent</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Events</th></tr></thead>
             <tbody>
-              {(data?.topAgents || [])?.length > 0 ? (
-                (data?.topAgents || []).slice(0, 5).map((a, i) => (
-                  <tr key={a.key || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
+              {(data?.topAgents || []).slice(0, 5).map((a, i) => {
+                const agentName = a.key || a.agent || 'Unknown'
+                return (
+                  <tr key={a.key || i} onClick={() => setFilter('agent', agentName)}
+                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${filters.agent === agentName ? 'bg-[#58a6ff]/5 ring-1 ring-inset ring-[#58a6ff]/30' : ''}`}>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{a.key || a.agent || 'Unknown'}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{agentName}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
                       <div className="flex items-center justify-end gap-1.5">
                         <div className="w-[70px] h-[6px] bg-[#d0d7de] dark:bg-[#30363d] rounded-full overflow-hidden">
@@ -370,29 +369,8 @@ export default function HipaaTab() {
                       </div>
                     </td>
                   </tr>
-                ))
-              ) : (
-                [
-                  { key: 'suyash-window', doc_count: 98 },
-                  { key: 'WIN-DC01', doc_count: 56 },
-                  { key: 'SRV-DB01', doc_count: 42 },
-                  { key: 'linux-server01', doc_count: 31 },
-                  { key: 'web-server02', doc_count: 24 },
-                ].slice(0, 5).map((a, i) => (
-                  <tr key={a.key || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{a.key}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <div className="w-[70px] h-[6px] bg-[#d0d7de] dark:bg-[#30363d] rounded-full overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${(a.doc_count / 98) * 100}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
-                        </div>
-                        <span className="font-bold text-[#1f2328] dark:text-[#f0f6fc]">{a.doc_count}</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
+                )
+              })}
             </tbody>
           </table>
           <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
@@ -405,31 +383,18 @@ export default function HipaaTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Rule ID</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Description</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Fired</th></tr></thead>
             <tbody>
-              {(data?.topRules || [])?.length > 0 ? (
-                (data?.topRules || []).slice(0, 5).map((r, i) => (
-                  <tr key={r.ruleId || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
+              {(data?.topRules || []).slice(0, 5).map((r, i) => {
+                const ruleId = r.ruleId || r.key || r.id || ''
+                return (
+                  <tr key={r.ruleId || i} onClick={() => setFilter('rule', ruleId)}
+                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${filters.rule === ruleId ? 'bg-[#e8681a]/5 ring-1 ring-inset ring-[#e8681a]/30' : ''}`}>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-bold">{r.ruleId || '--'}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-bold">{ruleId || '--'}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">{(r.description || 'Event').substring(0, 30)}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{r.count || 0}</td>
                   </tr>
-                ))
-              ) : (
-                [
-                  { ruleId: '550', description: 'Integrity checksum changed.', count: 34 },
-                  { ruleId: '554', description: 'File added to system.', count: 22 },
-                  { ruleId: '553', description: 'File deleted from system.', count: 18 },
-                  { ruleId: '571', description: 'User login failed.', count: 16 },
-                  { ruleId: '562', description: 'User authentication success.', count: 12 },
-                ].slice(0, 5).map((r, i) => (
-                  <tr key={r.ruleId || i} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-bold">{r.ruleId}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">{r.description}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{r.count}</td>
-                  </tr>
-                ))
-              )}
+                )
+              })}
             </tbody>
           </table>
           <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
@@ -460,46 +425,57 @@ export default function HipaaTab() {
             </tr>
           </thead>
           <tbody>
-            {(() => {
-              const filtered = severityFilter ? LOG_DATA.filter(l => l.sev === severityFilter) : LOG_DATA
-              return filtered.slice((logPage - 1) * LOG_PAGE_SIZE, logPage * LOG_PAGE_SIZE).map((l, i) => (
+            {filteredLogs.slice((logPage - 1) * LOG_PAGE_SIZE, logPage * LOG_PAGE_SIZE).map((l, i) => (
               <tr key={i} onClick={() => openModal('log-' + ((logPage - 1) * LOG_PAGE_SIZE + i))}
                 className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
                 <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{l.time}</td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{l.agent}</td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-bold text-[#e8681a]">{l.rule}</td>
+                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                  <button onClick={(e) => { e.stopPropagation(); setFilter('agent', l.agent) }}
+                    className={`font-semibold text-left hover:underline ${filters.agent === l.agent ? 'text-[#58a6ff]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
+                    {l.agent}
+                  </button>
+                </td>
+                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                  <button onClick={(e) => { e.stopPropagation(); setFilter('rule', l.rule) }}
+                    className={`font-bold text-left hover:underline ${filters.rule === l.rule ? 'text-[#e8681a] underline' : 'text-[#e8681a]'}`}>
+                    {l.rule}
+                  </button>
+                </td>
                 <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#e8681a]">{l.ctrl}</td>
                 <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9] overflow-hidden text-ellipsis whitespace-nowrap">{l.desc}</td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]"><SevBadge s={l.sev} /></td>
+                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                  <button onClick={(e) => { e.stopPropagation(); setFilter('severity', l.sev) }}><SevBadge s={l.sev} /></button>
+                </td>
                 <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-medium">{l.event}</td>
                 <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e] text-[9px] overflow-hidden text-ellipsis whitespace-nowrap">{l.file}</td>
                 <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] text-[9px] font-medium overflow-hidden text-ellipsis whitespace-nowrap">{l.groups}</td>
               </tr>
-            ))
-          })()}
-          {severityFilter && LOG_DATA.filter(l => l.sev === severityFilter).length === 0 && (
-            <tr><td colSpan={9} className="text-center py-4 text-xs text-[#8b949e]">No {severityFilter.toLowerCase()} logs found</td></tr>
-          )}
+            ))}
+            {filteredLogs.length === 0 && (
+              <tr><td colSpan={9} className="text-center py-4 text-xs text-[#8b949e]">No matching logs found</td></tr>
+            )}
           </tbody>
         </table>
         <div className="flex items-center justify-between mt-2.5 flex-wrap gap-2">
           <div className="text-[#e8681a] text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
             onClick={() => openModal('all-logs')}>View all logs <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
           <div className="flex items-center gap-1 text-[11px] text-[#8b949e]">
-            <span className="mr-1">{(logPage - 1) * LOG_PAGE_SIZE + 1}-{Math.min(logPage * LOG_PAGE_SIZE, LOG_DATA.length)} of 276</span>
+            <span className="mr-1">{(logPage - 1) * LOG_PAGE_SIZE + 1}-{Math.min(logPage * LOG_PAGE_SIZE, filteredLogs.length)} of {filteredLogs.length}</span>
             <button onClick={() => setLogPage(p => Math.max(1, p - 1))} disabled={logPage === 1}
               className="bg-transparent border border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
             </button>
-            {[1, 2, 3].map(p => (
+            {Array.from({ length: Math.min(totalLogPages, 3) }, (_, i) => i + 1).map(p => (
               <button key={p} onClick={() => setLogPage(p)}
                 className={`bg-transparent border px-2 py-0.5 rounded text-[11px] min-w-[28px] transition-all ${
                   p === logPage ? 'bg-[#e8681a] text-white border-[#e8681a]' : 'border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a]'
                 }`}>{p}</button>
             ))}
-            <span className="px-0.5 text-[#8b949e]">...</span>
-            <button onClick={() => setLogPage(56)}
-              className="bg-transparent border border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] transition-all">56</button>
+            {totalLogPages > 3 && <span className="px-0.5 text-[#8b949e]">...</span>}
+            {totalLogPages > 3 && (
+              <button onClick={() => setLogPage(totalLogPages)}
+                className="bg-transparent border border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] transition-all">{totalLogPages}</button>
+            )}
             <button onClick={() => setLogPage(p => Math.min(totalLogPages, p + 1))} disabled={logPage === totalLogPages}
               className="bg-transparent border border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>

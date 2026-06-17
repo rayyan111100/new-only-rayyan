@@ -1,0 +1,772 @@
+{
+  "groups": [
+    {
+      "id": "g_level_based",
+      "name": "Level-Based",
+      "description": "Level-Based rules",
+      "order": 0,
+      "createdAt": "2026-05-26T05:37:37.433Z",
+      "updatedAt": "2026-05-26T05:37:37.434Z"
+    },
+    {
+      "id": "g_sysmon",
+      "name": "Sysmon",
+      "description": "Sysmon rules",
+      "order": 1,
+      "createdAt": "2026-05-26T05:37:37.434Z",
+      "updatedAt": "2026-05-26T05:37:37.434Z"
+    },
+    {
+      "id": "g_threat_intel",
+      "name": "Threat Intel",
+      "description": "Threat Intel rules",
+      "order": 2,
+      "createdAt": "2026-05-26T05:37:37.434Z",
+      "updatedAt": "2026-05-26T05:37:37.434Z"
+    },
+    {
+      "id": "g_file_integrity",
+      "name": "File Integrity",
+      "description": "File Integrity rules",
+      "order": 3,
+      "createdAt": "2026-05-26T05:37:37.434Z",
+      "updatedAt": "2026-05-26T05:37:37.434Z"
+    },
+    {
+      "id": "g_authentication",
+      "name": "Authentication",
+      "description": "Authentication rules",
+      "order": 4,
+      "createdAt": "2026-05-26T05:37:37.434Z",
+      "updatedAt": "2026-05-26T05:37:37.434Z"
+    },
+    {
+      "id": "g_firewall",
+      "name": "Firewall",
+      "description": "Firewall rules",
+      "order": 5,
+      "createdAt": "2026-05-26T05:37:37.434Z",
+      "updatedAt": "2026-05-26T05:37:37.434Z"
+    },
+    {
+      "id": "g_system_health",
+      "name": "System Health",
+      "description": "System Health rules",
+      "order": 6,
+      "createdAt": "2026-05-26T05:37:37.434Z",
+      "updatedAt": "2026-05-26T05:37:37.434Z"
+    },
+    {
+      "id": "g_registry",
+      "name": "Registry",
+      "description": "Registry rules",
+      "order": 7,
+      "createdAt": "2026-05-26T05:37:37.434Z",
+      "updatedAt": "2026-05-26T05:37:37.434Z"
+    }
+  ],
+  "rules": [
+    {
+      "id": "r_crit_level",
+      "groupId": "g_level_based",
+      "name": "Critical Level Events (≥12)",
+      "description": "Any alert with rule.level 12 or higher",
+      "priority": 300,
+      "overwrite": true,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.level",
+          "operator": "gte",
+          "value": "12",
+          "negate": false
+        }
+      ],
+      "actions": [
+        {
+          "type": "alert",
+          "params": {
+            "useEventLevel": true,
+            "severity": "critical",
+            "message": "CRITICAL event: {{rule.description}} (level {{rule.level}})"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_high_level",
+      "groupId": "g_level_based",
+      "name": "High Level Events (8-11)",
+      "description": "Alerts with rule.level 8-11 (high severity)",
+      "priority": 200,
+      "overwrite": false,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.level",
+          "operator": "gte",
+          "value": "8",
+          "negate": false
+        },
+        {
+          "id": "c2",
+          "field": "rule.level",
+          "operator": "lt",
+          "value": "12",
+          "negate": false
+        }
+      ],
+      "actions": [
+        {
+          "type": "alert",
+          "params": {
+            "severity": "high",
+            "message": "High severity alert: {{rule.description}} on {{agent.name}}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_med_level",
+      "groupId": "g_level_based",
+      "name": "Medium Level Events (5-7)",
+      "description": "Alerts with rule.level 5-7 (medium severity)",
+      "priority": 100,
+      "overwrite": false,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.level",
+          "operator": "gte",
+          "value": "5",
+          "negate": false
+        },
+        {
+          "id": "c2",
+          "field": "rule.level",
+          "operator": "lt",
+          "value": "8",
+          "negate": false
+        }
+      ],
+      "actions": [
+        {
+          "type": "alert",
+          "params": {
+            "severity": "medium",
+            "message": "Medium alert on {{agent.name}}: {{rule.description}}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_low_level",
+      "groupId": "g_level_based",
+      "name": "Low Level Events (3-4)",
+      "description": "Low severity alerts like logoffs, info events",
+      "priority": 50,
+      "overwrite": false,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.level",
+          "operator": "gte",
+          "value": "3",
+          "negate": false
+        },
+        {
+          "id": "c2",
+          "field": "rule.level",
+          "operator": "lt",
+          "value": "5",
+          "negate": false
+        }
+      ],
+      "actions": [
+        {
+          "type": "tag",
+          "params": {
+            "tag": "low-severity"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_sysmon_proc",
+      "groupId": "g_sysmon",
+      "name": "Sysmon Process Creation (E1)",
+      "description": "New process created on Windows (Sysmon Event 1)",
+      "priority": 100,
+      "overwrite": false,
+      "conditionLogic": "OR",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "Sysmon - Event 1: Process creation",
+          "negate": false
+        },
+        {
+          "id": "c2",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "A process was created",
+          "negate": false
+        }
+      ],
+      "actions": [
+        {
+          "type": "tag",
+          "params": {
+            "tag": "process-creation"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_sysmon_net",
+      "groupId": "g_sysmon",
+      "name": "Sysmon Network Connection (E3)",
+      "description": "Outbound network connections detected by Sysmon",
+      "priority": 110,
+      "overwrite": false,
+      "conditionLogic": "OR",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "Sysmon - Event 3: Network connection",
+          "negate": false
+        },
+        {
+          "id": "c2",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "Sysmon - Event 22: DNS Query",
+          "negate": false
+        }
+      ],
+      "ignoreIps": [
+        "127.0.0.0/8"
+      ],
+      "actions": [
+        {
+          "type": "tag",
+          "params": {
+            "tag": "network-activity"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_sysmon_img",
+      "groupId": "g_sysmon",
+      "name": "Sysmon Image Loaded (E7)",
+      "description": "DLL/module loaded into processes",
+      "priority": 80,
+      "overwrite": false,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "equals",
+          "value": "Sysmon - Event 7: Image loaded.",
+          "negate": false
+        }
+      ],
+      "actions": [
+        {
+          "type": "tag",
+          "params": {
+            "tag": "dll-load"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_sysmon_procaccess",
+      "groupId": "g_sysmon",
+      "name": "Sysmon ProcessAccess (E10)",
+      "description": "Process handle opened for access (potential injection)",
+      "priority": 150,
+      "overwrite": false,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "Sysmon - Event 10: ProcessAccess",
+          "negate": false
+        }
+      ],
+      "actions": [
+        {
+          "type": "alert",
+          "params": {
+            "severity": "high",
+            "message": "Process access on {{agent.name}}: {{rule.description}}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_sysmon_filecreate",
+      "groupId": "g_sysmon",
+      "name": "Sysmon FileCreate (E11)",
+      "description": "New files created (Sysmon E11)",
+      "priority": 80,
+      "overwrite": false,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "Sysmon - Event 11: FileCreate",
+          "negate": false
+        }
+      ],
+      "actions": [
+        {
+          "type": "tag",
+          "params": {
+            "tag": "file-create"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_sysmon_registry",
+      "groupId": "g_sysmon",
+      "name": "Sysmon RegistryEvent (E13)",
+      "description": "Registry value modifications (Sysmon E13)",
+      "priority": 130,
+      "overwrite": false,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "Sysmon - Event 13: RegistryEvent",
+          "negate": false
+        }
+      ],
+      "actions": [
+        {
+          "type": "alert",
+          "params": {
+            "severity": "medium",
+            "message": "Registry change on {{agent.name}}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_misp_ioc",
+      "groupId": "g_threat_intel",
+      "name": "MISP Threat Intelligence Match",
+      "description": "Real MISP IoC hits (excluding connection errors)",
+      "priority": 500,
+      "overwrite": true,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "MISP - IoC found",
+          "negate": false
+        },
+        {
+          "id": "c2",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "MISP - Error",
+          "negate": true
+        }
+      ],
+      "actions": [
+        {
+          "type": "alert",
+          "params": {
+            "severity": "critical",
+            "message": "THREAT INTEL HIT: {{rule.description}}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_virustotal",
+      "groupId": "g_threat_intel",
+      "name": "VirusTotal Alert",
+      "description": "VT rate limit OR hash match alerts",
+      "priority": 400,
+      "overwrite": false,
+      "conditionLogic": "OR",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "VirusTotal: Error",
+          "negate": false
+        },
+        {
+          "id": "c2",
+          "field": "rule.description",
+          "operator": "startsWith",
+          "value": "MISP:",
+          "negate": false
+        }
+      ],
+      "actions": [
+        {
+          "type": "alert",
+          "params": {
+            "severity": "high",
+            "message": "VT/MISP hit: {{rule.description}}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_file_added",
+      "groupId": "g_file_integrity",
+      "name": "File Added Monitor",
+      "description": "New files created on monitored systems",
+      "priority": 60,
+      "overwrite": false,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "File added to the system",
+          "negate": false
+        },
+        {
+          "id": "c2",
+          "field": "agent.name",
+          "operator": "inList",
+          "value": "Gopal-Laptop",
+          "negate": true
+        }
+      ],
+      "actions": [
+        {
+          "type": "tag",
+          "params": {
+            "tag": "file-added"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_file_deleted",
+      "groupId": "g_file_integrity",
+      "name": "File Deleted Monitor",
+      "description": "Files deleted from monitored paths",
+      "priority": 70,
+      "overwrite": false,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "File deleted",
+          "negate": false
+        },
+        {
+          "id": "c2",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "File added",
+          "negate": true
+        }
+      ],
+      "actions": [
+        {
+          "type": "tag",
+          "params": {
+            "tag": "file-deleted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_postfix_auth",
+      "groupId": "g_authentication",
+      "name": "Postfix Authentication Failure",
+      "description": "Postfix SASL authentication failures (brute force)",
+      "priority": 150,
+      "overwrite": false,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "Postfix SASL authentication failure",
+          "negate": false
+        },
+        {
+          "id": "c2",
+          "field": "rule.level",
+          "operator": "gt",
+          "value": "4",
+          "negate": false
+        }
+      ],
+      "actions": [
+        {
+          "type": "alert",
+          "params": {
+            "severity": "medium",
+            "message": "Auth failure on {{agent.name}} from {{location}}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_critical_logon",
+      "groupId": "g_authentication",
+      "name": "Critical Logon Detection",
+      "description": "CRITICAL successful logon events (level 12)",
+      "priority": 300,
+      "overwrite": true,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "CRITICAL: Successful logon",
+          "negate": false
+        },
+        {
+          "id": "c2",
+          "field": "rule.level",
+          "operator": "gt",
+          "value": "11",
+          "negate": false
+        }
+      ],
+      "actions": [
+        {
+          "type": "alert",
+          "params": {
+            "useEventLevel": true,
+            "severity": "critical",
+            "message": "LOGON from {{agent.name}} ({{agent.ip}})!"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_mssql_logon",
+      "groupId": "g_authentication",
+      "name": "MS SQL Server Logon",
+      "description": "MS SQL Server successful and failed logons",
+      "priority": 120,
+      "overwrite": false,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "MS SQL Server Logon",
+          "negate": false
+        },
+        {
+          "id": "c2",
+          "field": "rule.level",
+          "operator": "gt",
+          "value": "4",
+          "negate": false
+        }
+      ],
+      "actions": [
+        {
+          "type": "alert",
+          "params": {
+            "severity": "medium",
+            "message": "MS SQL logon on {{agent.name}}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_pfsense",
+      "groupId": "g_firewall",
+      "name": "pfSense Firewall Block",
+      "description": "pfSense firewall blocked traffic from internal IPs",
+      "priority": 200,
+      "overwrite": false,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "Multiple pfSense firewall blocks",
+          "negate": false
+        },
+        {
+          "id": "c2",
+          "field": "data.action",
+          "operator": "equals",
+          "value": "block",
+          "negate": false
+        },
+        {
+          "id": "c3",
+          "field": "rule.level",
+          "operator": "gt",
+          "value": "8",
+          "negate": false
+        }
+      ],
+      "ignoreIps": [
+        "10.0.0.0/8",
+        "172.16.0.0/12"
+      ],
+      "actions": [
+        {
+          "type": "alert",
+          "params": {
+            "severity": "high",
+            "message": "BLOCKED: {{data.srcip}} -> {{data.dstip}}:{{data.dstport}}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_systemd_fail",
+      "groupId": "g_system_health",
+      "name": "Systemd Service Failure (Non-Chatbot)",
+      "description": "Systemd service failures excluding chat-bot noise",
+      "priority": 80,
+      "overwrite": false,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "equals",
+          "value": "Systemd: Service exited due to a failure.",
+          "negate": false
+        },
+        {
+          "id": "c2",
+          "field": "agent.name",
+          "operator": "equals",
+          "value": "chat-bot",
+          "negate": true
+        },
+        {
+          "id": "c3",
+          "field": "agent.name",
+          "operator": "equals",
+          "value": "chatbot",
+          "negate": true
+        }
+      ],
+      "actions": [
+        {
+          "type": "alert",
+          "params": {
+            "severity": "low",
+            "message": "Service failed on {{agent.name}}: {{full_log}}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_integrity",
+      "groupId": "g_system_health",
+      "name": "File Integrity Changed",
+      "description": "Integrity checksum changes on monitored files",
+      "priority": 90,
+      "overwrite": false,
+      "conditionLogic": "AND",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "Integrity checksum changed",
+          "negate": false
+        }
+      ],
+      "actions": [
+        {
+          "type": "alert",
+          "params": {
+            "severity": "low",
+            "message": "Integrity change on {{agent.name}}: {{rule.description}}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "r_registry_changes",
+      "groupId": "g_registry",
+      "name": "Registry Changes Monitor",
+      "description": "Registry value deletions and key changes",
+      "priority": 110,
+      "overwrite": false,
+      "conditionLogic": "OR",
+      "conditions": [
+        {
+          "id": "c1",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "Registry Value Entry Deleted",
+          "negate": false
+        },
+        {
+          "id": "c2",
+          "field": "rule.description",
+          "operator": "contains",
+          "value": "Registry Key Entry Deleted",
+          "negate": false
+        },
+        {
+          "id": "c3",
+          "field": "rule.description",
+          "operator": "startsWith",
+          "value": "Registry Value Integrity",
+          "negate": false
+        },
+        {
+          "id": "c4",
+          "field": "rule.description",
+          "operator": "startsWith",
+          "value": "Registry Key Integrity",
+          "negate": false
+        }
+      ],
+      "actions": [
+        {
+          "type": "alert",
+          "params": {
+            "severity": "medium",
+            "message": "Registry change on {{agent.name}}: {{rule.description}}"
+          }
+        }
+      ]
+    }
+  ]
+}

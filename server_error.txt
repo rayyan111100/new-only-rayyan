@@ -1,0 +1,29 @@
+⚠ JWT_SECRET not set — using insecure default. Set JWT_SECRET in .env for production.
+⚠ JWT_SECRET not set — using default. Set JWT_SECRET in .env for production security.
+✖ Realtime poll error (1): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (10): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (20): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (30): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (40): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (50): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (60): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (70): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (80): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (90): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (100): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (110): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (120): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (130): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (140): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (150): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (160): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (170): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (180): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (190): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (200): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (210): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (220): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (230): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (240): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (250): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (260): connect ETIMEDOUT 192.168.1.77:9999
