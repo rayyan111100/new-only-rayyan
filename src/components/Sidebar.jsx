@@ -12,6 +12,7 @@ const NAV_SECTIONS = [
     ]
   },
   { key: 'health', label: 'Health', icon: 'health' },
+  { key: 'vulnerability', label: 'Vulnerability', icon: 'vulnerability' },
   {
     key: 'compliance', label: 'Compliance Management', icon: 'compliance',
     children: [
@@ -19,7 +20,6 @@ const NAV_SECTIONS = [
       { key: 'pcidss', label: 'PCI-DSS', icon: 'assignment' },
       { key: 'hipaa', label: 'HIPAA', icon: 'assignment' },
       { key: 'gdpr', label: 'GDPR', icon: 'assignment' },
-      { key: 'tscsoc2', label: 'TSC (SOC 2)', icon: 'assignment' },
       { key: 'mitreattack', label: 'MITRE ATT&CK', icon: 'assignment' },
     ]
   },
@@ -50,6 +50,7 @@ const NavIcon = ({ icon, className }) => {
     decode: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>,
     book: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>,
     create: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>,
+    vulnerability: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>,
   }
   return icons[icon] || null
 }
@@ -63,7 +64,7 @@ export default function Sidebar({ active, onSelect, collapsed, onToggle }) {
   const [expanded, setExpanded] = useState(() => {
     const inRules = ['createrule', 'rulegroups', 'ruleview', 'ruleguide'].includes(active)
     const inSec = ['securityhub', 'windowsevent'].includes(active)
-    const inCompliance = ['compliance', 'pcidss', 'hipaa', 'gdpr', 'tscsoc2', 'mitreattack'].includes(active)
+    const inCompliance = ['compliance', 'pcidss', 'hipaa', 'gdpr', 'mitreattack'].includes(active)
     if (inSec) return 'securityhub'
     if (inRules) return 'rules'
     if (inCompliance) return 'compliance'
@@ -72,7 +73,7 @@ export default function Sidebar({ active, onSelect, collapsed, onToggle }) {
 
   const isInRules = ['createrule', 'rulegroups', 'ruleview', 'ruleguide'].includes(active)
   const isInSecurity = ['securityhub', 'windowsevent'].includes(active)
-  const isInCompliance = ['compliance', 'pcidss', 'hipaa', 'gdpr', 'tscsoc2', 'mitreattack'].includes(active)
+  const isInCompliance = ['compliance', 'pcidss', 'hipaa', 'gdpr', 'mitreattack'].includes(active)
 
   return (
     <motion.aside

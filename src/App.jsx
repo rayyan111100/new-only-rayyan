@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { AppProvider, useApp } from './context/AppContext'
 import { ToastProvider } from './context/ToastContext'
@@ -27,10 +27,9 @@ import DecoderTab from './tabs/DecoderTab'
 import RuleGuideTab from './tabs/RuleGuideTab'
 import WindowsEventTab from './tabs/WindowsEventTab'
 import ComplianceTab from './tabs/ComplianceTab'
+import VulnerabilityTab from './tabs/VulnerabilityTab'
 import PcidssTab from './tabs/PcidssTab'
 import HipaaTab from './tabs/HipaaTab'
-import GdprTab from './tabs/GdprTab'
-import TscTab from './tabs/TscTab'
 import LoginModal from './components/LoginModal'
 import ErrorBoundary from './components/ErrorBoundary'
 
@@ -43,6 +42,7 @@ const TABS = {
   indices: IndicesTab,
   geo: GeoTab,
   health: HealthTab,
+  vulnerability: VulnerabilityTab,
   rules: RulesTab,
   createrule: CreateRuleTab,
   rulegroups: RuleGroupsTab,
@@ -53,18 +53,22 @@ const TABS = {
   windowsevent: WindowsEventTab,
   compliance: ComplianceTab,
   pcidss: PcidssTab,
-  hipaa: HipaaTab,
-  gdpr: GdprTab,
-  tscsoc2: TscTab
+  hipaa: HipaaTab
 }
 
 function DashboardShell() {
-  const { tab, setTab, doSearch } = useApp()
+  const { tab, setTab, doSearch, sidebarOpen, setSidebarOpen } = useApp()
   const { showLogin } = useAuth()
-  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
+  const firstTab = useRef(true)
   const TabComponent = TABS[tab] || DiscoverTab
-  const showQueryBar = true
+
+  useEffect(() => {
+    if (firstTab.current) { firstTab.current = false; return }
+    setSidebarOpen(false)
+  }, [tab])
+
+  const showQueryBar = tab === 'discover' || tab === 'search' || tab === 'ruleview'
   const showFields = tab === 'discover' || tab === 'search' || tab === 'ruleview' || tab === 'analytics'
 
   useEffect(() => {

@@ -25,12 +25,14 @@ app.use(express.static(publicPath));
 // --- UniShield360 API JWT Auth ---
 let token = null;
 let tokenExpiry = 0;
+let authBackoffUntil = 0;
 
 async function authenticate() {
   if (!WUSER || !WPASS) {
     console.warn('⚠ UNISHIELD360_USER or UNISHIELD360_PASSWORD not set — using no auth');
     return;
   }
+  if (Date.now() < authBackoffUntil) return;
   try {
     const creds = Buffer.from(`${WUSER}:${WPASS}`).toString('base64');
     const { data } = await axios.post(`${API}/security/user/authenticate`, null, {
@@ -42,7 +44,12 @@ async function authenticate() {
     console.log('✔ UniShield360 API authenticated');
   } catch (err) {
     token = null;
-    console.error('✖ Auth failed:', err.response?.data?.message || err.message);
+    const status = err.response?.status;
+    if (status === 501) {
+      authBackoffUntil = Date.now() + 86400000;
+    } else {
+      console.error('✖ Auth failed:', err.response?.data?.message || err.message);
+    }
   }
 }
 

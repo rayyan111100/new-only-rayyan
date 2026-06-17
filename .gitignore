@@ -8,3 +8,7 @@ server-run.log
 data/
 *.db
 scripts/
+.env
+server.log
+server-stderr.txt
+server-stdout.txt

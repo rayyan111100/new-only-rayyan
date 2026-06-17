@@ -29,10 +29,15 @@ const Dropdown = ({ show, onClose, children, width = 220 }) => (
   </>
 )
 
-export default function Navbar() {
+function Clock() {
+  const [t, setT] = useState(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
+  useEffect(() => { const id = setInterval(() => setT(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })), 1000); return () => clearInterval(id) }, [])
+  return <span className="text-[10px] font-mono text-soc-stext/70 dark:text-soc-darkstext/70 tabular-nums">{t}</span>
+}
+
+const Navbar = React.memo(function Navbar() {
   const { theme, setTheme, isDark, tab, doSearch, dql, setDql, filters, filterMatch, clearAllFilters, results, columns, total, addFilter, setFilterMatch } = useApp()
   const toggleTheme = () => setTheme(isDark ? 'light' : 'dark')
-  const [liveTime, setLiveTime] = useState(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
   const [showSave, setShowSave] = useState(false)
   const [showOpen, setShowOpen] = useState(false)
   const [showReport, setShowReport] = useState(false)
@@ -43,11 +48,6 @@ export default function Navbar() {
   const [showNotifications, setShowNotifications] = useState(false)
   const { user, setShowLogin, logout, hasRole } = useAuth()
   const rt = useRealtime(true)
-
-  useEffect(() => {
-    const t = setInterval(() => setLiveTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })), 1000)
-    return () => clearInterval(t)
-  }, [])
 
   useEffect(() => {
     if (showOpen) setSavedList(JSON.parse(localStorage.getItem('savedFilters') || '[]'))
@@ -129,7 +129,7 @@ export default function Navbar() {
   const Divider = () => <span className="w-px h-4 bg-soc-border/40 dark:bg-soc-darkborder/40 mx-1.5 shrink-0" />
 
   return (
-    <header className="gcard rounded-none flex items-center justify-between px-4 h-11 shrink-0 border-b border-soc-border/50 dark:border-soc-darkborder/50">
+    <header className="gcard rounded-none flex items-center justify-between px-4 h-11 shrink-0 border-b border-soc-border/50 dark:border-soc-darkborder/50 relative z-10">
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
           <img src="https://unishield360.com/wp-content/uploads/2024/08/Unishield-logo-Favicon-e1723102667824.png"
@@ -268,7 +268,7 @@ export default function Navbar() {
         <div className="flex items-center gap-1 pl-1">
           <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-soc-bg/50 dark:bg-soc-darkbg/50">
             <svg className="w-3 h-3 text-soc-stext/40 dark:text-soc-darkstext/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
-            <span className="text-[10px] font-mono text-soc-stext/70 dark:text-soc-darkstext/70 tabular-nums">{liveTime}</span>
+            <Clock />
           </div>
           <button onClick={toggleTheme} title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
             className="p-1.5 rounded-md hover:bg-white/60 dark:hover:bg-[#2d3140]/60 transition-colors text-soc-stext/60 dark:text-soc-darkstext/60 hover:text-soc-text dark:hover:text-soc-darktext">
@@ -378,4 +378,6 @@ export default function Navbar() {
       )}
     </header>
   )
-}
+})
+
+export default Navbar
