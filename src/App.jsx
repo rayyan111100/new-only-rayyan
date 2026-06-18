@@ -30,6 +30,7 @@ import ComplianceTab from './tabs/ComplianceTab'
 import VulnerabilityTab from './tabs/VulnerabilityTab'
 import PcidssTab from './tabs/PcidssTab'
 import HipaaTab from './tabs/HipaaTab'
+import GdprTab from './tabs/GdprTab'
 import LoginModal from './components/LoginModal'
 import ErrorBoundary from './components/ErrorBoundary'
 
@@ -53,7 +54,8 @@ const TABS = {
   windowsevent: WindowsEventTab,
   compliance: ComplianceTab,
   pcidss: PcidssTab,
-  hipaa: HipaaTab
+  hipaa: HipaaTab,
+  gdpr: GdprTab
 }
 
 function DashboardShell() {
