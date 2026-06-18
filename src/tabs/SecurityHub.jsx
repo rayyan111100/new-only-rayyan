@@ -211,7 +211,7 @@ export default function SecurityHub() {
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="gcard px-4 py-2.5 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <PulseDot />
-          <span className="text-sm font-semibold text-[#1a1c23] dark:text-[#e4e6eb]"><svg className="w-4 h-4 inline mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> Security Hub</span>
+          <span className="text-sm font-semibold text-[#1a1c23] dark:text-[#e4e6eb]"><svg className="w-4 h-4 inline mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> Security Operations</span>
           <span className="gchip text-[10px]">{(count24 || 0).toLocaleString()} alerts</span>
           {drillFilters.length > 0 && (
             <span className="gchip text-[9px] bg-[#EF843C]/10 text-[#EF843C] dark:text-[#EF843C]">{'Drill: ' + drillFilters.length}</span>
@@ -577,7 +577,7 @@ export default function SecurityHub() {
 
       <div className="flex items-center justify-between text-[10px] text-[#9ca3af] dark:text-[#6b7280] pt-1">
         <div className="flex items-center gap-3">
-          <span><svg className="w-3 h-3 inline mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> Security Hub &middot; Drill-down &middot; 60s refresh</span>
+          <span><svg className="w-3 h-3 inline mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> Security Operations &middot; Drill-down &middot; 60s refresh</span>
           <span className="hidden sm:inline">Last: {lastUpdated.toLocaleTimeString()}</span>
         </div>
         <button onClick={() => { clearDrills(); fetchData() }} className="gbtn-ghost gap-1 inline-flex items-center">

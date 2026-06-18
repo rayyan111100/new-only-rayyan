@@ -152,10 +152,6 @@ export default function QueryBar() {
     }
   }
 
-  const handleSearchClick = () => {
-    submitSearch(dqlRef.current)
-  }
-
   function submitSearch(val) {
     if (!val) { setDql(''); doSearch({ q: '' }); return }
 
@@ -401,15 +397,11 @@ export default function QueryBar() {
           <select value={limit} onChange={e => setLimit(parseInt(e.target.value))} className={'ginput px-1.5 py-1 text-xs w-12'}>
             <option>20</option><option>50</option><option>100</option><option>200</option><option>500</option>
           </select>
-          <select value={index} onChange={e => setIndex(e.target.value)} className="ginput text-[10px] py-0.5 px-1 w-auto font-mono">
+          <span className="text-[10px] text-[#9ca3af] whitespace-nowrap">Select Index:</span>
+          <select value={index} onChange={e => { const v = e.target.value; setIndex(v); doSearch({ index: v }) }} className="ginput text-[10px] py-0.5 px-1 w-auto font-mono">
             <option value="unishield360-alerts-4.x-*">Alerts</option>
             <option value="unishield360-archives-4.x-*">Archives</option>
           </select>
-          <button
-            onClick={handleSearchClick}
-            disabled={loading}
-            className={`px-2 py-1 text-xs font-semibold rounded transition-all whitespace-nowrap ${loading ? 'bg-soc-stext/30 text-white cursor-not-allowed' : 'gbtn-primary'}`}
-          >{loading ? <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> : <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>}</button>
         </div>
       </div>
 

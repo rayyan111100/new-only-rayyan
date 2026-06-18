@@ -133,8 +133,9 @@ const Navbar = React.memo(function Navbar() {
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
           <img src="https://unishield360.com/wp-content/uploads/2024/08/Unishield-logo-Favicon-e1723102667824.png"
-            alt="UniShield" className="w-6 h-6 rounded-full ring-1 ring-soc-accent/30" />
-          <span className="text-sm font-bold text-soc-text tracking-tight">UniShield</span>
+            alt="UniShield" className="w-6 h-6 rounded-full ring-2 ring-[#EF843C]/40"
+            style={{filter: 'drop-shadow(0 0 6px rgba(239,132,60,0.5)) drop-shadow(0 0 14px rgba(239,132,60,0.25))'}} />
+          <span className="text-sm font-bold text-soc-text dark:text-[#EF843C] tracking-tight" style={{textShadow: '0 0 8px rgba(239,132,60,0.35)'}}>UniShield 360</span>
         </div>
         <a href="https://unishield360.com" target="_blank" rel="noopener noreferrer"
           className="text-[9px] font-semibold text-soc-accent bg-soc-accent/10 dark:bg-soc-accent/15 px-1.5 py-0.5 rounded uppercase tracking-wider hover:bg-soc-accent/20 transition-colors">SOC</a>

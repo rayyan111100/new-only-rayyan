@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { AppProvider, useApp } from './context/AppContext'
 import { ToastProvider } from './context/ToastContext'
@@ -28,6 +28,15 @@ import RuleGuideTab from './tabs/RuleGuideTab'
 import WindowsEventTab from './tabs/WindowsEventTab'
 import ComplianceTab from './tabs/ComplianceTab'
 import VulnerabilityTab from './tabs/VulnerabilityTab'
+import SecurityEventsTab from './tabs/SecurityEventsTab'
+import VulnerabilityDetectionTab from './tabs/VulnerabilityDetectionTab'
+import MalwareDetectionTab from './tabs/MalwareDetectionTab'
+import FimTab from './tabs/FimTab'
+import AimTab from './tabs/AimTab'
+import InfrastructureHealthTab from './tabs/InfrastructureHealthTab'
+import DtmTab from './tabs/DtmTab'
+import IncidentManagementTab from './tabs/IncidentManagementTab'
+import TscTab from './tabs/TscTab'
 import PcidssTab from './tabs/PcidssTab'
 import HipaaTab from './tabs/HipaaTab'
 import GdprTab from './tabs/GdprTab'
@@ -52,6 +61,15 @@ const TABS = {
   decoder: DecoderTab,
   ruleguide: RuleGuideTab,
   windowsevent: WindowsEventTab,
+  securityevents: SecurityEventsTab,
+  vulnerabilitydetection: VulnerabilityTab,
+  malwaredetection: MalwareDetectionTab,
+  fim: FimTab,
+  aim: AimTab,
+  infrastructurehealth: InfrastructureHealthTab,
+  dtm: DtmTab,
+  incidentmanagement: IncidentManagementTab,
+  tsc: TscTab,
   compliance: ComplianceTab,
   pcidss: PcidssTab,
   hipaa: HipaaTab,
@@ -62,13 +80,7 @@ function DashboardShell() {
   const { tab, setTab, doSearch, sidebarOpen, setSidebarOpen } = useApp()
   const { showLogin } = useAuth()
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
-  const firstTab = useRef(true)
   const TabComponent = TABS[tab] || DiscoverTab
-
-  useEffect(() => {
-    if (firstTab.current) { firstTab.current = false; return }
-    setSidebarOpen(false)
-  }, [tab])
 
   const showQueryBar = tab === 'discover' || tab === 'search' || tab === 'ruleview'
   const showFields = tab === 'discover' || tab === 'search' || tab === 'ruleview' || tab === 'analytics'
