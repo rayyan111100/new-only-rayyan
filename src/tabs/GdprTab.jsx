@@ -3,13 +3,10 @@ import { motion } from 'framer-motion'
 import { ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts'
 import { useApp } from '../context/AppContext'
 import * as gdprApi from '../services/gdprApi'
-import { jsPDF } from 'jspdf'
-import 'jspdf-autotable'
 import DateRangePicker from '../components/DateRangePicker'
 
 const INNER_TABS = [
   { key: 'overview', label: 'Overview', icon: 'chart' },
-  { key: 'agents', label: 'Agents', icon: 'monitor' },
   { key: 'events', label: 'GDPR Events', icon: 'shield' },
   { key: 'controls', label: 'GDPR Controls', icon: 'wrench' }
 ]
@@ -120,24 +117,16 @@ export default function GdprTab() {
   const [articles, setArticles] = useState([])
   const [events, setEvents] = useState([])
   const [gdprAlerts, setGdprAlerts] = useState([])
-  const [agents, setAgents] = useState([])
   const [trend, setTrend] = useState([])
   const [articleBands, setArticleBands] = useState([])
   const [controlStats, setControlStats] = useState(null)
   const [hiddenSeries, setHiddenSeries] = useState(new Set())
   const [hiddenDonut, setHiddenDonut] = useState(new Set())
-  const [selectedAgent, setSelectedAgent] = useState(null)
   const [selectedArticle, setSelectedArticle] = useState(null)
   const [eventSort, setEventSort] = useState({ key: 'alertTime', dir: 'desc' })
   const [eventFilters, setEventFilters] = useState({ q: '', severity: '', article: '' })
-  const [agentFilters, setAgentFilters] = useState({ q: '', os: '' })
-  const [agentPage, setAgentPage] = useState(1)
   const [eventPage, setEventPage] = useState(1)
-  const [showReport, setShowReport] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState(null)
-  const [agentView, setAgentView] = useState(null)
-  const [reportForm, setReportForm] = useState({ assets: 312, os: 'All', severity: { critical: true, high: true, medium: false, low: false }, format: 'PDF' })
-  const [detailsModalAgent, setDetailsModalAgent] = useState(null)
   const [eventDetailTab, setEventDetailTab] = useState('description')
   const [globalFilters, setGlobalFilters] = useState([])
   const [gdprStartDate, setGdprStartDate] = useState('now-1y')
@@ -147,7 +136,6 @@ export default function GdprTab() {
   const endRef = useRef('now')
   useEffect(() => { startRef.current = gdprStartDate }, [gdprStartDate])
   useEffect(() => { endRef.current = gdprEndDate }, [gdprEndDate])
-  const AGENT_PER_PAGE = 12
   const { setSidebarOpen, setTab } = useApp()
 
   const toggleFilter = useCallback((field, value, type) => {
@@ -162,8 +150,8 @@ export default function GdprTab() {
   const filterCount = globalFilters.length
 
   useEffect(() => {
-    if (selectedEvent || agentView || detailsModalAgent) setSidebarOpen(false)
-  }, [selectedEvent, agentView, detailsModalAgent, setSidebarOpen])
+    if (selectedEvent) setSidebarOpen(false)
+  }, [selectedEvent, setSidebarOpen])
 
   const fetchAll = useCallback(async (sd, ed) => {
     try {
@@ -177,7 +165,6 @@ export default function GdprTab() {
       setArticles(data.articles)
       setEvents(data.events)
       setGdprAlerts(data.vulnAlerts || [])
-      setAgents(data.agents)
       setTrend(data.trend)
       setArticleBands(data.articleBands)
       setControlStats(data.controlStats)
@@ -207,24 +194,6 @@ export default function GdprTab() {
       return true
     })
   }, [events, globalFilters])
-
-  const filteredAgents = useMemo(() => {
-    if (!globalFilters.length) return agents
-    return agents.filter(a => {
-      for (const f of globalFilters) {
-        let match = false
-        if (f.field === 'os') match = a.os === f.value
-        else if (f.field === 'agentName') match = a.name === f.value
-        else if (f.field === 'severity') {
-          const key = f.value[0].toLowerCase()
-          match = (a.vulns[key] || 0) > 0
-        }
-        if (f.type === 'exclude' && match) return false
-        if (f.type === 'include' && !match) return false
-      }
-      return true
-    })
-  }, [agents, globalFilters])
 
   const filteredTrend = useMemo(() => {
     if (!globalFilters.length) return trend
@@ -311,24 +280,8 @@ export default function GdprTab() {
     return severityBuckets.map((b, i) => ({ ...b, value: b.count, fill: b.color }))
   }, [severityBuckets, filteredEvents, globalFilters.length])
 
-  const totAgents = useMemo(() => filteredAgents.length, [filteredAgents])
-  const invTotalPages = Math.max(1, Math.ceil(totAgents / AGENT_PER_PAGE))
-  const pagedAgents = useMemo(() => filteredAgents.slice((agentPage - 1) * AGENT_PER_PAGE, agentPage * AGENT_PER_PAGE), [filteredAgents, agentPage])
-
-  const topAgents = useMemo(() => [...filteredAgents].sort((a, b) => (b.vulns.c + b.vulns.h + b.vulns.m + b.vulns.l) - (a.vulns.c + a.vulns.h + a.vulns.m + a.vulns.l)).slice(0, 5), [filteredAgents])
-  const maxAgentEvents = useMemo(() => topAgents.length > 0 ? topAgents[0].vulns.c + topAgents[0].vulns.h + topAgents[0].vulns.m + topAgents[0].vulns.l : 1, [topAgents])
   const topArticles = useMemo(() => [...articles].sort((a, b) => b.eventCount - a.eventCount).slice(0, 5), [articles])
   const maxArticleEvents = useMemo(() => topArticles.length > 0 ? topArticles[0].eventCount : 1, [topArticles])
-
-  useEffect(() => { setAgentPage(1) }, [agentFilters])
-
-  const invSearchTimer = useRef(null)
-
-  useEffect(() => {
-    if (invSearchTimer.current) clearTimeout(invSearchTimer.current)
-    invSearchTimer.current = setTimeout(() => { applyAgentFilters() }, 300)
-    return () => { if (invSearchTimer.current) clearTimeout(invSearchTimer.current) }
-  }, [agentFilters.q, agentFilters.os])
 
   useEffect(() => { setEventPage(1) }, [eventFilters.q, eventFilters.severity, eventFilters.article])
 
@@ -349,34 +302,6 @@ export default function GdprTab() {
   }
 
   const handleEventFilter = (key, val) => setEventFilters(prev => ({ ...prev, [key]: val }))
-  const handleAgentFilter = (key, val) => { setAgentFilters(prev => ({ ...prev, [key]: val })) }
-
-  const applyAgentFilters = async () => { try { setAgentPage(1); const res = await gdprApi.fetchAgents(agentFilters); setAgents(res) } catch (e) { setError(e.message) } }
-
-  const handleGenerateReport = () => {
-    try {
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
-      const pageW = doc.internal.pageSize.getWidth()
-      doc.setFontSize(16)
-      doc.text('GDPR Compliance Report', pageW / 2, 15, { align: 'center' })
-      doc.setFontSize(9)
-      doc.text(`Generated: ${new Date().toLocaleString()}`, pageW / 2, 21, { align: 'center' })
-      const sortedForExport = [...filteredGdprAlerts].sort((a, b) => a.alertTime < b.alertTime ? 1 : -1)
-      doc.text(`Total Events: ${events.length} | Critical: ${totalCritical} | High: ${totalHigh} | Medium: ${stats?.medium || 0} | Low: ${stats?.low || 0}`, pageW / 2, 26, { align: 'center' })
-      const rows = sortedForExport.map(v => [v.alertTime, v.agentName, v.ruleId, v.severity, v.description, v.article, v.os, v.agentIP])
-      doc.autoTable({
-        startY: 30, head: [['Alert Time', 'Agent Name', 'Rule ID', 'Severity', 'Description', 'Article', 'OS', 'IP']],
-        body: rows,
-        styles: { fontSize: 7, cellPadding: 1.5 },
-        headStyles: { fillColor: [232, 104, 26], fontSize: 7, halign: 'center' },
-        columnStyles: { 0: { cellWidth: 24 }, 1: { cellWidth: 26 }, 2: { cellWidth: 18 }, 3: { cellWidth: 14, halign: 'center' }, 4: { cellWidth: 56 }, 5: { cellWidth: 28 }, 6: { cellWidth: 16 }, 7: { cellWidth: 24 } }
-      })
-      const dateStr = new Date().toISOString().substring(0, 10)
-      doc.save(`gdpr-report-${dateStr}.pdf`)
-    } catch (e) {
-      setError('Failed to generate PDF: ' + e.message)
-    }
-  }
 
   const EVENT_PER_PAGE = 15
 
@@ -444,14 +369,13 @@ export default function GdprTab() {
   )
 
   const renderStatCards = () => (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 mb-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 mb-3">
       {[
         { key: 'm-events', label: 'Total GDPR Events', val: totalVulns, icon: 'shield', iconBg: '#a371f71a', iconColor: '#a371f7' },
         { key: 'm-crit', label: 'Critical', val: totalCritical, icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b' },
         { key: 'm-high', label: 'High', val: totalHigh, icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a' },
         { key: 'm-med', label: 'Medium', val: totalMedium, icon: 'alert-circle', iconBg: '#d9770618', iconColor: '#d97706', valColor: '#d97706' },
-        { key: 'm-low', label: 'Low', val: totalLow, icon: 'alert-circle', iconBg: '#16a34a18', iconColor: '#16a34a', valColor: '#16a34a' },
-        { key: 'm-agents', label: 'Monitored Agents', val: totAgents, icon: 'monitor', iconBg: '#58a6ff1a', iconColor: '#58a6ff' }
+        { key: 'm-low', label: 'Low', val: totalLow, icon: 'alert-circle', iconBg: '#16a34a18', iconColor: '#16a34a', valColor: '#16a34a' }
       ].map(card => (
         <div key={card.key} className={CARD}>
           <div className="float-right w-[34px] h-[34px] rounded-lg flex items-center justify-center text-lg" style={{ background: card.iconBg }}>
@@ -593,56 +517,6 @@ export default function GdprTab() {
     </div>
   )
 
-  const renderTopAgents = () => (
-    <div className={`${CARD} flex flex-col`}>
-      <div className={SECTION_TITLE}>Top Agents by GDPR Events</div>
-      <div className="flex-1 min-h-0 overflow-y-auto max-h-[220px]">
-      <table className="w-full text-[11px] border-collapse">
-        <thead>
-          <tr className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb] font-bold uppercase tracking-wide">
-            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">#</th>
-            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Agent</th>
-            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">OS</th>
-            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Events</th>
-            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Critical</th>
-          </tr>
-        </thead>
-        <tbody>
-          {topAgents.map((a, i) => {
-            const totE = a.vulns.c + a.vulns.h + a.vulns.m + a.vulns.l
-            const isSelected = selectedAgent === a.name
-            return (
-              <tr key={a.name} onClick={() => setSelectedAgent(prev => prev === a.name ? null : a.name)}
-                className={`cursor-pointer transition-colors ${
-                  isSelected ? 'bg-[#e8681a]/10 dark:bg-[#e8681a]/10 border-l-2 border-[#e8681a]' : 'hover:bg-[#f0f2f4] dark:hover:bg-[#161b22]'
-                }`}>
-                <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#3b4049] dark:text-[#e5e7eb]">{i + 1}</td>
-                <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{a.name}</td>
-                <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#1f2937] dark:text-[#e5e7eb]">{a.os}</td>
-                <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-[60px] h-[6px] bg-[#d0d7de] dark:bg-[#1d2432] rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${(totE / maxAgentEvents) * 100}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
-                    </div>
-                    <span className="font-bold text-[#1f2328] dark:text-[#f0f6fc]"><AnimatedCounter val={totE} /></span>
-                  </div>
-                </td>
-                <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#dc2626]/20 text-[#1f2328] dark:text-[#f0f6fc]"><AnimatedCounter val={a.vulns.c} /></span>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-      </div>
-      {topAgents.length > 0 && (
-      <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e] flex-shrink-0"
-        onClick={() => setActiveTab('agents')}>View all agents <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
-      )}
-    </div>
-  )
-
   const renderTopArticles = () => (
     <div className={`${CARD} flex flex-col`}>
       <div className={SECTION_TITLE}>Top GDPR Articles</div>
@@ -700,105 +574,11 @@ export default function GdprTab() {
         {renderSeverityDonut()}
         {renderTrendChart()}
       </div>
-      <div className="grid grid-cols-3 gap-2.5 mb-3 items-stretch">
-        {renderTopAgents()}
+      <div className="grid grid-cols-2 gap-2.5 mb-3 items-stretch">
         {renderTopArticles()}
         {renderPlatformChart()}
       </div>
       {renderArticleRings()}
-    </motion.div>
-  )
-
-  const renderAgentInventory = () => (
-    <motion.div key="agents" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      {renderFilterBar()}
-      <div className={`${CARD} mb-3 relative z-10`}>
-        <div className="flex flex-wrap gap-2.5 items-center">
-          <div className="relative flex-1 min-w-[200px]">
-            <input type="text" placeholder="Search hostname or IP..." value={agentFilters.q}
-              onChange={e => handleAgentFilter('q', e.target.value)}
-              className="w-full bg-[#f0f2f4] dark:bg-[#161b22] text-[#1f2328] dark:text-[#f0f6fc] text-[11px] border border-[#d0d7de] dark:border-[#1d2432] rounded-md px-3 py-1.5 pl-8 focus:outline-none focus:border-[#e8681a]/50 transition-colors placeholder:text-[#3b4049] dark:text-[#e5e7eb]"
-            />
-            <svg className="absolute left-2.5 top-2 w-3.5 h-3.5 text-[#3b4049] dark:text-[#e5e7eb]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-          </div>
-          <FilterDropdown value={agentFilters.os} onChange={v => handleAgentFilter('os', v)}
-            options={[
-              { value: '', label: 'All OS' },
-              { value: 'Windows', label: 'Windows' },
-              { value: 'Linux', label: 'Linux' },
-              { value: 'macOS', label: 'macOS' },
-              { value: 'Network', label: 'Network' }
-            ]}
-            placeholder="All OS" />
-          <span className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb] ml-auto"><AnimatedCounter val={totAgents} /> agents found</span>
-        </div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
-        {pagedAgents.map((agent, idx) => {
-          const totE = agent.vulns.c + agent.vulns.h + agent.vulns.m + agent.vulns.l
-          return (
-            <motion.div key={agent.name} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.02 }}
-              className={`${CARD} cursor-pointer`} onClick={() => setDetailsModalAgent(agent)}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <FilterWrapper field="agentName" value={agent.name} className="pr-5">
-                    <span className="text-[11px] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{agent.name}</span>
-                  </FilterWrapper>
-                </div>
-                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
-                  agent.os === 'Windows' ? 'bg-[#2563eb]/15 text-[#1f2328] dark:text-[#f0f6fc]' :
-                  agent.os === 'Linux' ? 'bg-[#ea580c]/15 text-[#1f2328] dark:text-[#f0f6fc]' :
-                  agent.os === 'macOS' ? 'bg-[#d97706]/15 text-[#1f2328] dark:text-[#f0f6fc]' :
-                  agent.os === 'Network' ? 'bg-[#7c3aed]/15 text-[#1f2328] dark:text-[#f0f6fc]' :
-                  'bg-[#16a34a]/15 text-[#1f2328] dark:text-[#f0f6fc]'
-                }`}>{agent.os}</span>
-              </div>
-              <div className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb] mb-1.5">{agent.ip}</div>
-              <div className="grid grid-cols-4 gap-1 pt-2 border-t border-[#f0f2f4] dark:border-[#1d2432]">
-                {SEV_ORDER.map(sev => {
-                  const count = agent.vulns[sev[0]]
-                  const pct = totE > 0 ? Math.round(count / totE * 100) : 0
-                  return (
-                  <div key={sev} onClick={e => { e.stopPropagation(); setAgentView({ name: agent.name, os: agent.os, severity: sev === 'critical' ? 'Critical' : sev === 'high' ? 'High' : sev === 'medium' ? 'Medium' : 'Low' }) }}
-                    className="text-center cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] rounded transition-colors p-1">
-                    <div className="text-[9px] text-[#3b4049] dark:text-[#e5e7eb] capitalize">{sev}</div>
-                    <span className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc]" style={{ color: SEV_COLORS[sev] }}><AnimatedCounter val={count} /></span>
-                    <div className="w-full h-1 bg-[#d0d7de] dark:bg-[#1d2432] rounded-full mt-0.5 overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: SEV_COLORS[sev] }} />
-                    </div>
-                  </div>
-                  )
-                })}
-              </div>
-            </motion.div>
-          )
-        })}
-      </div>
-      {totAgents === 0 && (
-        <div className="text-center text-[#3b4049] dark:text-[#e5e7eb] py-16 text-[11px]">No agents match your filters.</div>
-      )}
-      {invTotalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-4">
-          <button onClick={() => setAgentPage(p => Math.max(1, p - 1))} disabled={agentPage === 1}
-            className="px-3 py-1.5 text-[11px] font-medium rounded-md border border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >Previous</button>
-          <div className="flex gap-1">
-            {Array.from({ length: invTotalPages }, (_, i) => i + 1).map(p => (
-              <button key={p} onClick={() => setAgentPage(p)}
-                className={`w-7 h-7 text-[11px] font-medium rounded-md transition-colors ${
-                  agentPage === p
-                    ? 'bg-[#e8681a] text-white'
-                    : 'text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22]'
-                }`}
-              >{p}</button>
-            ))}
-          </div>
-          <button onClick={() => setAgentPage(p => Math.min(invTotalPages, p + 1))} disabled={agentPage === invTotalPages}
-            className="px-3 py-1.5 text-[11px] font-medium rounded-md border border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >Next</button>
-        </div>
-      )}
     </motion.div>
   )
 
@@ -1088,16 +868,6 @@ export default function GdprTab() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }} className="p-2 sm:p-3 max-w-[1600px] mx-auto">
-      <div className="flex justify-end mb-3">
-        <DateRangePicker
-          startDate={gdprStartDate}
-          onStartChange={(v) => { startRef.current = v; setGdprStartDate(v) }}
-          endDate={gdprEndDate}
-          onEndChange={(v) => { endRef.current = v; setGdprEndDate(v) }}
-          onSearch={() => { setLoading(true); fetchAll(startRef.current, endRef.current) }}
-        />
-      </div>
-
       {/* Inner Tab Navigation */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
         <div className="flex gap-0.5 bg-[#f0f2f4] dark:bg-[#161b22] rounded-lg p-0.5 overflow-x-auto">
@@ -1115,20 +885,21 @@ export default function GdprTab() {
           ))}
         </div>
         <div className="flex items-center gap-2">
+          <DateRangePicker
+            startDate={gdprStartDate}
+            onStartChange={(v) => { startRef.current = v; setGdprStartDate(v) }}
+            endDate={gdprEndDate}
+            onEndChange={(v) => { endRef.current = v; setGdprEndDate(v) }}
+            onSearch={() => { setLoading(true); fetchAll(startRef.current, endRef.current) }}
+          />
           {activeTab === 'events' && (
             <span className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb]"><AnimatedCounter val={sortedGdprAlerts.length} /> events</span>
           )}
-          <button onClick={handleGenerateReport}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-md bg-[#e8681a] text-white hover:bg-[#ff7b2e] transition-colors shadow-sm">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-            Export PDF
-          </button>
         </div>
       </div>
 
       {/* Active Tab Content */}
       {activeTab === 'overview' && renderOverview()}
-      {activeTab === 'agents' && renderAgentInventory()}
       {activeTab === 'events' && renderEvents()}
       {activeTab === 'controls' && renderControls()}
     </motion.div>
