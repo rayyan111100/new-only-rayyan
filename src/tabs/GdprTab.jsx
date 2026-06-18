@@ -892,6 +892,15 @@ export default function GdprTab() {
             onEndChange={(v) => { endRef.current = v; setGdprEndDate(v) }}
             onSearch={() => { setLoading(true); fetchAll(startRef.current, endRef.current) }}
           />
+          <button onClick={() => { setLoading(true); fetchAll() }}
+            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-md border border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors"
+            title="Refresh all data"
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+            Refresh
+          </button>
           {activeTab === 'events' && (
             <span className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb]"><AnimatedCounter val={sortedGdprAlerts.length} /> events</span>
           )}
