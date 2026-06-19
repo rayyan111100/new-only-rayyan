@@ -37,6 +37,7 @@ export function AppProvider({ children }) {
   const [pendingRuleId, setPendingRuleId] = useState(null)
   const [activeGroup, setActiveGroup] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [pendingApiEndpoint, setPendingApiEndpoint] = useState(null)
   const [selectedRules, setSelectedRules] = useState([])
   const [filterMatch, setFilterMatch] = useState('and')
   const [warning, setWarning] = useState(null)
@@ -363,7 +364,8 @@ export function AppProvider({ children }) {
     selectRule, deselectRule,
     selectAllRules, deselectAllRules,
     bulkAddToGroup, bulkMoveToGroup, bulkRemoveFromGroup,
-    bulkDeleteRules, bulkToggleRules
+    bulkDeleteRules, bulkToggleRules,
+    pendingApiEndpoint, setPendingApiEndpoint
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

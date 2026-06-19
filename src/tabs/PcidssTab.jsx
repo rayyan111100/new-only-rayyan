@@ -260,7 +260,7 @@ export default function PcidssTab() {
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Events by PCI-DSS Requirement (Top 5)</div>
           {PCI_CONTROLS.map(c => {
             const r = data?.topRules?.find(t => t.control === c.req)
-            const count = r?.count || Math.floor(Math.random() * 30) + 5
+            const count = r?.count || 0
             const pct = (count / Math.max(...PCI_CONTROLS.map(x => {
               const xr = data?.topRules?.find(t => t.control === x.req)
               return xr?.count || 1
@@ -345,7 +345,7 @@ export default function PcidssTab() {
             <tbody>
               {PCI_CONTROLS.map((c, i) => {
                 const r = data?.topRules?.find(t => t.control === c.req)
-                const count = r?.count || Math.floor(Math.random() * 30) + 5
+                const count = r?.count || 0
                 return (
                   <tr key={c.req} onClick={() => openModal('ctrl-' + c.req)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>

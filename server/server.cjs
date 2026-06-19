@@ -124,6 +124,8 @@ for (const [local, remote] of Object.entries(UNISHIELD360_ENDPOINTS)) {
 app.post('/api/scan', (req, res) => proxy('POST', '/scan', req.body, res));
 app.post('/api/search', (req, res) => proxy('POST', '/search', req.body, res));
 
+
+
 // ─── Database ───
 const db = require('./db.cjs');
 db.initDB();
@@ -299,15 +301,21 @@ app.get('/api/windows-dashboard', async (req, res) => {
 });
 
 // Compliance Dashboard Aggregation Endpoint
+const COMPLIANCE_QUERIES = {
+  'PCI-DSS': '_exists_:rule.pci_dss',
+  'HIPAA': '_exists_:rule.hipaa',
+  'GDPR': '_exists_:rule.gdpr',
+  'TSC (SOC 2)': '_exists_:rule.tsc',
+  'MITRE ATT&CK': '_exists_:rule.mitre',
+}
+const COMPLIANCE_FRAMEWORKS = Object.keys(COMPLIANCE_QUERIES)
+
 app.get('/api/compliance', async (req, res) => {
   const { index, start_date, end_date, framework } = req.query;
   const idx = index || 'unishield360-alerts-4.x-*';
   const sd = start_date || 'now-24h';
   const ed = end_date || 'now';
-  const baseQ = 'rule.groups:compliance OR rule.groups:syscheck OR rule.groups:syslog OR rule.groups:authentication_failed OR rule.groups:authentication_success OR rule.groups:syscheck_entry_modified OR rule.groups:syscheck_file';
-  const frameworkQ = framework ? baseQ + ' AND (rule.groups:*' + framework.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase().replace(/__+/g, '_') + '* OR rule.description:*' + framework.replace(/[^a-zA-Z0-9]/g, '') + '*)' : baseQ;
-  const compQ = frameworkQ;
-  const frameworks = ['PCI-DSS', 'HIPAA', 'GDPR', 'TSC (SOC 2)', 'MITRE ATT&CK'];
+  const compQ = framework ? COMPLIANCE_QUERIES[framework] || '_exists_:rule.' + framework.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase() : Object.values(COMPLIANCE_QUERIES).join(' OR ');
   try {
     const [
       count24, count7d,
@@ -324,10 +332,9 @@ app.get('/api/compliance', async (req, res) => {
       api.get('/search', { params: { index: idx, q: compQ, limit: 20, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } }))
     ]);
 
-    // Count per framework (simulated by rule.group match)
     const frameworkCounts = !framework ? await Promise.all(
-      frameworks.map(fw => {
-        return api.get('/count', { params: { index: idx, q: baseQ, start_date: sd, end_date: ed } }).catch(() => ({ data: { count: Math.floor(Math.random() * 200) + 50 } }));
+      COMPLIANCE_FRAMEWORKS.map(fw => {
+        return api.get('/count', { params: { index: idx, q: COMPLIANCE_QUERIES[fw], start_date: sd, end_date: ed } }).catch(() => ({ data: { count: 0 } }));
       })
     ) : [];
 
@@ -338,28 +345,21 @@ app.get('/api/compliance', async (req, res) => {
       severityMap[cat] = (severityMap[cat] || 0) + b.doc_count;
     }
 
-    const pciControls = { '11.5': 54, '6.4.2': 39, '10.5.5': 30, '8.2.3': 22, '3.4.1': 14 };
-    const resolvedControls = (topRules.data.buckets || []).slice(0, 8).map((r, i) => ({
-      control: Object.keys(pciControls)[i % Object.keys(pciControls).length],
-      ruleId: r.key,
-      count: r.doc_count || 0,
-      description: r.description || 'Control violation'
-    }));
-
     res.json({
       count24: count24.data.count || 0,
       count7d: count7d.data.count || 0,
       severity: severityMap,
-      frameworkCounts: !framework ? frameworks.map((fw, i) => ({
+      frameworkCounts: !framework ? COMPLIANCE_FRAMEWORKS.map((fw, i) => ({
         framework: fw,
-        count: frameworkCounts[i]?.data?.count || Math.floor(Math.random() * 150) + 30
+        count: frameworkCounts[i]?.data?.count || 0
       })) : [],
-      topRules: resolvedControls,
-      topAgents: (topAgents.data.buckets || []).slice(0, 8),
-      timeline: (timeline.data.buckets || []).map(b => ({
-        time: b.key,
-        count: b.doc_count || 0
+      topRules: (topRules.data.buckets || []).slice(0, 8).map(r => ({
+        ruleId: r.key,
+        count: r.doc_count || 0,
+        description: r.description || ''
       })),
+      topAgents: (topAgents.data.buckets || []).slice(0, 8),
+      timeline: (timeline.data.buckets || []).map(b => ({ time: b.key, count: b.doc_count || 0 })),
       categories: (categories.data.buckets || []).slice(0, 8),
       recent: (recent.data.results || []).slice(0, 20),
       recentTotal: recent.data.total || 0

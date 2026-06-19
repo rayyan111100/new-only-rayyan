@@ -19,7 +19,6 @@ import HealthTab from './tabs/HealthTab'
 import RulesTab from './tabs/RulesTab'
 import CreateRuleTab from './tabs/CreateRuleTab'
 import { migrateRules } from './services/rulePersistence'
-import { seedDemoData } from './services/seedData'
 import RuleGroupsTab from './tabs/RuleGroupsTab'
 import GroupRulesTab from './tabs/GroupRulesTab'
 import RuleViewTab from './tabs/RuleViewTab'
@@ -31,6 +30,8 @@ import VulnerabilityTab from './tabs/VulnerabilityTab'
 import PcidssTab from './tabs/PcidssTab'
 import HipaaTab from './tabs/HipaaTab'
 import GdprTab from './tabs/GdprTab'
+import ApiConsoleTab from './tabs/ApiConsoleTab'
+import ApiGuideTab from './tabs/ApiGuideTab'
 import LoginModal from './components/LoginModal'
 import ErrorBoundary from './components/ErrorBoundary'
 
@@ -55,7 +56,9 @@ const TABS = {
   compliance: ComplianceTab,
   pcidss: PcidssTab,
   hipaa: HipaaTab,
-  gdpr: GdprTab
+  gdpr: GdprTab,
+  apiconsole: ApiConsoleTab,
+  apiguide: ApiGuideTab
 }
 
 function DashboardShell() {
@@ -76,8 +79,6 @@ function DashboardShell() {
   useEffect(() => {
     const migrated = migrateRules()
     if (migrated > 0) console.log(`Migrated ${migrated} rules: added groupIds`)
-    const seeded = seedDemoData()
-    if (seeded > 0) console.log(`Seeded ${seeded} demo rules + groups`)
   }, [])
 
   useEffect(() => {

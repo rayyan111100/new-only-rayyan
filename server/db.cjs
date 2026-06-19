@@ -87,6 +87,186 @@ function migrate() {
   try { db.exec(`ALTER TABLE rules ADD COLUMN suppressionMax INTEGER DEFAULT 0`) } catch {}
   try { db.exec(`ALTER TABLE rules ADD COLUMN suppressionField TEXT DEFAULT 'agent.name'`) } catch {}
 
+  // Migration: Wazuh API tables
+  try { db.exec(`ALTER TABLE agents ADD COLUMN groupConfig TEXT DEFAULT '[]'`) } catch {}
+  try { db.exec(`ALTER TABLE agents ADD COLUMN mergedGroup TEXT DEFAULT ''`) } catch {}
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agents (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      ip TEXT DEFAULT '0.0.0.0',
+      status TEXT DEFAULT 'active',
+      os_name TEXT DEFAULT '',
+      os_version TEXT DEFAULT '',
+      os_platform TEXT DEFAULT '',
+      version TEXT DEFAULT 'UniShield360 v3.0.0',
+      lastKeepAlive TEXT NOT NULL,
+      dateAdd TEXT NOT NULL,
+      groupConfig TEXT NOT NULL DEFAULT '[]',
+      mergedGroup TEXT DEFAULT 'default',
+      node_name TEXT DEFAULT 'node01'
+    );
+    CREATE TABLE IF NOT EXISTS cdb_lists (
+      filename TEXT PRIMARY KEY,
+      content TEXT NOT NULL DEFAULT '',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS mitre_groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      techniques TEXT NOT NULL DEFAULT '[]',
+      createdAt TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS mitre_techniques (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      tactics TEXT NOT NULL DEFAULT '[]',
+      platforms TEXT NOT NULL DEFAULT '[]',
+      createdAt TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS syscheck_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      last_event TEXT NOT NULL,
+      changes TEXT NOT NULL DEFAULT '[]',
+      perm TEXT DEFAULT '',
+      size INTEGER DEFAULT 0,
+      owner TEXT DEFAULT '',
+      group_name TEXT DEFAULT '',
+      md5 TEXT DEFAULT '',
+      sha1 TEXT DEFAULT '',
+      sha256 TEXT DEFAULT '',
+      date TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS vulnerabilities (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id TEXT NOT NULL,
+      cve TEXT NOT NULL,
+      title TEXT DEFAULT '',
+      severity TEXT DEFAULT 'medium',
+      cvss2_score REAL DEFAULT 0,
+      cvss3_score REAL DEFAULT 0,
+      package_name TEXT DEFAULT '',
+      package_version TEXT DEFAULT '',
+      package_platform TEXT DEFAULT '',
+      status TEXT DEFAULT 'Pending',
+      published TEXT DEFAULT '',
+      updated TEXT DEFAULT '',
+      created TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS sca_checks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id TEXT NOT NULL,
+      policy_id TEXT NOT NULL,
+      policy_name TEXT DEFAULT '',
+      title TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      rationale TEXT DEFAULT '',
+      remediation TEXT DEFAULT '',
+      condition TEXT DEFAULT '',
+      result TEXT DEFAULT 'passed',
+      status TEXT DEFAULT 'active',
+      compliance TEXT DEFAULT '[]',
+      created TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS rootcheck_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id TEXT NOT NULL,
+      file_path TEXT DEFAULT '',
+      issue TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      log TEXT DEFAULT '',
+      first_seen TEXT NOT NULL,
+      last_seen TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS logtest_sessions (
+      id TEXT PRIMARY KEY,
+      token TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      last_used TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS security_roles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      rules TEXT NOT NULL DEFAULT '[]',
+      policies TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS security_policies (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      policy JSON NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_syscheck_agent ON syscheck_entries(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_vuln_agent ON vulnerabilities(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_sca_agent ON sca_checks(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_rootcheck_agent ON rootcheck_entries(agent_id);
+  `)
+
+  // Seed agents if empty
+  const agentCount = db.prepare('SELECT COUNT(*) as cnt FROM agents').get()
+  if (agentCount.cnt === 0) {
+    const now = new Date().toISOString()
+    const seedAgents = [
+      { id: '001', name: 'server-prod-01', ip: '192.168.1.101', os_name: 'Ubuntu', os_version: '22.04', os_platform: 'linux', status: 'active' },
+      { id: '002', name: 'server-prod-02', ip: '192.168.1.102', os_name: 'Windows', os_version: '10.0.19045', os_platform: 'windows', status: 'active' },
+      { id: '003', name: 'server-dev-01', ip: '192.168.1.201', os_name: 'CentOS', os_version: '7.9', os_platform: 'linux', status: 'active' },
+      { id: '004', name: 'workstation-01', ip: '192.168.1.50', os_name: 'Windows', os_version: '10.0.19045', os_platform: 'windows', status: 'disconnected' },
+      { id: '005', name: 'web-01', ip: '192.168.1.10', os_name: 'Ubuntu', os_version: '20.04', os_platform: 'linux', status: 'active' },
+    ]
+    const stmt = db.prepare(`INSERT INTO agents (id, name, ip, status, os_name, os_version, os_platform, version, lastKeepAlive, dateAdd, groupConfig, mergedGroup, node_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    for (const a of seedAgents) {
+      stmt.run(a.id, a.name, a.ip, a.status, a.os_name, a.os_version, a.os_platform, 'UniShield360 v3.0.0', now, now, '[]', 'default', 'node01')
+    }
+    console.log(`✔ Seeded ${seedAgents.length} agents`)
+  }
+
+  // Seed MITRE data if empty
+  const mitreCount = db.prepare('SELECT COUNT(*) as cnt FROM mitre_groups').get()
+  if (mitreCount.cnt === 0) {
+    const now = new Date().toISOString()
+    const groups = [
+      { id: 'G0001', name: 'APT1', description: 'Chinese cyber espionage group', techniques: JSON.stringify(['T1055', 'T1071', 'T1105']) },
+      { id: 'G0002', name: 'Lazarus Group', description: 'North Korean state-sponsored group', techniques: JSON.stringify(['T1059', 'T1204', 'T1566']) },
+      { id: 'G0003', name: 'FIN7', description: 'Financially motivated cybercrime group', techniques: JSON.stringify(['T1021', 'T1055', 'T1566']) },
+      { id: 'G0004', name: 'Cobalt Group', description: 'Russian cybercrime group', techniques: JSON.stringify(['T1071', 'T1105', 'T1204']) },
+    ]
+    const gStmt = db.prepare('INSERT INTO mitre_groups (id, name, description, techniques, createdAt) VALUES (?, ?, ?, ?, ?)')
+    for (const g of groups) gStmt.run(g.id, g.name, g.description, g.techniques, now)
+
+    const techniques = [
+      { id: 'T1055', name: 'Process Injection', description: 'Inject code into processes', tactics: JSON.stringify(['defense-evasion', 'privilege-escalation']), platforms: JSON.stringify(['Windows', 'Linux']) },
+      { id: 'T1071', name: 'Application Layer Protocol', description: 'Use application layer protocols for C2', tactics: JSON.stringify(['command-and-control']), platforms: JSON.stringify(['Windows', 'Linux', 'macOS']) },
+      { id: 'T1105', name: 'Ingress Tool Transfer', description: 'Copy files from external systems', tactics: JSON.stringify(['command-and-control']), platforms: JSON.stringify(['Windows', 'Linux', 'macOS']) },
+      { id: 'T1059', name: 'Command-Line Interface', description: 'Use CLI for execution', tactics: JSON.stringify(['execution']), platforms: JSON.stringify(['Windows', 'Linux', 'macOS']) },
+      { id: 'T1204', name: 'User Execution', description: 'User executes malicious file', tactics: JSON.stringify(['execution']), platforms: JSON.stringify(['Windows', 'Linux', 'macOS']) },
+      { id: 'T1566', name: 'Phishing', description: 'Use phishing to gain access', tactics: JSON.stringify(['initial-access']), platforms: JSON.stringify(['Windows', 'Linux', 'macOS']) },
+      { id: 'T1021', name: 'Remote Services', description: 'Use remote services for access', tactics: JSON.stringify(['lateral-movement']), platforms: JSON.stringify(['Windows', 'Linux']) },
+      { id: 'T1003', name: 'OS Credential Dumping', description: 'Dump credentials from OS', tactics: JSON.stringify(['credential-access']), platforms: JSON.stringify(['Windows']) },
+    ]
+    const tStmt = db.prepare('INSERT INTO mitre_techniques (id, name, description, tactics, platforms, createdAt) VALUES (?, ?, ?, ?, ?, ?)')
+    for (const t of techniques) tStmt.run(t.id, t.name, t.description, t.tactics, t.platforms, now)
+    console.log(`✔ Seeded MITRE groups (${groups.length}) + techniques (${techniques.length})`)
+  }
+
+  // Seed security roles/policies if empty
+  const roleCount = db.prepare('SELECT COUNT(*) as cnt FROM security_roles').get()
+  if (roleCount.cnt === 0) {
+    const now = new Date().toISOString()
+    db.prepare('INSERT INTO security_roles (id, name, rules, policies, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run('role_admin', 'Administrator', '["*"]', '["*"]', now, now)
+    db.prepare('INSERT INTO security_roles (id, name, rules, policies, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run('role_analyst', 'Analyst', '["agents:read","rules:read","decoders:read"]', '["*"]', now, now)
+    db.prepare('INSERT INTO security_roles (id, name, rules, policies, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run('role_viewer', 'Viewer', '["agents:read"]', '[]', now, now)
+    db.prepare('INSERT INTO security_policies (id, name, policy, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run('policy_default', 'Default Policy', JSON.stringify({ enabled: true, level: 'low' }), now, now)
+  }
+
   // Phase 4: users + notifications
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -390,6 +570,195 @@ function addNotificationLog(nid, event, status, response) {
   )
 }
 
+// ─── WAZUH AGENTS CRUD ───
+
+function getAgents(params = {}) {
+  let sql = 'SELECT * FROM agents WHERE 1=1'
+  const binds = []
+  if (params.status) { sql += ' AND status=?'; binds.push(params.status) }
+  if (params.q) { sql += ' AND (name LIKE ? OR ip LIKE ?)'; binds.push(`%${params.q}%`, `%${params.q}%`) }
+  sql += ' ORDER BY name ASC'
+  if (params.limit) { sql += ' LIMIT ?'; binds.push(parseInt(params.limit)) }
+  if (params.offset) { sql += ' OFFSET ?'; binds.push(parseInt(params.offset)) }
+  return db.prepare(sql).all(...binds)
+}
+
+function getAgent(id) {
+  return db.prepare('SELECT * FROM agents WHERE id = ?').get(id) || null
+}
+
+function getAgentSummary() {
+  const total = db.prepare('SELECT COUNT(*) as total FROM agents').get().total
+  const active = db.prepare("SELECT COUNT(*) as cnt FROM agents WHERE status='active'").get().cnt
+  const disconnected = db.prepare("SELECT COUNT(*) as cnt FROM agents WHERE status='disconnected'").get().cnt
+  const pending = db.prepare("SELECT COUNT(*) as cnt FROM agents WHERE status='pending'").get().cnt
+  return { total, active, disconnected, pending, coverity: 0 }
+}
+
+function deleteAgent(id) {
+  db.prepare('DELETE FROM agents WHERE id = ?').run(id)
+  return true
+}
+
+function createAgent(data) {
+  const now = new Date().toISOString()
+  const id = data.id || String(Date.now())
+  db.prepare(`INSERT INTO agents (id, name, ip, status, os_name, os_version, os_platform, version, lastKeepAlive, dateAdd, groupConfig, mergedGroup, node_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    id, data.name, data.ip || '0.0.0.0', data.status || 'active', data.os_name || '', data.os_version || '', data.os_platform || '',
+    data.version || 'UniShield360 v3.0.0', now, now, JSON.stringify(data.groupConfig || []), data.mergedGroup || 'default', data.node_name || 'node01'
+  )
+  return getAgent(id)
+}
+
+// ─── CDB LISTS ───
+
+function getCdbLists() {
+  return db.prepare('SELECT filename, createdAt, updatedAt FROM cdb_lists ORDER BY filename ASC').all()
+}
+
+function getCdbList(filename) {
+  return db.prepare('SELECT * FROM cdb_lists WHERE filename = ?').get(filename) || null
+}
+
+function upsertCdbList(filename, content) {
+  const now = new Date().toISOString()
+  const existing = getCdbList(filename)
+  if (existing) {
+    db.prepare('UPDATE cdb_lists SET content=?, updatedAt=? WHERE filename=?').run(content, now, filename)
+  } else {
+    db.prepare('INSERT INTO cdb_lists (filename, content, createdAt, updatedAt) VALUES (?,?,?,?)').run(filename, content, now, now)
+  }
+  return getCdbList(filename)
+}
+
+function deleteCdbList(filename) {
+  db.prepare('DELETE FROM cdb_lists WHERE filename = ?').run(filename)
+  return true
+}
+
+// ─── MITRE ───
+
+function getMitreGroups() {
+  return db.prepare('SELECT * FROM mitre_groups ORDER BY name ASC').all()
+}
+
+function getMitreTechniques() {
+  return db.prepare('SELECT * FROM mitre_techniques ORDER BY name ASC').all()
+}
+
+function getMitreGroup(id) {
+  return db.prepare('SELECT * FROM mitre_groups WHERE id = ?').get(id) || null
+}
+
+function getMitreTechnique(id) {
+  return db.prepare('SELECT * FROM mitre_techniques WHERE id = ?').get(id) || null
+}
+
+// ─── SYSCHECK ───
+
+function getSyscheckEntries(agentId, limit = 50) {
+  return db.prepare('SELECT * FROM syscheck_entries WHERE agent_id = ? ORDER BY date DESC LIMIT ?').all(agentId, limit)
+}
+
+function getSyscheckLastScan(agentId) {
+  const row = db.prepare('SELECT MAX(date) as last_scan FROM syscheck_entries WHERE agent_id = ?').get(agentId)
+  return { last_scan: row?.last_scan || null, agent_id: agentId }
+}
+
+// ─── VULNERABILITIES ───
+
+function getVulnerabilities(agentId, limit = 50) {
+  return db.prepare('SELECT * FROM vulnerabilities WHERE agent_id = ? ORDER BY created DESC LIMIT ?').all(agentId, limit)
+}
+
+// ─── SCA ───
+
+function getScaChecks(agentId, limit = 50) {
+  return db.prepare('SELECT * FROM sca_checks WHERE agent_id = ? ORDER BY created DESC LIMIT ?').all(agentId, limit)
+}
+
+// ─── ROOTCHECK ───
+
+function getRootcheckEntries(agentId, limit = 50) {
+  return db.prepare('SELECT * FROM rootcheck_entries WHERE agent_id = ? ORDER BY last_seen DESC LIMIT ?').all(agentId, limit)
+}
+
+// ─── LOGTEST ───
+
+function createLogtestSession() {
+  const id = 'session_' + Date.now()
+  const token = require('crypto').randomBytes(16).toString('hex')
+  const now = new Date().toISOString()
+  db.prepare('INSERT INTO logtest_sessions (id, token, created_at, last_used) VALUES (?,?,?,?)').run(id, token, now, now)
+  return { id, token, created_at: now, last_used: now }
+}
+
+function deleteLogtestSession(id) {
+  db.prepare('DELETE FROM logtest_sessions WHERE id = ?').run(id)
+  return true
+}
+
+function getLogtestSessions() {
+  return db.prepare('SELECT * FROM logtest_sessions ORDER BY created_at DESC').all()
+}
+
+// ─── SECURITY ROLES & POLICIES ───
+
+function getSecurityRoles() {
+  return db.prepare('SELECT * FROM security_roles ORDER BY name ASC').all()
+}
+
+function getSecurityRole(id) {
+  return db.prepare('SELECT * FROM security_roles WHERE id = ?').get(id) || null
+}
+
+function getSecurityPolicies() {
+  return db.prepare('SELECT * FROM security_policies ORDER BY name ASC').all()
+}
+
+// ─── Manager Info ───
+
+function getManagerInfo() {
+  return {
+    name: 'unishield360-manager',
+    type: 'master',
+    version: 'UniShield360 v3.0.0',
+    openssl_support: true,
+    openssl_version: 'OpenSSL 1.1.1w',
+    max_agents: 10000,
+    installation_date: '2024-01-15',
+    path: require('path').join(__dirname, '..'),
+  }
+}
+
+function getManagerStatus() {
+  return {
+    'wazuh-analysisd': 'running',
+    'wazuh-authd': 'running',
+    'wazuh-db': 'running',
+    'wazuh-email': 'running',
+    'wazuh-execd': 'running',
+    'wazuh-integratord': 'running',
+    'wazuh-logcollector': 'running',
+    'wazuh-maild': 'running',
+    'wazuh-modulesd': 'running',
+    'wazuh-monitord': 'running',
+    'wazuh-remoted': 'running',
+    'wazuh-syscheckd': 'running',
+    'wazuh-agentlessd': 'running',
+    'wazuh-csyslogd': 'running',
+    'wazuh-clusterd': 'running',
+  }
+}
+
+function getClusterStatus() {
+  return { enabled: 'yes', running: 'yes', node_type: 'master', node_name: 'node01' }
+}
+
+function getClusterNodes() {
+  return [{ name: 'node01', type: 'master', ip: '0.0.0.0', status: 'active', version: 'UniShield360 v3.0.0' }]
+}
+
 // ─── HELPERS ───
 
 function deserializeRule(row) {
@@ -412,5 +781,16 @@ module.exports = {
   getAllDecoders, getDecoder, createDecoder, updateDecoder, deleteDecoder,
   getUserByUsername, getUser, getAllUsers, createUser, updateUser, deleteUser,
   getAllNotifications, getNotification, createNotification, updateNotification, deleteNotification,
-  getNotificationLogs, addNotificationLog
+  getNotificationLogs, addNotificationLog,
+  getAgents, getAgent, getAgentSummary, deleteAgent, createAgent,
+  getCdbLists, getCdbList, upsertCdbList, deleteCdbList,
+  getMitreGroups, getMitreTechniques, getMitreGroup, getMitreTechnique,
+  getSyscheckEntries, getSyscheckLastScan,
+  getVulnerabilities,
+  getScaChecks,
+  getRootcheckEntries,
+  createLogtestSession, deleteLogtestSession, getLogtestSessions,
+  getSecurityRoles, getSecurityRole, getSecurityPolicies,
+  getManagerInfo, getManagerStatus,
+  getClusterStatus, getClusterNodes
 }
