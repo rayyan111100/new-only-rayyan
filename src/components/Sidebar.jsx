@@ -108,9 +108,9 @@ export default function Sidebar({ active, onSelect, collapsed, onToggle }) {
   return (
     <motion.aside
       animate={{ width: collapsed ? 52 : 220 }}
-      className="h-full bg-gradient-to-b from-white to-[#f8f9fc] dark:from-[#2d1a0e] dark:to-[#221208] border-r border-[#e8eaed] dark:border-[#3d2a1a] flex flex-col overflow-hidden shrink-0"
+      className="h-full bg-soc-bg dark:bg-soc-darkbg border-r border-[#e8eaed] dark:border-soc-darkborder flex flex-col overflow-hidden shrink-0"
     >
-      <div className="flex items-center justify-between px-3 h-12 border-b border-[#e8eaed] dark:border-[#3d2a1a] shadow-sm">
+      <div className="flex items-center justify-between px-3 h-12 border-b border-[#e8eaed] dark:border-soc-darkborder shadow-sm">
         {!collapsed && <span className="text-[10px] font-bold text-[#4b5563] dark:text-[#9ca3af] uppercase tracking-widest" style={{textShadow: '0 1px 1px rgba(0,0,0,0.08)'}}>Navigate</span>}
         <button onClick={onToggle} className="p-1.5 rounded-lg hover:bg-[#f59e0b]/10 dark:hover:bg-[#f59e0b]/20 text-[#5f6368] dark:text-[#9aa0b0] transition-colors">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -194,7 +194,7 @@ export default function Sidebar({ active, onSelect, collapsed, onToggle }) {
           )
         })}
       </nav>
-      <div className="p-3 border-t border-[#e8eaed] dark:border-[#3d2a1a]">
+      <div className="p-3 border-t border-[#e8eaed] dark:border-soc-darkborder">
         {!collapsed && (
           <a href="https://unishield360.com" target="_blank" rel="noopener noreferrer"
             className="text-[10px] font-bold text-[#4b5563] dark:text-[#9ca3af] hover:text-[#EF843C] dark:hover:text-[#EF843C] transition-all duration-300"

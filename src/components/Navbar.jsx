@@ -129,7 +129,7 @@ const Navbar = React.memo(function Navbar() {
   const Divider = () => <span className="w-px h-4 bg-soc-border/40 dark:bg-soc-darkborder/40 mx-1.5 shrink-0" />
 
   return (
-    <header className="gcard rounded-none flex items-center justify-between px-4 h-11 shrink-0 border-b border-soc-border/50 dark:border-soc-darkborder/50 relative z-10">
+    <header className="bg-[#f5f6fa] dark:bg-[#1a1f2e] rounded-none flex items-center justify-between px-4 h-11 shrink-0 border-b border-soc-border/50 dark:border-soc-darkborder/50 relative z-10">
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
           <img src="https://unishield360.com/wp-content/uploads/2024/08/Unishield-logo-Favicon-e1723102667824.png"
