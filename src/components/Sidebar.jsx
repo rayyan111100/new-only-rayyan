@@ -25,7 +25,7 @@ const NAV_SECTIONS = [
     ]
   },
   {
-    key: 'compliance', label: 'Compliance Management', icon: 'compliance',
+    key: 'compliance', label: 'Compliance/Framework Managment', icon: 'compliance',
     children: [
       { key: 'compliance', label: 'Overview', icon: 'barChart' },
       { key: 'pcidss', label: 'PCI-DSS', icon: 'lock' },
@@ -33,6 +33,17 @@ const NAV_SECTIONS = [
       { key: 'gdpr', label: 'GDPR', icon: 'globe' },
       { key: 'tsc', label: 'TSC (SOC 2)', icon: 'shieldCheck' },
       { key: 'mitreattack', label: 'MITRE ATT&CK', icon: 'target' },
+      { key: 'cisbenchmark', label: 'CIS Benchmark', icon: 'checklist' },
+    ]
+  },
+  {
+    key: 'cspm', label: 'CSPM', icon: 'cloud',
+    children: [
+      { key: 'docker', label: 'Docker', icon: 'docker' },
+      { key: 'aws', label: 'AWS', icon: 'aws' },
+      { key: 'gcp', label: 'GCP', icon: 'gcp' },
+      { key: 'github', label: 'GitHub', icon: 'github' },
+      { key: 'office365', label: 'Office 365', icon: 'office365' },
     ]
   },
   {
@@ -77,6 +88,13 @@ const ICONS = {
   shieldCheck: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4',
   database: 'M12 2a9 3 0 000 6 9 3 0 000-6zm0 0v18m9-15v12M3 5v12m0-6h18',
   wifi: 'M5 12.55a11 11 0 0114.08 0M1.42 9a16 16 0 0121.16 0M8.53 16.11a6 6 0 016.95 0M12 20a1 1 0 100-2 1 1 0 000 2z',
+  cloud: 'M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z',
+  checklist: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
+  docker: 'M4 17l6-6-6-6m8 14h8',
+  aws: 'M12 2a9 3 0 000 6 9 3 0 000-6zm0 0v18m9-15v12M3 5v12m0-6h18',
+  gcp: 'M12 22a10 10 0 100-20 10 10 0 000 20zM2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z',
+  github: 'M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22',
+  office365: 'M6.5 2h11l3 8-8.5 12L3 10l3.5-8z',
 }
 
 function NavIcon({ icon, className }) {
@@ -96,14 +114,16 @@ export default function Sidebar({ active, onSelect, collapsed, onToggle }) {
     if (['createrule', 'rulegroups', 'ruleview', 'ruleguide'].includes(active)) keys.push('rules')
     if (['securityhub', 'windowsevent', 'securityevents', 'vulnerabilitydetection', 'malwaredetection', 'fim', 'incidentmanagement'].includes(active)) keys.push('securityhub')
     if (['aim', 'infrastructurehealth', 'dtm'].includes(active)) keys.push('noc')
-    if (['compliance', 'pcidss', 'hipaa', 'gdpr', 'tsc', 'mitreattack'].includes(active)) keys.push('compliance')
+    if (['compliance', 'pcidss', 'hipaa', 'gdpr', 'tsc', 'mitreattack', 'cisbenchmark'].includes(active)) keys.push('compliance')
+    if (['cspm', 'docker', 'aws', 'gcp', 'github', 'office365'].includes(active)) keys.push('cspm')
     return keys
   })
 
   const isInRules = ['createrule', 'rulegroups', 'ruleview', 'ruleguide'].includes(active)
   const isInSecurity = ['securityhub', 'windowsevent', 'securityevents', 'vulnerabilitydetection', 'malwaredetection', 'fim', 'incidentmanagement'].includes(active)
   const isInNoc = ['aim', 'infrastructurehealth', 'dtm'].includes(active)
-  const isInCompliance = ['compliance', 'pcidss', 'hipaa', 'gdpr', 'tsc', 'mitreattack'].includes(active)
+  const isInCompliance = ['compliance', 'pcidss', 'hipaa', 'gdpr', 'tsc', 'mitreattack', 'cisbenchmark'].includes(active)
+  const isInCspm = ['cspm', 'docker', 'aws', 'gcp', 'github', 'office365'].includes(active)
 
   return (
     <motion.aside
@@ -122,7 +142,7 @@ export default function Sidebar({ active, onSelect, collapsed, onToggle }) {
         {NAV_SECTIONS.map(item => {
           if (item.children) {
             const isExpanded = !collapsed && expanded.includes(item.key)
-            const parentActive = item.key === 'rules' ? isInRules : item.key === 'securityhub' ? isInSecurity : item.key === 'noc' ? isInNoc : item.key === 'compliance' ? isInCompliance : false
+            const parentActive = item.key === 'rules' ? isInRules : item.key === 'securityhub' ? isInSecurity : item.key === 'noc' ? isInNoc : item.key === 'compliance' ? isInCompliance : item.key === 'cspm' ? isInCspm : false
             return (
               <div key={item.key}>
                 <button

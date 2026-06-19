@@ -40,6 +40,7 @@ import TscTab from './tabs/TscTab'
 import PcidssTab from './tabs/PcidssTab'
 import HipaaTab from './tabs/HipaaTab'
 import GdprTab from './tabs/GdprTab'
+import CspmTab from './tabs/CspmTab'
 import LoginModal from './components/LoginModal'
 import ErrorBoundary from './components/ErrorBoundary'
 
@@ -73,7 +74,14 @@ const TABS = {
   compliance: ComplianceTab,
   pcidss: PcidssTab,
   hipaa: HipaaTab,
-  gdpr: GdprTab
+  gdpr: GdprTab,
+  cisbenchmark: ComplianceTab,
+  cspm: CspmTab,
+  docker: CspmTab,
+  aws: CspmTab,
+  gcp: CspmTab,
+  github: CspmTab,
+  office365: CspmTab,
 }
 
 function DashboardShell() {

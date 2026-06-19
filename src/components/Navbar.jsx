@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
 import { jsPDF } from 'jspdf'
 import { autoTable } from 'jspdf-autotable'
-import useRealtime from '../hooks/useRealtime'
 import { useAuth } from '../context/AuthContext'
 import NotificationSettings from './NotificationSettings'
 
@@ -41,13 +40,10 @@ const Navbar = React.memo(function Navbar() {
   const [showSave, setShowSave] = useState(false)
   const [showOpen, setShowOpen] = useState(false)
   const [showReport, setShowReport] = useState(false)
-  const [showInspect, setShowInspect] = useState(false)
   const [saveName, setSaveName] = useState('')
   const [savedList, setSavedList] = useState([])
-  const [showAlerts, setShowAlerts] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const { user, setShowLogin, logout, hasRole } = useAuth()
-  const rt = useRealtime(true)
 
   useEffect(() => {
     if (showOpen) setSavedList(JSON.parse(localStorage.getItem('savedFilters') || '[]'))
@@ -71,15 +67,6 @@ const Navbar = React.memo(function Navbar() {
     if (sf.filterMatch) setFilterMatch(sf.filterMatch)
     ;(sf.filters || []).forEach(f => addFilter(f.field, f.value, f.negate, f.operator, f.params))
     setTimeout(() => doSearch(), 0)
-  }
-
-  const handleShare = async () => {
-    const data = { dql, filters: filters.map(f => ({ field: f.field, value: f.value, negate: f.negate, operator: f.operator, params: f.params })), filterMatch }
-    try { await navigator.clipboard.writeText(JSON.stringify(data, null, 2)) } catch {
-      const ta = document.createElement('textarea')
-      ta.value = JSON.stringify(data, null, 2)
-      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
-    }
   }
 
   const downloadCSV = () => {
@@ -194,75 +181,10 @@ const Navbar = React.memo(function Navbar() {
 
         <Divider />
 
-        <Btn onClick={handleShare} title="Copy search configuration to clipboard">
-          <svg className="w-3.5 h-3.5 mr-1 inline-block -mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
-          Share
-        </Btn>
-
         <Btn onClick={() => setShowReport(true)} title="Download results as CSV">
           <svg className="w-3.5 h-3.5 mr-1 inline-block -mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
           Reporting
         </Btn>
-
-        <Btn onClick={() => setShowInspect(true)} title="View API request details and response info">
-          <svg className="w-3.5 h-3.5 mr-1 inline-block -mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-          Inspect
-        </Btn>
-
-        <div className="relative">
-          <button onClick={() => setShowAlerts(s => !s)}
-            className={`relative p-1.5 rounded-md transition-colors ${rt.connected ? 'text-soc-stext/80 dark:text-soc-darkstext/80 hover:bg-white/60 dark:hover:bg-[#2d3140]/60' : 'text-red-400'}`}
-            title={rt.connected ? `${rt.matches.length} alerts matched` : 'Realtime disconnected'}>
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
-            {rt.matches.length > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 flex items-center justify-center bg-red-500 text-white text-[7px] font-bold rounded-full">{rt.matches.length > 99 ? '99+' : rt.matches.length}</span>
-            )}
-          </button>
-          <Dropdown show={showAlerts} onClose={() => setShowAlerts(false)} width={320}>
-            <div className="p-2.5">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-[9px] font-semibold uppercase tracking-wider text-soc-stext/40 dark:text-soc-darkstext/40">
-                  Real-time {rt.connected ? <span className="text-green-500 ml-1">●</span> : <span className="text-red-500 ml-1">●</span>}
-                </div>
-                <div className="flex items-center gap-2 text-[9px] text-soc-stext/50 dark:text-soc-darkstext/50">
-                  <span>Alerts: {rt.stats.alertCount}</span>
-                  <span>Matches: {rt.stats.matchCount}</span>
-                </div>
-              </div>
-              {rt.matches.length === 0 ? (
-                <div className="text-[10px] text-soc-stext/40 dark:text-soc-darkstext/40 italic text-center py-4">Waiting for alerts...</div>
-              ) : (
-                <div className="max-h-64 overflow-y-auto space-y-1">
-                  {rt.matches.slice(0, 30).map((m, i) => (
-                    <div key={m.id || i} className="flex items-start gap-2 px-2 py-1.5 rounded-md bg-[#f8f9fa] dark:bg-[#252832] text-[10px]">
-                      <div className={`w-1.5 h-1.5 rounded-full mt-0.5 shrink-0 ${
-                        m.matches?.[0]?.severity === 'critical' ? 'bg-red-500' :
-                        m.matches?.[0]?.severity === 'high' ? 'bg-orange-500' :
-                        m.matches?.[0]?.severity === 'medium' ? 'bg-yellow-500' : 'bg-blue-500'
-                      }`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-medium text-soc-text dark:text-soc-darktext truncate">{m.matches?.[0]?.ruleName || 'Unknown'}</span>
-                          <span className="text-soc-stext/40 dark:text-soc-darkstext/40">on</span>
-                          <span className="text-soc-stext dark:text-soc-darkstext truncate">{m.agent}</span>
-                        </div>
-                        <div className="text-soc-stext/40 dark:text-soc-darkstext/40">
-                          {m.rule} · {m.decoded_format || '-'}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {rt.matches.length > 0 && (
-                <button onClick={() => { rt.clearMatches(); setShowAlerts(false) }}
-                  className="mt-2 w-full text-center text-[9px] py-1.5 text-soc-stext/50 dark:text-soc-darkstext/50 hover:text-soc-text dark:hover:text-soc-darktext transition-colors rounded-md hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140]">
-                  Clear ({rt.matches.length})
-                </button>
-              )}
-            </div>
-          </Dropdown>
-        </div>
 
         <Divider />
 
@@ -328,55 +250,6 @@ const Navbar = React.memo(function Navbar() {
         </div>
       )}
 
-      {showInspect && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowInspect(false)}>
-          <div className="bg-white dark:bg-[#1a1d27] rounded-xl shadow-2xl border border-[#e5e7eb] dark:border-[#2d3140] p-5 max-w-lg w-full mx-4 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-[#EF843C] dark:text-[#EF843C]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-                <h3 className="text-sm font-semibold text-soc-text dark:text-soc-darktext">Inspect</h3>
-              </div>
-              <button onClick={() => setShowInspect(false)} className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140] text-soc-stext/50 hover:text-soc-text dark:hover:text-soc-darktext transition-colors">&times;</button>
-            </div>
-            <div className="overflow-y-auto space-y-3 text-[11px] font-mono">
-              <div className="bg-[#f8f9fa] dark:bg-[#252832] rounded-lg p-3">
-                <div className="text-[9px] font-semibold uppercase tracking-wider text-soc-stext/40 dark:text-soc-darkstext/40 mb-2">API Request</div>
-                <div className="space-y-1 text-soc-text dark:text-soc-darktext">
-                  <div><span className="text-[#EF843C] dark:text-[#EF843C]">GET</span> /api/search</div>
-                  <div className="pl-4 text-soc-stext/70 dark:text-soc-darkstext/70">limit: 50</div>
-                  <div className="pl-4 text-soc-stext/70 dark:text-soc-darkstext/70">offset: {(0).toLocaleString()}</div>
-                  <div className="pl-4 text-soc-stext/70 dark:text-soc-darkstext/70">sort: @timestamp</div>
-                  <div className="pl-4 text-soc-stext/70 dark:text-soc-darkstext/70">order: desc</div>
-                  <div className="pl-4 text-soc-stext/70 dark:text-soc-darkstext/70">q: {dql || '*'}</div>
-                </div>
-              </div>
-              <div className="bg-[#f8f9fa] dark:bg-[#252832] rounded-lg p-3">
-                <div className="text-[9px] font-semibold uppercase tracking-wider text-soc-stext/40 dark:text-soc-darkstext/40 mb-2">Response</div>
-                <div className="space-y-1 text-soc-text dark:text-soc-darktext">
-                  <div>total: <span className="font-semibold text-[#EF843C] dark:text-[#EF843C]">{total.toLocaleString()}</span></div>
-                  <div>returned: <span className="font-semibold">{results.length}</span></div>
-                  <div>columns: {columns.length}</div>
-                </div>
-              </div>
-              <div className="bg-[#f8f9fa] dark:bg-[#252832] rounded-lg p-3">
-                <div className="text-[9px] font-semibold uppercase tracking-wider text-soc-stext/40 dark:text-soc-darkstext/40 mb-2">Active Filters</div>
-                {filters.length === 0 ? <div className="text-soc-stext/50 dark:text-soc-darkstext/50 italic">No filters</div> : (
-                  <div className="space-y-1">
-                    {filters.map((f, i) => (
-                      <div key={i} className="flex items-center gap-1.5 text-[10px] text-soc-stext dark:text-soc-darkstext">
-                        {f.negate && <span className="text-red-500 font-medium">NOT</span>}
-                        <span className="text-[#EF843C] dark:text-[#EF843C]">{f.field}</span>
-                        <span className="text-soc-stext/40 dark:text-soc-darkstext/40">{f.operator || 'is'}</span>
-                        <span className="font-medium truncate max-w-[120px]">{f.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </header>
   )
 })
