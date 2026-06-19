@@ -1,4 +1,5 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+const https = require('https');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -54,6 +55,22 @@ async function authenticate() {
 }
 
 const api = axios.create({ baseURL: API, timeout: 120000 });
+
+// Direct OpenSearch connection via OpenSearch Dashboards proxy (bypasses 10k max_result_window)
+const OS_URL = process.env.UNISHIELD360_API_URL ? 'https://192.168.1.77:8443' : null;
+const osApi = OS_URL ? axios.create({
+  baseURL: OS_URL + '/api/console/proxy',
+  timeout: 120000,
+  headers: { 'Content-Type': 'application/json' },
+  httpsAgent: new https.Agent({ rejectUnauthorized: false })
+}) : null;
+if (osApi) {
+  osApi.interceptors.request.use(config => {
+    config.headers['osd-xsrf'] = 'true';
+    config.auth = { username: WUSER || 'admin', password: WPASS || '' };
+    return config;
+  });
+}
 
 api.interceptors.request.use(async config => {
   if (WUSER && WPASS) {
@@ -367,6 +384,135 @@ app.get('/api/compliance', async (req, res) => {
   } catch (err) {
     console.error('Compliance error:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// GDPR Dashboard Aggregation Endpoint
+app.get('/api/gdpr-dashboard', async (req, res) => {
+  const { index, start_date, end_date } = req.query;
+  const idx = index || 'unishield360-alerts-4.x-*';
+  const sd = start_date || 'now-1y';
+  const ed = end_date || 'now';
+  const gdprQ = '_exists_:rule.gdpr';
+  try {
+    const [
+      countRes,
+      sevAgg,
+      articleAgg,
+      agentAgg,
+      trendAgg
+    ] = await Promise.all([
+      api.get('/count', { params: { index: idx, q: gdprQ, start_date: sd, end_date: ed } }).catch(() => ({ data: { count: 0 } })),
+      api.get('/aggregate', { params: { index: idx, q: gdprQ, field: 'rule.level', type: 'terms', limit: 20, start_date: sd, end_date: ed } }).catch(() => ({ data: { buckets: [] } })),
+      api.get('/aggregate', { params: { index: idx, q: gdprQ, field: 'rule.gdpr', type: 'terms', limit: 50, start_date: sd, end_date: ed } }).catch(() => ({ data: { buckets: [] } })),
+      api.get('/aggregate', { params: { index: idx, q: gdprQ, field: 'agent.name', type: 'terms', limit: 100, start_date: sd, end_date: ed } }).catch(() => ({ data: { buckets: [] } })),
+      api.get('/aggregate', { params: { index: idx, q: gdprQ, field: '@timestamp', type: 'date_histogram', interval: '1d', limit: 365, start_date: sd, end_date: ed } }).catch(() => ({ data: { buckets: [] } }))
+    ]);
+
+    const total = countRes.data.count || 0;
+    const sevBuckets = sevAgg.data.buckets || [];
+    const articleBuckets = articleAgg.data.buckets || [];
+    const agentBuckets = agentAgg.data.buckets || [];
+    const trendBuckets = trendAgg.data.buckets || [];
+
+    let sevCritical = 0, sevHigh = 0, sevMedium = 0, sevLow = 0;
+    for (const b of sevBuckets) {
+      const lvl = parseInt(b.key) || 0;
+      const cnt = b.doc_count || 0;
+      if (lvl >= 12) sevCritical += cnt;
+      else if (lvl >= 7) sevHigh += cnt;
+      else if (lvl >= 4) sevMedium += cnt;
+      else sevLow += cnt;
+    }
+
+    res.json({
+      total,
+      severity: { critical: sevCritical, high: sevHigh, medium: sevMedium, low: sevLow },
+      sevBuckets,
+      articleBuckets,
+      agentBuckets,
+      trendBuckets
+    });
+  } catch (err) {
+    console.error('GDPR dashboard error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GDPR Paginated Events Endpoint (uses structured OpenSearch queries for proper field handling)
+app.get('/api/gdpr-events', async (req, res) => {
+  const { index, start_date, end_date, limit, offset, search_after, search, severity, article } = req.query;
+  const idx = (index || 'unishield360-alerts-4.x-*').replace(/^unishield360-/i, 'wazuh-');
+  const sd = start_date || 'now-1y';
+  const ed = end_date || 'now';
+  const lim = Math.min(parseInt(limit) || 20, 10000);
+  const off = Math.min(parseInt(offset) || 0, 9999);
+
+  const filters = [{ "exists": { "field": "rule.gdpr" } }];
+  const timeRange = {};
+  if (sd && sd !== 'now') timeRange.gte = sd;
+  if (ed && ed !== 'now') timeRange.lte = ed;
+  if (Object.keys(timeRange).length) filters.push({ "range": { "@timestamp": timeRange } });
+
+  // Search text → wildcard across agent.name, rule.id, agent.ip, rule.description
+  if (search) {
+    const s = search.replace(/[^a-zA-Z0-9_.\- ]/g, '');
+    const wc = '*' + s + '*';
+    filters.push({ "bool": { "should": [
+      { "wildcard": { "agent.name": wc } },
+      { "wildcard": { "rule.id": wc } },
+      { "wildcard": { "agent.ip": wc } },
+      { "wildcard": { "rule.description": wc } }
+    ] } });
+  }
+
+  // Severity filter → range on rule.level
+  if (severity) {
+    const sevRanges = { 'Critical': { gte: 12 }, 'High': { gte: 7, lte: 11 }, 'Medium': { gte: 4, lte: 6 }, 'Low': { gte: 1, lte: 3 } };
+    const range = sevRanges[severity];
+    if (range) filters.push({ "range": { "rule.level": range } });
+  }
+
+  // Article filter → term on rule.gdpr
+  if (article) {
+    filters.push({ "term": { "rule.gdpr": article } });
+  }
+
+  const body = {
+    size: lim,
+    track_total_hits: true,
+    query: { "bool": { "must": filters } },
+    sort: [{ "@timestamp": { "order": "desc" } }, { "_id": { "order": "desc" } }]
+  };
+
+  let sa = null;
+  if (search_after) { try { sa = JSON.parse(search_after); } catch {} }
+  if (sa && Array.isArray(sa)) {
+    body.search_after = sa;
+  } else if (off > 0) {
+    body.from = off;
+  }
+
+  async function queryWazuhApi() {
+    const fb = await api.get('/search', {
+      params: { index: idx, q: '_exists_:rule.gdpr', limit: lim, offset: 0, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed }
+    });
+    return { results: fb.data.results || [], total: fb.data.total || 0 };
+  }
+
+  try {
+    if (!osApi) { const r = await queryWazuhApi(); return res.json(r); }
+    const osRes = await osApi.post('', body, {
+      params: { path: idx + '/_search', method: 'POST' }
+    });
+    const hits = osRes.data?.hits || {};
+    const results = (hits.hits || []).map(h => ({ ...h._source, _id: h._id }));
+    const lastSort = hits.hits?.length > 0 ? hits.hits[hits.hits.length - 1].sort : null;
+    res.json({ results, total: hits.total?.value || 0, sort: lastSort });
+  } catch (err) {
+    console.error('OS proxy search failed, falling back:', err.message);
+    try { const r = await queryWazuhApi(); res.json(r); }
+    catch (e2) { res.status(500).json({ error: e2.message }); }
   }
 });
 

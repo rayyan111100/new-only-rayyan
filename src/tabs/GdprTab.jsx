@@ -7,7 +7,6 @@ import DateRangePicker from '../components/DateRangePicker'
 
 const INNER_TABS = [
   { key: 'overview', label: 'Overview', icon: 'chart' },
-  { key: 'events', label: 'GDPR Events', icon: 'shield' },
   { key: 'controls', label: 'GDPR Controls', icon: 'wrench' }
 ]
 
@@ -115,6 +114,7 @@ export default function GdprTab() {
   const [severityBuckets, setSeverityBuckets] = useState([])
   const [platforms, setPlatforms] = useState([])
   const [articles, setArticles] = useState([])
+  const [agents, setAgents] = useState([])
   const [events, setEvents] = useState([])
   const [gdprAlerts, setGdprAlerts] = useState([])
   const [trend, setTrend] = useState([])
@@ -125,6 +125,8 @@ export default function GdprTab() {
   const [selectedArticle, setSelectedArticle] = useState(null)
   const [eventSort, setEventSort] = useState({ key: 'alertTime', dir: 'desc' })
   const [eventFilters, setEventFilters] = useState({ q: '', severity: '', article: '' })
+  const [searchText, setSearchText] = useState('')
+  const searchTimer = useRef(null)
   const [eventPage, setEventPage] = useState(1)
   const [selectedEvent, setSelectedEvent] = useState(null)
   const [eventDetailTab, setEventDetailTab] = useState('description')
@@ -132,6 +134,15 @@ export default function GdprTab() {
   const [gdprStartDate, setGdprStartDate] = useState('now-1y')
   const [gdprEndDate, setGdprEndDate] = useState('now')
   const [totalCount, setTotalCount] = useState(0)
+  const [eventTotalCount, setEventTotalCount] = useState(0)
+  const [eventsLoading, setEventsLoading] = useState(false)
+  const [saCache, setSaCache] = useState({})
+  const saCacheRef = useRef({})
+  const [autoRefresh, setAutoRefresh] = useState(false)
+  const [jumpPage, setJumpPage] = useState('')
+  const [jumpMsg, setJumpMsg] = useState('')
+  const autoRef = useRef(null)
+  const searchReqId = useRef(0)
   const startRef = useRef('now-1y')
   const endRef = useRef('now')
   useEffect(() => { startRef.current = gdprStartDate }, [gdprStartDate])
@@ -163,12 +174,11 @@ export default function GdprTab() {
       setSeverityBuckets(data.severityBuckets)
       setPlatforms(data.platforms)
       setArticles(data.articles)
-      setEvents(data.events)
-      setGdprAlerts(data.vulnAlerts || [])
+      setAgents(data.agents || [])
       setTrend(data.trend)
       setArticleBands(data.articleBands)
       setControlStats(data.controlStats)
-      setTotalCount(data.stats?.total || data.events.length)
+      setTotalCount(data.stats?.total || 0)
     } catch (err) {
       setError(err.message || 'Failed to load GDPR data')
     } finally {
@@ -177,6 +187,49 @@ export default function GdprTab() {
   }, [])
 
   useEffect(() => { setLoading(true); fetchAll() }, [fetchAll])
+
+  useEffect(() => {
+    if (!autoRefresh) { if (autoRef.current) { clearInterval(autoRef.current); autoRef.current = null } return }
+    if (autoRef.current) clearInterval(autoRef.current)
+    autoRef.current = setInterval(() => { fetchAll() }, 30000)
+    return () => { if (autoRef.current) { clearInterval(autoRef.current); autoRef.current = null } }
+  }, [autoRefresh, fetchAll])
+
+  const loadEvents = useCallback(async () => {
+    if (activeTab !== 'events' && activeTab !== 'overview') return
+      setEventsLoading(true)
+      const myReqId = ++searchReqId.current
+      try {
+        const params = {
+          startDate: gdprStartDate, endDate: gdprEndDate,
+          limit: 20, offset: (eventPage - 1) * 20
+        }
+        if (eventPage > 500) params.search_after = saCacheRef.current[eventPage - 1]
+        const res = await gdprApi.fetchEvents(eventFilters, params)
+        if (myReqId !== searchReqId.current) return // stale response, discard
+        setGdprAlerts(res.results)
+        setEventTotalCount(res.total)
+        if (res.sort) {
+          saCacheRef.current = { ...saCacheRef.current, [eventPage]: res.sort }
+          setSaCache(saCacheRef.current)
+        }
+      } catch (e) {
+        if (myReqId === searchReqId.current) setError(e.message)
+      } finally {
+        if (myReqId === searchReqId.current) setEventsLoading(false)
+      }
+  }, [activeTab, eventFilters, eventPage, gdprStartDate, gdprEndDate])
+
+  useEffect(() => { loadEvents() }, [loadEvents])
+
+  // Debounce search text → eventFilters.q (300ms)
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => {
+      setEventFilters(prev => ({ ...prev, q: searchText }))
+    }, 300)
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current) }
+  }, [searchText])
 
   const filteredEvents = useMemo(() => {
     if (!globalFilters.length) return events
@@ -282,6 +335,8 @@ export default function GdprTab() {
 
   const topArticles = useMemo(() => [...articles].sort((a, b) => b.eventCount - a.eventCount).slice(0, 5), [articles])
   const maxArticleEvents = useMemo(() => topArticles.length > 0 ? topArticles[0].eventCount : 1, [topArticles])
+  const topAgents = useMemo(() => [...agents].sort((a, b) => b.events - a.events).slice(0, 5), [agents])
+  const maxAgentEvents = useMemo(() => topAgents.length > 0 ? topAgents[0].events : 1, [topAgents])
 
   useEffect(() => { setEventPage(1) }, [eventFilters.q, eventFilters.severity, eventFilters.article])
 
@@ -307,18 +362,6 @@ export default function GdprTab() {
 
   const filteredGdprAlerts = useMemo(() => {
     let result = gdprAlerts
-    if (eventFilters.q) {
-      const q = eventFilters.q.toLowerCase()
-      result = result.filter(v =>
-        v.agentName.toLowerCase().includes(q) ||
-        v.ruleId.toLowerCase().includes(q) ||
-        v.article.toLowerCase().includes(q) ||
-        v.description.toLowerCase().includes(q) ||
-        v.agentIP.includes(q)
-      )
-    }
-    if (eventFilters.severity) result = result.filter(v => v.severity === eventFilters.severity)
-    if (eventFilters.article) result = result.filter(v => v.article === eventFilters.article)
     if (globalFilters.length) {
       result = result.filter(v => {
         for (const f of globalFilters) {
@@ -351,8 +394,8 @@ export default function GdprTab() {
     return rows
   }, [filteredGdprAlerts, eventSort])
 
-  const gdprAlertTotalPages = Math.max(1, Math.ceil(sortedGdprAlerts.length / 15))
-  const pagedGdprAlerts = useMemo(() => sortedGdprAlerts.slice((eventPage - 1) * 15, eventPage * 15), [sortedGdprAlerts, eventPage])
+  const gdprAlertTotalPages = Math.max(1, Math.ceil(eventTotalCount / 20))
+  const pagedGdprAlerts = sortedGdprAlerts
 
   const totalVulns = stats?.total || 0
   const totalCritical = stats?.critical || 0
@@ -492,31 +535,6 @@ export default function GdprTab() {
     </div>
   )
 
-  const renderArticleRings = () => (
-    <div className={CARD}>
-      <div className={SECTION_TITLE}>Article Distribution</div>
-      <div className="grid grid-cols-4 gap-3">
-        {articleBands.map((b, i) => {
-          const svgSize = 100
-          const sw = 8
-          const r = (svgSize - sw) / 2
-          const circ = 2 * Math.PI * r
-          const off = circ - (b.pct / 100) * circ
-          return (
-            <div key={i} className="flex flex-col items-center gap-1">
-              <svg width={svgSize} height={svgSize} className="transform -rotate-90">
-                <circle cx={svgSize / 2} cy={svgSize / 2} r={r} fill="none" stroke="#d0d7de" strokeWidth={sw} className="dark:stroke-[#1d2432]" />
-                <circle cx={svgSize / 2} cy={svgSize / 2} r={r} fill="none" stroke={b.color} strokeWidth={sw} strokeDasharray={circ} strokeDashoffset={off} strokeLinecap="round" />
-              </svg>
-              <span className="text-[11px] font-semibold text-[#1f2328] dark:text-[#f0f6fc] text-center">{b.label}</span>
-              <span className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb]"><AnimatedCounter val={b.count} /> events</span>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-
   const renderTopArticles = () => (
     <div className={`${CARD} flex flex-col`}>
       <div className={SECTION_TITLE}>Top GDPR Articles</div>
@@ -561,25 +579,68 @@ export default function GdprTab() {
       </div>
       {topArticles.length > 0 && (
       <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e] flex-shrink-0"
-        onClick={() => setActiveTab('events')}>View all events <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+        onClick={() => setActiveTab('overview')}>View all articles <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
       )}
     </div>
   )
 
   const renderOverview = () => (
     <motion.div key="overview" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      {renderFilterBar()}
       {renderStatCards()}
       <div className="grid grid-cols-[0.55fr_1.45fr] gap-2.5 mb-3 items-stretch">
         {renderSeverityDonut()}
         {renderTrendChart()}
       </div>
-      <div className="grid grid-cols-2 gap-2.5 mb-3 items-stretch">
+      <div className="grid grid-cols-3 gap-2.5 mb-3 items-stretch">
+        {renderTopAgents()}
         {renderTopArticles()}
         {renderPlatformChart()}
       </div>
-      {renderArticleRings()}
+      <div className="mb-3">{renderEvents()}</div>
     </motion.div>
+  )
+
+  const renderTopAgents = () => (
+    <div className={`${CARD} flex flex-col`}>
+      <div className={SECTION_TITLE}>Top Agents by GDPR Events</div>
+      <div className="flex-1 min-h-0 overflow-y-auto max-h-[220px]">
+      <table className="w-full text-[11px] border-collapse">
+        <thead>
+          <tr className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb] font-bold uppercase tracking-wide">
+            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">#</th>
+            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Agent</th>
+            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">OS</th>
+            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Events</th>
+            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Critical</th>
+          </tr>
+        </thead>
+        <tbody>
+          {topAgents.map((a, i) => {
+            const totE = a.events
+            return (
+              <tr key={a.name}
+                className="hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
+                <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#3b4049] dark:text-[#e5e7eb]">{i + 1}</td>
+                <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{a.name}</td>
+                <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#1f2937] dark:text-[#e5e7eb]">{a.os}</td>
+                <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-[60px] h-[6px] bg-[#d0d7de] dark:bg-[#1d2432] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${(totE / maxAgentEvents) * 100}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
+                    </div>
+                    <span className="font-bold text-[#1f2328] dark:text-[#f0f6fc]">{totE.toLocaleString()}</span>
+                  </div>
+                </td>
+                <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#dc2626]/20 text-[#1f2328] dark:text-[#f0f6fc]">{a.vulns.c}</span>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      </div>
+    </div>
   )
 
   const renderEventDetailPanel = () => {
@@ -715,8 +776,8 @@ export default function GdprTab() {
       <div className={`${CARD} mb-3`}>
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="relative flex-1 min-w-[180px]">
-            <input type="text" placeholder="Search by agent, rule, article, IP..." value={eventFilters.q}
-              onChange={e => handleEventFilter('q', e.target.value)}
+            <input type="text" placeholder="Search by agent, rule, article, IP..." value={searchText}
+              onChange={e => setSearchText(e.target.value)}
               className="w-full bg-[#f0f2f4] dark:bg-[#161b22] text-[#1f2328] dark:text-[#f0f6fc] text-[11px] border border-[#d0d7de] dark:border-[#1d2432] rounded-md px-3 py-1.5 pl-8 focus:outline-none focus:border-[#e8681a]/50 transition-colors placeholder:text-[#3b4049] dark:text-[#e5e7eb]"
             />
             <svg className="absolute left-2.5 top-2 w-3.5 h-3.5 text-[#3b4049] dark:text-[#e5e7eb]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
@@ -736,7 +797,6 @@ export default function GdprTab() {
               ...articles.slice(0, 20).map(a => ({ value: a.article, label: a.article }))
             ]}
             placeholder="All Articles" />
-          <span className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb] ml-auto"><AnimatedCounter val={sortedGdprAlerts.length} /> events</span>
         </div>
       </div>
       <div className={`${CARD} overflow-x-auto`}>
@@ -768,7 +828,9 @@ export default function GdprTab() {
           </thead>
           <tbody>
             {pagedGdprAlerts.length === 0 && (
-              <tr><td colSpan={6} className="text-center py-8 text-[11px] text-[#3b4049] dark:text-[#e5e7eb]">No events match your filters.</td></tr>
+              <tr><td colSpan={6} className="text-center py-8 text-[11px] text-[#3b4049] dark:text-[#e5e7eb]">
+                {eventsLoading ? 'Searching...' : 'No events match your filters.'}
+              </td></tr>
             )}
             {pagedGdprAlerts.map((v, i) => (
               <tr key={v.id || i} onClick={() => setSelectedEvent(v)}
@@ -785,7 +847,14 @@ export default function GdprTab() {
                     'bg-[#16a34a]/20 text-[#1f2328] dark:text-[#f0f6fc]'
                   }`}>{v.severity}</span>
                 </td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#e8681a] font-medium">{v.article}</td>
+                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
+                  <div className="flex flex-wrap gap-0.5">
+                    {v.allArticles && v.allArticles.length > 1 ? v.allArticles.slice(0, 2).map((a, i) => (
+                      <span key={i} className="text-[10px] text-[#e8681a] font-medium">{a}{i < Math.min(v.allArticles.length, 2) - 1 ? ', ' : ''}</span>
+                    )) : <span className="text-[#e8681a] font-medium text-[11px]">{v.article}</span>}
+                    {v.allArticles && v.allArticles.length > 2 && <span className="text-[9px] text-[#3b4049] dark:text-[#e5e7eb]">+{v.allArticles.length - 2}</span>}
+                  </div>
+                </td>
                 <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#1f2937] dark:text-[#e5e7eb] overflow-hidden text-ellipsis whitespace-nowrap max-w-[200px]">{v.description}</td>
               </tr>
             ))}
@@ -793,24 +862,81 @@ export default function GdprTab() {
         </table>
       </div>
       {gdprAlertTotalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-3">
+        <div className="flex items-center justify-center gap-1.5 mt-3 flex-wrap">
           <button onClick={() => setEventPage(p => Math.max(1, p - 1))} disabled={eventPage === 1}
-            className="px-3 py-1.5 text-[11px] font-medium rounded-md border border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-2.5 py-1.5 text-[11px] font-medium rounded-md border border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >Previous</button>
-          <div className="flex gap-1">
-            {Array.from({ length: Math.min(gdprAlertTotalPages, 7) }, (_, i) => i + 1).map(p => (
-              <button key={p} onClick={() => setEventPage(p)}
-                className={`w-7 h-7 text-[11px] font-medium rounded-md transition-colors ${
-                  eventPage === p
-                    ? 'bg-[#e8681a] text-white'
-                    : 'text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22]'
-                }`}
-              >{p}</button>
-            ))}
+          <div className="flex gap-1 items-center">
+            {(() => {
+              const total = gdprAlertTotalPages
+              const curr = eventPage
+              const maxVis = 500
+              const pages = []
+              if (total <= maxVis) {
+                const showAll = total <= 7
+                if (showAll) { for (let i = 1; i <= total; i++) pages.push(i) }
+                else {
+                  pages.push(1)
+                  let s = Math.max(2, curr - 2), e = Math.min(total - 1, curr + 2)
+                  if (s > 2) pages.push('...')
+                  for (let i = s; i <= e; i++) pages.push(i)
+                  if (e < total - 1) pages.push('...')
+                  pages.push(total)
+                }
+              } else {
+                pages.push(1)
+                if (curr <= maxVis) {
+                  let s = Math.max(2, curr - 2), e = Math.min(maxVis, curr + 2)
+                  if (s > 2) pages.push('...')
+                  for (let i = s; i <= e; i++) pages.push(i)
+                  if (e < maxVis) pages.push('...')
+                  pages.push({ label: '500+', disabled: true })
+                } else {
+                  if (curr > maxVis + 3) pages.push('...')
+                  for (let i = Math.max(maxVis + 1, curr - 2); i <= Math.min(total, curr + 2); i++) pages.push(i)
+                  if (curr + 2 < total) pages.push('...')
+                }
+                if (curr > maxVis) pages.push({ label: '500+', disabled: true })
+              }
+              return pages.map((p, i) =>
+                p === '...' ? (
+                  <span key={'e' + i} className="px-1 text-[10px] text-[#3b4049] dark:text-[#e5e7eb] select-none">•••</span>
+                ) : p.disabled ? (
+                  <span key="gt" className="px-2 py-1 text-[10px] text-[#e8681a] font-semibold italic select-none">beyond 500</span>
+                ) : (
+                  <button key={p} onClick={() => setEventPage(p)}
+                    className={`min-w-[26px] h-7 px-1 text-[11px] font-medium rounded-md transition-colors ${
+                      curr === p
+                        ? 'bg-[#e8681a] text-white shadow-sm'
+                        : 'text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22]'
+                    }`}
+                  >{p}</button>
+                )
+              )
+            })()}
           </div>
-          <button onClick={() => setEventPage(p => Math.min(gdprAlertTotalPages, p + 1))} disabled={eventPage === gdprAlertTotalPages}
-            className="px-3 py-1.5 text-[11px] font-medium rounded-md border border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          <button onClick={() => setEventPage(p => {
+            const next = p + 1
+            if (next <= 500) return next
+            if (p < 500) return 501
+            return Math.min(gdprAlertTotalPages, next)
+          })} disabled={eventPage === gdprAlertTotalPages}
+            className="px-2.5 py-1.5 text-[11px] font-medium rounded-md border border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >Next</button>
+          <div className="flex items-center gap-1 ml-1">
+            <input type="text" value={jumpPage} onChange={e => setJumpPage(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && jumpPage) { const p = parseInt(jumpPage); if (p > 0 && p <= gdprAlertTotalPages) { if (p > 500 && !saCache[p - 1]) { setJumpMsg('Navigate from page 500'); setJumpPage(''); return }; setEventPage(p); setJumpPage(''); setJumpMsg('') } } }}
+              placeholder="Pg"
+              className="w-12 h-7 px-1 text-[10px] text-center border border-[#d0d7de] dark:border-[#1d2432] rounded-md bg-transparent text-[#1f2328] dark:text-[#f0f6fc] focus:outline-none focus:border-[#e8681a]/50 placeholder:text-[#3b4049] dark:placeholder:text-[#e5e7eb]"
+            />
+            <button onClick={() => { if (jumpPage) { const p = parseInt(jumpPage); if (p > 0 && p <= gdprAlertTotalPages) { if (p > 500 && !saCache[p - 1]) { setJumpMsg('Navigate from page 500'); setJumpPage(''); return }; setEventPage(p); setJumpPage(''); setJumpMsg('') } } }}
+              className="px-2 h-7 text-[10px] font-medium rounded-md border border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors"
+            >Go</button>
+            <button onClick={() => { if (gdprAlertTotalPages > 500 && !saCache[gdprAlertTotalPages - 1]) { setJumpMsg('Navigate from page 500'); return }; setEventPage(gdprAlertTotalPages) }}
+              className="px-2 h-7 text-[10px] font-medium rounded-md border border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors"
+            >Last</button>
+            {jumpMsg && <span className="text-[10px] text-[#e8681a] font-medium animate-pulse">{jumpMsg}</span>}
+          </div>
         </div>
       )}
       {renderEventDetailPanel()}
@@ -901,15 +1027,24 @@ export default function GdprTab() {
             </svg>
             Refresh
           </button>
-          {activeTab === 'events' && (
-            <span className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb]"><AnimatedCounter val={sortedGdprAlerts.length} /> events</span>
-          )}
+          <button onClick={() => setAutoRefresh(p => !p)}
+            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-md border transition-colors ${
+              autoRefresh
+                ? 'bg-[#e8681a]/10 border-[#e8681a]/40 text-[#e8681a]'
+                : 'border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22]'
+            }`}
+            title={autoRefresh ? 'Auto-refresh every 30s — click to stop' : 'Enable auto-refresh every 30s'}
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            {autoRefresh && <span className="w-1.5 h-1.5 rounded-full bg-[#e8681a] animate-pulse" />}
+          </button>
         </div>
       </div>
 
       {/* Active Tab Content */}
       {activeTab === 'overview' && renderOverview()}
-      {activeTab === 'events' && renderEvents()}
       {activeTab === 'controls' && renderControls()}
     </motion.div>
   )

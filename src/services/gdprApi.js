@@ -44,6 +44,8 @@ const GDPR_ARTICLE_MAP = {
   'IV_25.1': { article: 'Art. 25(1)', title: 'Data Protection by Design' },
   'IV_28': { article: 'Art. 28', title: 'Data Processor' }
 }
+const ARTICLE_CODE_MAP = {}
+for (const [code, v] of Object.entries(GDPR_ARTICLE_MAP)) ARTICLE_CODE_MAP[v.article] = code
 
 const ARTICLE_BANDS = [
   { label: 'Art. 5', min: 0, max: 5, color: '#dc2626', tip: 'Core data protection principles' },
@@ -113,7 +115,7 @@ function normalizeDoc(doc) {
 function buildEventQ(filters) {
   const parts = [GDPR_Q]
   if (filters.severity) {
-    const sevMap = { Critical: 'level>=12', High: 'level:[7 TO 11]', Medium: 'level:[4 TO 6]', Low: 'level:[1 TO 3]' }
+    const sevMap = { Critical: 'rule.level:[12 TO 9999]', High: 'rule.level:[7 TO 11]', Medium: 'rule.level:[4 TO 6]', Low: 'rule.level:[1 TO 3]' }
     if (sevMap[filters.severity]) parts.push(sevMap[filters.severity])
   }
   if (filters.q) {
@@ -127,43 +129,25 @@ export async function fetchAllGdprData({ startDate, endDate } = {}) {
   const sd = startDate || 'now-1y'
   const ed = endDate || 'now'
 
-  const baseParams = {
-    index: GDPR_INDEX, q: GDPR_Q,
-    start_date: sd, end_date: ed
-  }
+  const res = await api('gdpr-dashboard', { start_date: sd, end_date: ed })
 
-  const [
-    countRes,
-    sevAggRes,
-    articleAggRes,
-    agentAggRes,
-    trendAggRes,
-    recentRes
-  ] = await Promise.all([
-    api('count', baseParams),
-    api('aggregate', { ...baseParams, field: 'rule.level', type: 'terms', limit: 20 }),
-    api('aggregate', { ...baseParams, field: 'rule.gdpr', type: 'terms', limit: 50 }),
-    api('aggregate', { ...baseParams, field: 'agent.name', type: 'terms', limit: 100 }),
-    api('aggregate', { ...baseParams, field: '@timestamp', type: 'date_histogram', interval: '1d', limit: 365 }),
-    api('search', { ...baseParams, limit: 500, sort: '@timestamp', order: 'desc' })
-  ])
+  const total = res.total || 0
+  const sevBuckets = res.sevBuckets || []
+  const articleBuckets = res.articleBuckets || []
+  const agentBuckets = res.agentBuckets || []
+  const trendBuckets = res.trendBuckets || []
 
-  const total = countRes.count || 0
-  const sevBuckets = sevAggRes.buckets || []
-  const articleBuckets = articleAggRes.buckets || []
-  const agentBuckets = agentAggRes.buckets || []
-  const trendBuckets = trendAggRes.buckets || []
-  const recentDocs = (recentRes.results || []).map(normalizeDoc)
+  let recentDocs = []
+  try {
+    const sample = await api('search', { index: GDPR_INDEX, q: GDPR_Q, limit: 100, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed })
+    recentDocs = (sample.results || []).map(normalizeDoc)
+  } catch {}
 
-  let sevCritical = 0, sevHigh = 0, sevMedium = 0, sevLow = 0
-  for (const b of sevBuckets) {
-    const lvl = parseInt(b.key) || 0
-    const cnt = b.doc_count || 0
-    if (lvl >= 12) sevCritical += cnt
-    else if (lvl >= 7) sevHigh += cnt
-    else if (lvl >= 4) sevMedium += cnt
-    else sevLow += cnt
-  }
+  const severity = res.severity || { critical: 0, high: 0, medium: 0, low: 0 }
+  const sevCritical = severity.critical
+  const sevHigh = severity.high
+  const sevMedium = severity.medium
+  const sevLow = severity.low
 
   const stats = { total, critical: sevCritical, high: sevHigh, medium: sevMedium, low: sevLow }
   const denominator = total || 1
@@ -227,18 +211,18 @@ export async function fetchAllGdprData({ startDate, endDate } = {}) {
     .sort((a, b) => b[1] - a[1])
     .map(([name, cnt]) => ({ name, count: cnt, criticalCount: 0, color: osColors[name] || '#6b7280' }))
 
-  const sortedDays = trendBuckets
+  const sortedDays = (trendBuckets || [])
     .filter(b => b.key)
     .map(b => ({ key: b.key_as_string || String(b.key), doc_count: b.doc_count || 0 }))
   sortedDays.sort((a, b) => a.key.localeCompare(b.key))
 
-  const totalEvents = sevCritical + sevHigh + sevMedium + sevLow || 1
-  const critRatio = sevCritical / totalEvents
-  const highRatio = sevHigh / totalEvents
-  const medRatio = sevMedium / totalEvents
+  const totalCount = sevCritical + sevHigh + sevMedium + sevLow || 1
+  const critRatio = sevCritical / totalCount
+  const highRatio = sevHigh / totalCount
+  const medRatio = sevMedium / totalCount
 
   const trend = sortedDays.map(b => {
-    const d = new Date(b.key + 'T00:00:00Z')
+    const d = new Date(b.key.substring(0, 10) + 'T00:00:00Z')
     const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     const dayTotal = b.doc_count || 0
     return {
@@ -260,7 +244,7 @@ export async function fetchAllGdprData({ startDate, endDate } = {}) {
   })
 
   const events = recentDocs.map(d => {
-    const primaryArticle = d.gdprCodes.length > 0 ? resolveArticle(d.gdprCodes[0]).article : 'N/A'
+    const arts = d.gdprCodes.length > 0 ? d.gdprCodes.map(c => resolveArticle(c).article) : ['N/A']
     return {
       id: d.id,
       alertTime: d.timestamp ? d.timestamp.substring(0, 16).replace('T', ' ') : d.timestamp,
@@ -269,7 +253,8 @@ export async function fetchAllGdprData({ startDate, endDate } = {}) {
       ruleId: d.ruleId,
       severity: d.severity,
       description: d.ruleDescription,
-      article: primaryArticle,
+      article: arts[0],
+      allArticles: arts,
       gdprCodes: d.gdprCodes,
       groups: d.groups,
       fullLog: d.fullLog,
@@ -294,20 +279,25 @@ export async function fetchAllGdprData({ startDate, endDate } = {}) {
 }
 
 export async function fetchEvents(filters = {}, opts = {}) {
-  const { startDate, endDate, offset = 0, limit = 500, sortField = '@timestamp', sortOrder = 'desc' } = opts
-  const sd = startDate || 'now-30d'
+  const { startDate, endDate, offset = 0, limit = 20, search_after } = opts
+  const sd = startDate || 'now-1y'
   const ed = endDate || 'now'
-  const q = buildEventQ(filters)
 
-  const res = await api('search', {
-    index: GDPR_INDEX, q, limit, offset,
-    sort: sortField, order: sortOrder,
-    start_date: sd, end_date: ed
-  }).catch(() => ({ results: [], total: 0 }))
+  const params = { start_date: sd, end_date: ed, limit, offset }
+  if (filters.q) params.search = filters.q
+  if (filters.severity) params.severity = filters.severity
+  if (filters.article) {
+    params.article = ARTICLE_CODE_MAP[filters.article] || filters.article
+  }
+  if (search_after) {
+    params.search_after = JSON.stringify(search_after)
+    delete params.offset
+  }
 
+  const res = await api('gdpr-events', params)
   const total = res.total || 0
   const results = (res.results || []).map(normalizeDoc).map(d => {
-    const primaryArticle = d.gdprCodes.length > 0 ? resolveArticle(d.gdprCodes[0]).article : 'N/A'
+    const arts = d.gdprCodes.length > 0 ? d.gdprCodes.map(c => resolveArticle(c).article) : ['N/A']
     return {
       id: d.id,
       alertTime: d.timestamp ? d.timestamp.substring(0, 16).replace('T', ' ') : d.timestamp,
@@ -316,7 +306,8 @@ export async function fetchEvents(filters = {}, opts = {}) {
       ruleId: d.ruleId,
       severity: d.severity,
       description: d.ruleDescription,
-      article: primaryArticle,
+      article: arts[0],
+      allArticles: arts,
       gdprCodes: d.gdprCodes,
       groups: d.groups,
       fullLog: d.fullLog,
@@ -324,8 +315,7 @@ export async function fetchEvents(filters = {}, opts = {}) {
       ruleLevel: d.ruleLevel
     }
   })
-
-  return { results, total }
+  return { results, total, sort: res.sort }
 }
 
 export async function fetchAgents(filters = {}, opts = {}) {
