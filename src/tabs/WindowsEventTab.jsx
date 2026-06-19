@@ -4,11 +4,16 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { SortableContext, useSortable, rectSortingStrategy, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { api } from '../api'
-import { useApp } from '../context/AppContext'
-import DateRangePicker from '../components/DateRangePicker'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
-
+const QUICK_TIMES = [
+  { label: '1h', value: 'now-1h' },
+  { label: '6h', value: 'now-6h' },
+  { label: '24h', value: 'now-24h' },
+  { label: '7d', value: 'now-7d' },
+  { label: '30d', value: 'now-30d' },
+  { label: '90d', value: 'now-90d' }
+]
 
 const WIDGETS = {
   metricTotal: { title: 'Total Windows Events', cols: 1, icon: 'file-text', category: 'metrics' },
@@ -104,42 +109,20 @@ function SortableCard({ id, children, cols }) {
   )
 }
 
-function FilterBtns({ field, value, operator, label }) {
-  const { addFilter, doSearch } = useApp()
-  const hFilter = (e, negate) => { e.stopPropagation(); addFilter(field, value, negate, operator); doSearch() }
+function MetricCard({ label, value, change, changeColor, icon, color, onClick }) {
   return (
-    <span className="inline-flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-all">
-      <button onClick={e => hFilter(e, false)} className="p-0.5 rounded hover:bg-[#EF843C]/20 text-[#9ca3af] dark:text-[#6b7280] hover:text-[#EF843C] dark:hover:text-[#EF843C] transition-all" title={'Filter by ' + label}>
-        <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 7h3.5a.5.5 0 1 1 0 1H8v3.5a.5.5 0 1 1-1 0V8H3.5a.5.5 0 0 1 0-1H7V3.5a.5.5 0 0 1 1 0V7Z"/></svg>
-      </button>
-      <button onClick={e => hFilter(e, true)} className="p-0.5 rounded hover:bg-red-500/20 text-[#9ca3af] dark:text-[#6b7280] hover:text-red-500 transition-all" title={'Filter out ' + label}>
-        <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 7h8a.5.5 0 1 1 0 1h-8a.5.5 0 0 1 0-1Z"/></svg>
-      </button>
-    </span>
-  )
-}
-
-function MetricCard({ label, value, change, changeColor, icon, color, onClick, filterField, filterValue, filterOperator }) {
-  return (
-    <div className="w-full p-2.5 group">
+    <button onClick={onClick} className="w-full text-left p-2.5">
       <div className="flex items-start justify-between">
         <div className="text-[10px] uppercase tracking-wider text-[#9ca3af] dark:text-[#6b7280] font-semibold">{label}</div>
-        <div className="flex items-center gap-1">
-          {filterField && filterValue && (
-            <FilterBtns field={filterField} value={filterValue} operator={filterOperator} label={label} />
-          )}
-          <div className="w-7 h-7 rounded-full bg-[#f3f4f6] dark:bg-[#2d3140] flex items-center justify-center" style={{ color }}>
-            {SVG_ICONS[icon]}
-          </div>
+        <div className="w-7 h-7 rounded-full bg-[#f3f4f6] dark:bg-[#2d3140] flex items-center justify-center" style={{ color }}>
+          {SVG_ICONS[icon]}
         </div>
       </div>
-      <button onClick={onClick} className="w-full text-left">
-        <div className="text-xl font-bold text-[#1a1c23] dark:text-[#e4e6eb] mt-1">{value}</div>
-        {change !== null && (
-          <div><span className={`${changeColor} text-[10px] font-medium`}>{change}</span> <span className="text-[10px] text-[#9ca3af] dark:text-[#6b7280]">vs last 24h</span></div>
-        )}
-      </button>
-    </div>
+      <div className="text-xl font-bold text-[#1a1c23] dark:text-[#e4e6eb] mt-1">{value}</div>
+      {change !== null && (
+        <div><span className={`${changeColor} text-[10px] font-medium`}>{change}</span> <span className="text-[10px] text-[#9ca3af] dark:text-[#6b7280]">vs last 24h</span></div>
+      )}
+    </button>
   )
 }
 
@@ -178,7 +161,7 @@ function AlertSeverityWidget({ data }) {
         const count = sevMap[s.key] || 0
         const pct = total ? Math.round((count / total) * 100) : 0
         return (
-          <div key={s.key} className="flex items-center gap-1.5 w-full py-1 px-1 rounded group">
+          <div key={s.key} className="flex items-center gap-1.5 w-full py-1 px-1 rounded">
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }}></span>
             <span className="text-[11px] text-[#1a1c23] dark:text-[#e4e6eb] flex-1 text-left">{s.label}</span>
             <div className="flex-1 h-1 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-full overflow-hidden max-w-[80px]">
@@ -186,7 +169,6 @@ function AlertSeverityWidget({ data }) {
             </div>
             <span className="text-[11px] text-[#9ca3af] dark:text-[#6b7280] min-w-[50px] text-right">{count.toLocaleString()}</span>
             <span className="text-[10px] text-[#9ca3af] dark:text-[#6b7280]">({pct}%)</span>
-            <FilterBtns field="rule.level" value={String(s.min)} operator="is greater than or equal" label={s.label + ' severity'} />
           </div>
         )
       })}
@@ -204,13 +186,12 @@ function EventsByAgentWidget({ data }) {
         <span className="text-[10px] text-[#9ca3af] dark:text-[#6b7280]">{(data?.count24 || 0).toLocaleString()} Total</span>
       </div>
       {agents.map(a => (
-        <div key={a.key} className="flex items-center gap-1.5 w-full py-1 px-1 rounded group">
+        <div key={a.key} className="flex items-center gap-1.5 w-full py-1 px-1 rounded">
           <span className="text-[11px] text-[#1a1c23] dark:text-[#e4e6eb] w-[80px] text-left shrink-0 truncate">{a.key}</span>
           <div className="flex-1 h-1.5 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-full overflow-hidden">
             <div className="h-full rounded-full bg-[#e8681a]" style={{ width: (a.doc_count / max) * 100 + '%' }}></div>
           </div>
           <span className="text-[10px] text-[#9ca3af] dark:text-[#6b7280] min-w-[60px] text-right">{a.doc_count.toLocaleString()}</span>
-          <FilterBtns field="agent.name" value={a.key} label={'agent ' + a.key} />
         </div>
       ))}
     </div>
@@ -260,13 +241,12 @@ function TopEventIdsWidget({ data }) {
       ) : (
         <div className="space-y-1">
           {eventIds.map((ev, i) => (
-            <div key={ev.key || i} className="flex items-center gap-2 py-1 px-1 rounded hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140] transition-colors group">
+            <div key={ev.key || i} className="flex items-center gap-2 py-1 px-1 rounded hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140] transition-colors">
               <span className="w-8 text-center text-[#9ca3af] dark:text-[#6b7280] text-[10px] font-mono shrink-0">{ev.key || '--'}</span>
               <div className="flex-1 h-1 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-full overflow-hidden">
                 <div className="h-full rounded-full bg-[#e8681a]" style={{ width: Math.min(100, (ev.doc_count / (eventIds[0]?.doc_count || 1)) * 100) + '%' }}></div>
               </div>
               <span className="text-[10px] text-[#9ca3af] dark:text-[#6b7280] min-w-[50px] text-right">{ev.doc_count.toLocaleString()}</span>
-              <FilterBtns field="win.event_id" value={String(ev.key)} label={'event ID ' + ev.key} />
             </div>
           ))}
         </div>
@@ -325,20 +305,10 @@ function RecentEventsWidget({ data }) {
             const lv = ev.rule?.level || 0
             const sev = lv >= 12 ? 'critical' : lv >= 7 ? 'high' : lv >= 4 ? 'medium' : 'low'
             return (
-              <tr key={ev._id || i} className="border-b border-[#f3f4f6] dark:border-[#2d3140]/30 hover:bg-[#f9fafb] dark:hover:bg-[#2d3140]/30 transition-colors group">
+              <tr key={ev._id || i} className="border-b border-[#f3f4f6] dark:border-[#2d3140]/30 hover:bg-[#f9fafb] dark:hover:bg-[#2d3140]/30 transition-colors cursor-pointer">
                 <td className="py-1 pr-1 whitespace-nowrap text-[#6b7280] dark:text-[#9ca3af]">{ev['@timestamp'] ? new Date(ev['@timestamp']).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}</td>
-                <td className="py-1 pr-1 text-[#1a1c23] dark:text-[#e4e6eb]">
-                  <span className="inline-flex items-center gap-1">
-                    {ev.agent?.name || '--'}
-                    {ev.agent?.name && <FilterBtns field="agent.name" value={ev.agent.name} label={'agent ' + ev.agent.name} />}
-                  </span>
-                </td>
-                <td className="py-1 pr-1 hidden sm:table-cell text-[#6b7280] dark:text-[#9ca3af]">
-                  <span className="inline-flex items-center gap-1">
-                    {ev.rule?.groups?.[0] || '--'}
-                    {ev.rule?.groups?.[0] && <FilterBtns field="rule.groups" value={ev.rule.groups[0]} label={'group ' + ev.rule.groups[0]} />}
-                  </span>
-                </td>
+                <td className="py-1 pr-1 text-[#1a1c23] dark:text-[#e4e6eb]">{ev.agent?.name || '--'}</td>
+                <td className="py-1 pr-1 hidden sm:table-cell text-[#6b7280] dark:text-[#9ca3af]">{ev.rule?.groups?.[0] || '--'}</td>
                 <td className="py-1"><SevBadge sev={sev} /></td>
               </tr>
             )
@@ -375,11 +345,10 @@ function EventDistributionWidget({ data }) {
       </div>
       <div className="mt-1 space-y-0.5">
         {categories.map((c, i) => (
-          <div key={c.key || i} className="flex items-center gap-1.5 py-0.5 px-1 rounded group">
+          <div key={c.key || i} className="flex items-center gap-1.5 py-0.5 px-1 rounded">
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: colors[i % colors.length] }}></span>
             <span className="text-[10px] text-[#1a1c23] dark:text-[#e4e6eb] flex-1 truncate">{c.key}</span>
             <span className="text-[10px] text-[#9ca3af] dark:text-[#6b7280]">{Math.round((c.doc_count / total) * 100)}%</span>
-            <FilterBtns field="rule.level" value={String(c.key)} label={'level ' + c.key} />
           </div>
         ))}
       </div>
@@ -470,13 +439,12 @@ function ProcessCreationWidget({ data }) {
         <div className="text-xs text-[#9ca3af] dark:text-[#6b7280] py-4 text-center">No data</div>
       ) : (
         processes.map(p => (
-          <div key={p.key || p.doc_count} className="flex items-center gap-1.5 py-0.5 px-1 rounded group">
+          <div key={p.key || p.doc_count} className="flex items-center gap-1.5 py-0.5 px-1 rounded">
             <span className="text-[10px] text-[#1a1c23] dark:text-[#e4e6eb] flex-1 truncate">{p.key || '--'}</span>
             <div className="w-[70px] h-1.5 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-full overflow-hidden">
               <div className="h-full rounded-full bg-[#e8681a]" style={{ width: (p.doc_count / maxP) * 100 + '%' }}></div>
             </div>
             <span className="text-[10px] text-[#9ca3af] dark:text-[#6b7280] min-w-[40px] text-right">{p.doc_count.toLocaleString()}</span>
-            <FilterBtns field="win.process.name" value={p.key} label={'process ' + p.key} />
           </div>
         ))
       )}
@@ -499,7 +467,7 @@ function MitreMappingWidget() {
     <div className="p-2.5">
       <h3 className="text-[11px] font-semibold text-[#1a1c23] dark:text-[#e4e6eb] uppercase tracking-wider mb-2">MITRE ATT&CK Mapping</h3>
       {MITRE.map(m => (
-        <div key={m.name} className="flex items-center gap-1 py-0.5 px-1 rounded hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140] transition-colors group">
+        <div key={m.name} className="flex items-center gap-1 py-0.5 px-1 rounded hover:bg-[#f3f4f6] dark:hover:bg-[#2d3140] transition-colors">
           <span className="text-[10px] text-[#1a1c23] dark:text-[#e4e6eb] flex-1">{m.name}</span>
           <div className="flex gap-0.5">
             {[0, 1, 2, 3, 4].map(i => (
@@ -507,7 +475,6 @@ function MitreMappingWidget() {
             ))}
           </div>
           <SevBadge sev={m.sev} />
-          <FilterBtns field="rule.mitre.tactic" value={m.name} label={'MITRE ' + m.name} />
         </div>
       ))}
     </div>
@@ -515,7 +482,7 @@ function MitreMappingWidget() {
 }
 
 export default function WindowsEventTab() {
-  const { startDate, endDate } = useApp()
+  const [timeRange, setTimeRange] = useState('now-24h')
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -542,8 +509,8 @@ export default function WindowsEventTab() {
   const fetchData = useCallback(async () => {
     try {
       const d = await api('windows-dashboard', {
-        start_date: startDate,
-        end_date: endDate
+        start_date: timeRange,
+        end_date: 'now'
       })
       setData(d)
       setError(null)
@@ -553,7 +520,7 @@ export default function WindowsEventTab() {
     } finally {
       setLoading(false)
     }
-  }, [startDate, endDate])
+  }, [timeRange])
 
   useEffect(() => {
     setLoading(true)
@@ -616,7 +583,7 @@ export default function WindowsEventTab() {
       case 'metricRate':
         return <MetricCard label="Event Rate" value={Math.round((data?.count24 || 0) / 24).toLocaleString() + '/hr'} change={null} changeColor="text-[#3fb950]" icon="trending-up" color="#3fb950" />
       case 'metricCritical':
-        return <MetricCard label="Critical Alerts" value={Object.entries(groupSeverity(data?.byLevel || []))?.find(([k]) => k === 'critical')?.[1]?.toLocaleString() || '0'} change={null} changeColor="text-[#f85149]" icon="alert-triangle" color="#f85149" filterField="rule.level" filterValue="12" filterOperator="is greater than or equal" />
+        return <MetricCard label="Critical Alerts" value={Object.entries(groupSeverity(data?.byLevel || []))?.find(([k]) => k === 'critical')?.[1]?.toLocaleString() || '0'} change={null} changeColor="text-[#f85149]" icon="alert-triangle" color="#f85149" />
       case 'alertSeverity':
         return <AlertSeverityWidget data={data} />
       case 'eventsByAgent':
@@ -647,7 +614,7 @@ export default function WindowsEventTab() {
   if (loading && !data) {
     return (
       <div className="space-y-3">
-        <div className="flex gap-1.5 flex-wrap"><div className="h-7 w-44 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-lg animate-pulse" /></div>
+        <div className="flex gap-1.5 flex-wrap">{QUICK_TIMES.map(qt => <div key={qt.value} className="h-7 w-10 bg-[#f3f4f6] dark:bg-[#2d3140] rounded-lg animate-pulse" />)}</div>
         <div className="grid grid-cols-5 gap-2">{[1,2,3,4,5].map(i => <div key={i} className="gcard p-4"><div className="h-16 bg-[#f3f4f6] dark:bg-[#2d3140] rounded animate-pulse"/></div>)}</div>
         <div className="grid grid-cols-[1fr_1fr_2fr] gap-2">{[1,2,3].map(i => <div key={i} className="gcard p-4"><div className="h-40 bg-[#f3f4f6] dark:bg-[#2d3140] rounded animate-pulse"/></div>)}</div>
       </div>
@@ -680,7 +647,14 @@ export default function WindowsEventTab() {
           className="gbtn-ghost text-[10px] px-2 py-1 flex items-center gap-1">
           {SVG_ICONS['settings']} {showSettings ? 'Done' : 'Customize'}
         </button>
-        <DateRangePicker />
+        <div className="flex items-center gap-0.5">
+          {QUICK_TIMES.map(qt => (
+            <button key={qt.value} onClick={() => setTimeRange(qt.value)}
+              className={'text-[10px] px-2 py-1 rounded transition-colors ' + (timeRange === qt.value ? 'bg-[#EF843C] text-white' : 'text-[#9ca3af] dark:text-[#6b7280] hover:bg-[#f1f3f4] dark:hover:bg-[#2a3042]')}>
+              {qt.label}
+            </button>
+          ))}
+        </div>
       </motion.div>
 
       <AnimatePresence>

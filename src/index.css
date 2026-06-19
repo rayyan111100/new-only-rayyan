@@ -4,7 +4,7 @@
 
 @layer base {
   html { @apply antialiased; }
-  body { @apply font-sans transition-colors duration-200 text-sm; }
+  body { @apply font-sans transition-colors duration-200 text-sm; font-weight: 460; }
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { @apply bg-[#c4c7cc] dark:bg-[#374151] rounded-full border-[2px] border-solid border-transparent bg-clip-content; }
@@ -13,6 +13,20 @@
   * { scrollbar-width: thin; scrollbar-color: #c4c7cc transparent; }
   .dark * { scrollbar-color: #374151 transparent; }
   input, select, textarea, button { font-family: inherit; }
+  *:focus { outline: none !important; }
+  *:focus-visible { outline: none !important; }
+  .recharts-sector, .recharts-bar-rectangle, .recharts-pie-sector, .recharts-layer, .recharts-cursor, .recharts-active-sector {
+    outline: none !important;
+    user-select: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+    stroke: transparent !important;
+  }
+  .recharts-sector:hover, .recharts-bar-rectangle:hover, .recharts-pie-sector:hover,
+  .recharts-sector:active, .recharts-bar-rectangle:active, .recharts-pie-sector:active,
+  .recharts-sector:focus, .recharts-bar-rectangle:focus, .recharts-pie-sector:focus {
+    stroke: transparent !important;
+    opacity: 1 !important;
+  }
 }
 @layer components {
   .gcard { @apply bg-white dark:bg-[#1e2337] border border-[#e8eaed] dark:border-[#2a3042] rounded-xl shadow-sm transition-all duration-300; }

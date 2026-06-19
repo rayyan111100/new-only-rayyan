@@ -27,3 +27,9 @@
 ✖ Realtime poll error (240): connect ETIMEDOUT 192.168.1.77:9999
 ✖ Realtime poll error (250): connect ETIMEDOUT 192.168.1.77:9999
 ✖ Realtime poll error (260): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (1): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (10): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (20): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (30): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (40): connect ETIMEDOUT 192.168.1.77:9999
+✖ Realtime poll error (50): connect ETIMEDOUT 192.168.1.77:9999

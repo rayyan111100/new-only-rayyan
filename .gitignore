@@ -1,0 +1,14 @@
+node_modules/
+dist/
+server-run.*.log
+screenshots.mjs
+capture.ps1
+screenshots.cjs
+server-run.log
+data/
+*.db
+scripts/
+.env
+server.log
+server-stderr.txt
+server-stdout.txt

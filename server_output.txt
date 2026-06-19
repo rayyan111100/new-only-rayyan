@@ -69,3 +69,13 @@
 [compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
 [compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
 [compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=all count24=0 count7d=0 recent=0 totalRecent=0
+[compliance] framework=PCI-DSS count24=6390350 count7d=6390350 recent=20 totalRecent=20
+[compliance] framework=PCI-DSS count24=6390350 count7d=6390350 recent=20 totalRecent=20
+[compliance] framework=PCI-DSS count24=6390350 count7d=0 recent=0 totalRecent=0
+[compliance] framework=PCI-DSS count24=6390359 count7d=6390359 recent=9 totalRecent=20
+[compliance] framework=PCI-DSS count24=6390365 count7d=6390365 recent=6 totalRecent=20
+[compliance] framework=PCI-DSS count24=6390368 count7d=6390368 recent=6 totalRecent=20
+⬇ Fetching MITRE ATT&CK data from CTI repository...
+✔ MITRE data loaded: 189 groups, 824 software, 268 mitigations, 15 tactics, 858 techniques

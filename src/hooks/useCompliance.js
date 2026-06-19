@@ -28,7 +28,9 @@ function transform(d) {
       time: new Date(b.time || b.key).toLocaleDateString([], { month: 'short', day: 'numeric' }),
       count: b.count || b.doc_count || 0
     })),
-    recent: (d.recent || []).slice(0, 20),
+    categories: (d.categories || []).slice(0, 8),
+    topControls: d.topControls || [],
+    recent: (d.recent || []).slice(0, 500),
     recentTotal: d.recentTotal || 0
   }
 }
@@ -43,7 +45,7 @@ function toLogEntry(r) {
     event: r.rule?.groups?.[0] || r.event_type || '--',
     file: r.data?.file || r.file || '--',
     groups: r.rule?.groups?.join(', ') || '--',
-    ctrl: r.rule?.hipaa || r.rule?.pci_dss || r.control || '--'
+    ctrl: r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || '--'
   }
 }
 

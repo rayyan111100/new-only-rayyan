@@ -300,18 +300,20 @@ const FRAMEWORK_FIELDS = {
   'HIPAA': 'rule.hipaa',
   'GDPR': 'rule.gdpr',
   'TSC (SOC 2)': 'rule.tsc',
-  'MITRE ATT&CK': 'rule.mitre_attack'
+  'MITRE ATT&CK': 'rule.mitre_attack',
+  'NIST 800-53': 'rule.nist_800_53'
 };
 const FRAMEWORK_CONTROLS = {
   'PCI-DSS': { '11.5': 54, '6.4.2': 39, '10.5.5': 30, '8.2.3': 22, '3.4.1': 14 },
   'HIPAA': { '164.312(a)(1)': 42, '164.312(c)(1)': 28, '164.312(e)(1)': 18, '164.308(a)(1)': 14, '164.310(a)(1)': 11 },
   'GDPR': { 'II_5.1.f': 42, 'IV_35.7.d': 28, 'II_5.2.c': 18, 'III_32.1.b': 14, 'VI_30.1': 11 },
   'TSC (SOC 2)': { 'CC6.1': 42, 'CC6.8': 28, 'CC7.2': 18, 'CC7.3': 14, 'PI1.4': 11 },
-  'MITRE ATT&CK': { 'T1078': 35, 'T1136': 22, 'T1098': 15, 'T1059': 12, 'T1053': 8 }
+  'MITRE ATT&CK': { 'T1078': 35, 'T1136': 22, 'T1098': 15, 'T1059': 12, 'T1053': 8 },
+  'NIST 800-53': { 'AC-6': 42, 'AU-6': 28, 'CM-8': 18, 'SI-4': 14, 'RA-5': 11 }
 };
 
 const FRAMEWORK_NAMES = Object.keys(FRAMEWORK_FIELDS);
-const allComplianceQ = FRAMEWORK_NAMES.map(f => FRAMEWORK_FIELDS[f] + ':*').join(' OR ');
+const allComplianceQ = FRAMEWORK_NAMES.map(f => '_exists_:' + FRAMEWORK_FIELDS[f]).join(' OR ');
 
 function classifyDocFrameworks(doc) {
   const fws = [];
@@ -339,12 +341,14 @@ app.get('/api/compliance', async (req, res) => {
   }
 
   const fwField = framework ? FRAMEWORK_FIELDS[framework] : null;
-  const fwQ = fwField ? fwField + ':*' : allComplianceQ;
+  const fwQ = fwField ? '_exists_:' + fwField : allComplianceQ;
+  const frameworkField = fwField; // used for framework-specific aggregation
   try {
     const [
       count24, count7d,
       byLevel, topRules, topAgents,
-      timeline, categories, recent
+      timeline, categories, recent,
+      topControls
     ] = await Promise.all([
       api.get('/count', { params: { index: idx, q: fwQ, start_date: sd, end_date: ed } }).catch(() => ({ data: { count: 0 } })),
       api.get('/count', { params: { index: idx, q: fwQ, start_date: 'now-7d', end_date: 'now' } }).catch(() => ({ data: { count: 0 } })),
@@ -353,7 +357,10 @@ app.get('/api/compliance', async (req, res) => {
       api.get('/aggregate', { params: { index: idx, q: fwQ, field: 'agent.name', type: 'terms', start_date: sd, end_date: ed, limit: 10 } }).catch(() => ({ data: { buckets: [] } })),
       api.get('/aggregate', { params: { index: idx, q: fwQ, field: '@timestamp', type: 'date_histogram', interval: '1h', start_date: sd, end_date: ed, limit: 48 } }).catch(() => ({ data: { buckets: [] } })),
       api.get('/aggregate', { params: { index: idx, q: fwQ, field: 'rule.category', type: 'terms', start_date: sd, end_date: ed, limit: 10 } }).catch(() => ({ data: { buckets: [] } })),
-      api.get('/search', { params: { index: idx, limit: 20, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } }))
+      api.get('/search', { params: { index: idx, q: fwQ, limit: 500, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } })),
+      frameworkField
+        ? api.get('/aggregate', { params: { index: idx, q: fwQ, field: frameworkField, type: 'terms', start_date: sd, end_date: ed, limit: 20 } }).catch(() => ({ data: { buckets: [] } }))
+        : Promise.resolve({ data: { buckets: [] } })
     ]);
 
     const severityMap = {};
@@ -374,7 +381,7 @@ app.get('/api/compliance', async (req, res) => {
 
     const frameworkCounts = !framework ? await Promise.all(
       FRAMEWORK_NAMES.map(fw => {
-        const q = FRAMEWORK_FIELDS[fw] + ':*';
+        const q = '_exists_:' + FRAMEWORK_FIELDS[fw];
         return api.get('/count', { params: { index: idx, q, start_date: sd, end_date: ed } }).catch(() => ({ data: { count: 0 } }));
       })
     ) : [];
@@ -405,6 +412,10 @@ app.get('/api/compliance', async (req, res) => {
         count: b.doc_count || 0
       })),
       categories: (categories.data.buckets || []).slice(0, 8),
+      topControls: (topControls.data.buckets || []).map(b => ({
+        control: b.key,
+        count: b.doc_count || 0
+      })),
       recent: filteredRecent,
       recentTotal: filteredRecent.length
     };

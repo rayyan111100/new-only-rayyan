@@ -37,65 +37,7 @@ function groupSev(buckets) {
 
 const INTEL_SECTIONS = ['groups', 'mitigations', 'software', 'tactics', 'techniques']
 
-const MOCK = {
-  groups: [
-    { id: 'G0018', name: 'admin@338', type: 'Threat Actor', country: 'CN', countryName: 'China', firstSeen: '2013-01-01', lastSeen: '2024-05-12', status: 'Active', aliases: ['admin@338', 'Team338', 'MAGNESIUM'], campaigns: 6, techniques: 23, software: ['PoisonIvy', 'PlugX', 'Trojan.Kit'], sectors: ['Finance', 'Government', 'Energy'], confidence: 85, actorType: 'Advanced Persistent Threat', motivation: 'Espionage', desc: 'admin@338 is a China-based cyber threat group targeting financial, economic, and trade policy organizations.', citation: 'FireEye admin@338', notes: 'Spear-phishing campaigns with customized malware for exfiltration.' },
-    { id: 'G0130', name: 'Ajax Security Team', type: 'Threat Actor', country: 'IR', countryName: 'Iran', firstSeen: '2010-06-15', lastSeen: '2024-04-28', status: 'Active', aliases: ['Ajax Security Team', 'Operation Woolen-Goldfish', 'Rocket Kitten'], campaigns: 3, techniques: 18, software: ['Stealer', 'Pupy'], sectors: ['Defense', 'Dissidents'], confidence: 72, actorType: 'Hacktivist-aligned APT', motivation: 'Espionage / Political', desc: 'Ajax Security Team has been active since at least 2010 for politically motivated campaigns.', citation: 'FireEye Operation Saffron Rose', notes: 'Frequently shifts infrastructure between campaigns.' },
-    { id: 'G0138', name: 'Andariel', type: 'Threat Actor', country: 'KP', countryName: 'North Korea', firstSeen: '2009-07-22', lastSeen: '2024-05-10', status: 'Active', aliases: ['Andariel', 'Silent Chollima', 'Stonefly'], campaigns: 9, techniques: 34, software: ['Dtrack', 'Maui Ransomware'], sectors: ['Healthcare', 'Defense', 'Finance'], confidence: 88, actorType: 'Advanced Persistent Threat', motivation: 'Financial / Espionage', desc: 'Andariel is a North Korean state-sponsored group targeting financial and healthcare organizations.', citation: 'US-CERT AA21-291A', notes: 'Linked to ransomware deployments against hospital networks.' },
-    { id: 'G1007', name: 'Aoqin Dragon', type: 'Threat Actor', country: 'CN', countryName: 'China', firstSeen: '2013-09-10', lastSeen: '2024-04-18', status: 'Active', aliases: ['Aoqin Dragon'], campaigns: 4, techniques: 15, software: ['Mongall', 'Heyoka Backdoor'], sectors: ['Government', 'Telecom'], confidence: 67, actorType: 'Espionage Group', motivation: 'Espionage', desc: 'Aoqin Dragon focuses on espionage against government and telecom entities in Southeast Asia.', citation: 'SentinelLabs Aoqin Dragon', notes: 'Uses removable-media-based lures for initial infection.' },
-    { id: 'G0099', name: 'APT-C-36', type: 'Threat Actor', country: 'CO', countryName: 'Colombia', firstSeen: '2018-02-14', lastSeen: '2024-03-30', status: 'Active', aliases: ['APT-C-36', 'Blind Eagle'], campaigns: 5, techniques: 21, software: ['Imminent Monitor', 'njRAT'], sectors: ['Government', 'Finance'], confidence: 74, actorType: 'Threat Actor', motivation: 'Espionage / Financial', desc: 'APT-C-36, also known as Blind Eagle, targets Colombian government institutions via phishing.', citation: 'QiAnXin APT-C-36', notes: 'Heavy reliance on spear-phishing with regionally tailored lures.' },
-    { id: 'G0006', name: 'APT1', type: 'Threat Actor', country: 'CN', countryName: 'China', firstSeen: '2006-01-01', lastSeen: '2024-05-12', status: 'Active', aliases: ['APT1', 'Comment Crew', 'Comment Panda'], campaigns: 14, techniques: 41, software: ['WEBC2', 'Auriga'], sectors: ['Defense', 'Manufacturing', 'Technology'], confidence: 91, actorType: 'Advanced Persistent Threat', motivation: 'Espionage', desc: 'APT1 is a unit of China\'s PLA responsible for large-scale sustained espionage since at least 2006.', citation: 'Mandiant APT1 Report', notes: 'One of the earliest publicly attributed nation-state APT groups.' },
-    { id: 'G0005', name: 'APT12', type: 'Threat Actor', country: 'CN', countryName: 'China', firstSeen: '2013-02-18', lastSeen: '2024-05-11', status: 'Active', aliases: ['APT12', 'IXESHE', 'DynCalc'], campaigns: 7, techniques: 19, software: ['Etumbot', 'RIPTIDE'], sectors: ['Media', 'Government'], confidence: 78, actorType: 'Advanced Persistent Threat', motivation: 'Espionage', desc: 'APT12 is a China-based group targeting foreign affairs, government, and media organizations.', citation: 'Arbor Networks IXESHE', notes: 'Known for targeting journalists and media organizations.' },
-    { id: 'G0127', name: 'APT28 (Fancy Bear)', type: 'Threat Actor', country: 'RU', countryName: 'Russia', firstSeen: '2007-12-01', lastSeen: '2024-05-12', status: 'Active', aliases: ['APT28', 'Fancy Bear', 'Sofacy', 'Sednit'], campaigns: 22, techniques: 58, software: ['X-Agent', 'Zebrocy', 'Cannon'], sectors: ['Government', 'Defense', 'Media', 'Aerospace'], confidence: 96, actorType: 'Advanced Persistent Threat', motivation: 'Espionage / Influence', desc: 'APT28 is attributed to Russia\'s GRU, active since 2004 in high-profile operations worldwide.', citation: 'CrowdStrike Fancy Bear', notes: 'Linked to multiple election interference and disinformation campaigns.' }
-  ],
-  mitigations: [
-    { id: 'M1036', name: 'Account Use Policies', desc: 'Configure features related to account use like login attempt lockouts.', techniquesAddressed: 14, domain: 'Enterprise' },
-    { id: 'M1015', name: 'Active Directory Configuration', desc: 'Configure Active Directory to prevent use of certain techniques.', techniquesAddressed: 9, domain: 'Enterprise' },
-    { id: 'M1049', name: 'Antivirus/Antimalware', desc: 'Use signatures or heuristics to detect malicious software.', techniquesAddressed: 41, domain: 'Enterprise' },
-    { id: 'M1013', name: 'Application Developer Guidance', desc: 'Build secure software via guidance throughout the SDLC.', techniquesAddressed: 6, domain: 'Enterprise' },
-    { id: 'M1048', name: 'Application Isolation and Sandboxing', desc: 'Restrict execution of code to a virtual environment.', techniquesAddressed: 11, domain: 'Enterprise' },
-    { id: 'M1047', name: 'Audit', desc: 'Perform audits or scans of systems, permissions, insecure software.', techniquesAddressed: 18, domain: 'Enterprise' },
-    { id: 'M1040', name: 'Behavior Prevention on Endpoint', desc: 'Prevent suspicious behavior patterns on endpoint systems.', techniquesAddressed: 33, domain: 'Enterprise' },
-    { id: 'M1046', name: 'Boot Integrity', desc: 'Use secure methods to boot a system and verify OS integrity.', techniquesAddressed: 7, domain: 'Enterprise' },
-    { id: 'M1045', name: 'Code Signing', desc: 'Enforce binary and application integrity with digital signatures.', techniquesAddressed: 8, domain: 'Enterprise' },
-    { id: 'M1043', name: 'Credential Access Protection', desc: 'Prevent successful credential access by adversaries.', techniquesAddressed: 12, domain: 'Enterprise' }
-  ],
-  software: [
-    { id: 'S0331', name: 'Agent Tesla', type: 'Malware', platforms: ['Windows'], techniquesUsed: 19, groupsUsing: ['APT-C-36'], desc: 'Agent Tesla is a spyware Trojan written for .NET, observed since 2014.' },
-    { id: 'S0093', name: 'Backdoor.Oldrea', type: 'Malware', platforms: ['Windows'], techniquesUsed: 11, groupsUsing: ['Dragonfly'], desc: 'Backdoor.Oldrea is a modular backdoor used by Dragonfly (Havex).' },
-    { id: 'S0651', name: 'BoxCaon', type: 'Malware', platforms: ['Windows'], techniquesUsed: 8, groupsUsing: ['IronHusky'], desc: 'BoxCaon is a Windows backdoor used by IronHusky during a 2020 campaign.' },
-    { id: 'S0252', name: 'Brave Prince', type: 'Malware', platforms: ['Windows'], techniquesUsed: 6, groupsUsing: ['Kimsuky'], desc: 'Brave Prince is a Korean-language implant used by Kimsuky since 2017.' },
-    { id: 'S0218', name: 'Catchamas', type: 'Malware', platforms: ['Windows'], techniquesUsed: 10, groupsUsing: [], desc: 'Catchamas is a Windows Trojan with data exfiltration capabilities since 2017.' },
-    { id: 'S0357', name: 'Impacket', type: 'Tool', platforms: ['Windows', 'Linux', 'macOS'], techniquesUsed: 22, groupsUsing: ['Wizard Spider', 'APT39'], desc: 'Impacket is an open source Python collection for network protocol programming.' },
-    { id: 'S0689', name: 'WhisperGate', type: 'Malware', platforms: ['Windows'], techniquesUsed: 9, groupsUsing: [], desc: 'WhisperGate is destructive malware used against Ukrainian organizations in January 2022.' }
-  ],
-  tactics: [
-    { id: 'TA0043', name: 'Reconnaissance', shortDesc: 'Gathering information to plan future operations.', techniqueCount: 10, order: 1 },
-    { id: 'TA0042', name: 'Resource Development', shortDesc: 'Establishing resources to support operations.', techniqueCount: 8, order: 2 },
-    { id: 'TA0001', name: 'Initial Access', shortDesc: 'Getting into your network.', techniqueCount: 9, order: 3 },
-    { id: 'TA0002', name: 'Execution', shortDesc: 'Running adversary-controlled code.', techniqueCount: 14, order: 4 },
-    { id: 'TA0003', name: 'Persistence', shortDesc: 'Maintaining foothold across restarts.', techniqueCount: 19, order: 5 },
-    { id: 'TA0004', name: 'Privilege Escalation', shortDesc: 'Gaining higher-level permissions.', techniqueCount: 13, order: 6 },
-    { id: 'TA0005', name: 'Defense Evasion', shortDesc: 'Avoiding detection throughout compromise.', techniqueCount: 42, order: 7 },
-    { id: 'TA0006', name: 'Credential Access', shortDesc: 'Stealing account names and passwords.', techniqueCount: 17, order: 8 },
-    { id: 'TA0007', name: 'Discovery', shortDesc: 'Figuring out your environment.', techniqueCount: 30, order: 9 },
-    { id: 'TA0008', name: 'Lateral Movement', shortDesc: 'Moving through your environment.', techniqueCount: 9, order: 10 },
-    { id: 'TA0009', name: 'Collection', shortDesc: 'Gathering data of interest.', techniqueCount: 17, order: 11 },
-    { id: 'TA0011', name: 'Command and Control', shortDesc: 'Communicating with compromised systems.', techniqueCount: 16, order: 12 },
-    { id: 'TA0010', name: 'Exfiltration', shortDesc: 'Stealing data.', techniqueCount: 9, order: 13 },
-    { id: 'TA0040', name: 'Impact', shortDesc: 'Manipulating, interrupting, or destroying systems/data.', techniqueCount: 13, order: 14 }
-  ],
-  techniques: [
-    { id: 'T1003', name: 'OS Credential Dumping', tactic: 'Credential Access', platforms: ['Windows', 'Linux', 'macOS'], subCount: 8, desc: 'Adversaries may attempt to dump credentials to obtain account login and credential material.' },
-    { id: 'T1059', name: 'Command and Scripting Interpreter', tactic: 'Execution', platforms: ['Windows', 'Linux', 'macOS'], subCount: 9, desc: 'Adversaries may abuse command and script interpreters to execute commands.' },
-    { id: 'T1078', name: 'Valid Accounts', tactic: 'Persistence', platforms: ['Windows', 'Linux', 'macOS', 'Cloud'], subCount: 4, desc: 'Adversaries may obtain and abuse credentials of existing accounts.' },
-    { id: 'T1112', name: 'Modify Registry', tactic: 'Defense Evasion', platforms: ['Windows'], subCount: 0, desc: 'Adversaries may interact with the Windows Registry to hide configuration.' },
-    { id: 'T1110', name: 'Brute Force', tactic: 'Credential Access', platforms: ['Windows', 'Linux', 'macOS', 'Cloud'], subCount: 4, desc: 'Adversaries may use brute force techniques to gain access to accounts.' },
-    { id: 'T1486', name: 'Data Encrypted for Impact', tactic: 'Impact', platforms: ['Windows', 'Linux', 'macOS'], subCount: 0, desc: 'Adversaries may encrypt data on target systems to interrupt availability.' },
-    { id: 'T1485', name: 'Data Destruction', tactic: 'Impact', platforms: ['Windows', 'Linux', 'macOS'], subCount: 0, desc: 'Adversaries may destroy data and files on specific systems.' },
-    { id: 'T1070', name: 'Indicator Removal', tactic: 'Defense Evasion', platforms: ['Windows', 'Linux', 'macOS'], subCount: 9, desc: 'Adversaries may delete or modify artifacts to hide their presence.' }
-  ]
-}
+
 
 function countryFlag(code) {
   const map = { CN: '🇨🇳', IR: '🇮🇷', KP: '🇰🇵', CO: '🇨🇴', RU: '🇷🇺' }
@@ -260,12 +202,11 @@ export default function MitreAttackTab() {
           setSectionData([...enriched, ...extraFromAgg].sort((a, b) => (b.count24 || 0) - (a.count24 || 0)))
         }
       } else {
-        const live = mitreKnowledge[sec]
-        setSectionData(live?.length ? live : MOCK[sec])
+        setSectionData(mitreKnowledge[sec] || [])
       }
       setError(null)
     } catch {
-      setSectionData(MOCK[sec])
+      setSectionData([])
     }
     setLoading(false)
   }, [timeParams, mitreKnowledge])
@@ -709,8 +650,8 @@ export default function MitreAttackTab() {
             </div>
           </div>
           <div className="flex gap-1.5 min-w-max">
-            {(mitreKnowledge.tactics?.length ? mitreKnowledge.tactics : MOCK.tactics).sort((a, b) => a.order - b.order).map(tac => {
-              const relTechs = (mitreKnowledge.techniques?.length ? mitreKnowledge.techniques : MOCK.techniques).filter(t => t.tactic === tac.name)
+            {(mitreKnowledge.tactics || []).sort((a, b) => a.order - b.order).map(tac => {
+              const relTechs = (mitreKnowledge.techniques || []).filter(t => t.tactic === tac.name)
               const cells = relTechs.length ? relTechs.slice(0, 5) : []
               const heatClass = (sub) => sub >= 6 ? 'bg-[#EF843C]/30 border-[#EF843C]/60' : sub >= 3 ? 'bg-[#EF843C]/15 border-[#EF843C]/40' : sub > 0 ? 'bg-[#EF843C]/8 border-[#EF843C]/25' : ''
               return (

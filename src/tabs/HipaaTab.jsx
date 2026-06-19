@@ -1,14 +1,23 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { useApp } from '../context/AppContext'
 import DateRangePicker from '../components/DateRangePicker'
 import AssetSidebar from '../components/AssetSidebar'
 import LogDetailModal from '../components/LogDetailModal'
 import useCompliance from '../hooks/useCompliance'
+import { exportExcel, exportPDFReport, prepareRows } from '../utils/exportLogs'
 import { PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 const SEV_COLORS = { Critical: '#f85149', High: '#e8681a', Medium: '#d29922', Low: '#3fb950' }
 const SEV_ORDER = ['Critical', 'High', 'Medium', 'Low']
+
+const EXPORT_COLS = [
+  { header: 'Time', accessor: 'time' }, { header: 'Agent', accessor: 'agent' },
+  { header: 'Rule', accessor: 'rule' }, { header: 'Severity', accessor: 'sev' },
+  { header: 'Description', accessor: 'desc' }, { header: 'Event', accessor: 'event' },
+  { header: 'Control', accessor: 'ctrl' }, { header: 'File', accessor: 'file' },
+  { header: 'Groups', accessor: 'groups' },
+]
 
 function toSev(level) {
   const n = parseInt(level) || 0
@@ -41,13 +50,37 @@ const CustomTip = ({ active, payload, label }) => {
 }
 
 export default function HipaaTab() {
-  const { isDark } = useApp()
+  const { isDark, startDate } = useApp()
   const [modal, setModal] = useState(null)
   const [assetSidebarOpen, setAssetSidebarOpen] = useState(false)
   const [filters, setFilters] = useState({})
   const [logPage, setLogPage] = useState(1)
+  const [expandedRow, setExpandedRow] = useState({})
+  const [jsonView, setJsonView] = useState({})
+  const containerRef = useRef(null)
   const LOG_PAGE_SIZE = 5
-  const { data, loading, error, toSev, refresh } = useCompliance('HIPAA')
+  const { data, loading, error, refresh } = useCompliance('HIPAA')
+  const toggleRow = useCallback((id) => {
+    setExpandedRow(prev => ({ ...prev, [id]: !prev[id] }))
+  }, [])
+  const flattenDoc = useCallback((obj, prefix) => {
+    prefix = prefix || ''
+    if (obj === null || obj === undefined) return [{ path: prefix || 'value', value: null }]
+    if (typeof obj !== 'object') return [{ path: prefix || 'value', value: obj }]
+    if (Array.isArray(obj)) {
+      if (!obj.length) return [{ path: prefix || 'value', value: '' }]
+      if (obj.every(v => v === null || v === undefined || typeof v !== 'object'))
+        return [{ path: prefix || 'value', value: obj.join(', ') }]
+      return [{ path: prefix || 'value', value: JSON.stringify(obj) }]
+    }
+    let result = []
+    for (const k of Object.keys(obj)) {
+      if (k.startsWith('_') && k !== '_frameworks') continue
+      const p = prefix ? prefix + '.' + k : k
+      result = result.concat(flattenDoc(obj[k], p))
+    }
+    return result
+  }, [])
 
   const setFilter = (key, value) => {
     setFilters(prev => {
@@ -68,21 +101,19 @@ export default function HipaaTab() {
 
   const activeFilters = Object.keys(filters)
 
-  const toLogEntry = (r) => ({
+  const allLogs = (data?.recent || []).map(r => ({
     time: r['@timestamp'] || r.timestamp || '--',
     agent: r.agent?.name || r.agent || '--',
     rule: r.rule?.id || r.rule || '--',
-    sev: toSev(parseInt(r.rule?.level || r.level || 0)),
+    sev: (() => { const n = parseInt(r.rule?.level || r.level || 0); return n >= 12 ? 'Critical' : n >= 7 ? 'High' : n >= 4 ? 'Medium' : 'Low' })(),
     desc: r.rule?.description || r.description || '--',
     event: r.rule?.groups?.[0] || r.event_type || '--',
     file: r.data?.file || r.file || '--',
     groups: r.rule?.groups?.join(', ') || '--',
-    ctrl: r.rule?.hipaa || r.control || r.hipaa_standard || '--'
-  })
+    ctrl: r.rule?.hipaa || r.control || r.hipaa_standard || '--',
+    raw: r
+  }))
 
-  useEffect(() => { setLogPage(1) }, [activeFilters.join()])
-
-  const allLogs = (data?.recent || []).map(toLogEntry)
   const filteredLogs = allLogs.filter(l => {
     if (filters.severity && l.sev !== filters.severity) return false
     if (filters.agent && l.agent !== filters.agent) return false
@@ -93,6 +124,8 @@ export default function HipaaTab() {
   const totalLogPages = Math.ceil(filteredLogs.length / LOG_PAGE_SIZE)
 
   const totalEvents = data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
+
+  useEffect(() => { setLogPage(1) }, [activeFilters.join()])
   const maxAgent = data ? Math.max(...data.topAgents.map(a => a.doc_count || 0), 1) : 1
   const maxControl = Math.max(...HIPAA_CONTROLS.map(c => {
     const r = data?.topRules?.find(r => r.control === c.req)
@@ -123,12 +156,7 @@ export default function HipaaTab() {
   }
 
   const closeModal = () => setModal(null)
-  const openModal = (k) => {
-    if (k === 'm-assets') { setAssetSidebarOpen(true); return }
-    const sevMap = { 'm-crit': 'Critical', 'm-high': 'High' }
-    if (sevMap[k]) { setFilter('severity', sevMap[k]); return }
-    setModal(k)
-  }
+  const openModal = (k) => setModal(k)
 
   const modalContent = () => {
     if (!modal) return null
@@ -136,11 +164,11 @@ export default function HipaaTab() {
     const md = {
       'm-events': {
         t: 'HIPAA Events',
-        b: `Total HIPAA events: ${totalEvents.toLocaleString()}. Across 18 monitored assets this week. Top control: 164.312.c.1 (Integrity Controls).`
+        b: `Total HIPAA events: ${totalEvents.toLocaleString()}. Across ${data?.topAgents?.length || 0} monitored assets. Top control: ${data?.topRules?.[0]?.control || 'N/A'}.`
       },
       'm-crit': {
         t: 'Critical Violations',
-        b: `Critical violations: ${data?.severity?.Critical || 14}. These require immediate remediation per HIPAA Security Rule requirements.`
+        b: `Critical violations: ${data?.severity?.Critical || 0}. These require immediate remediation per HIPAA Security Rule requirements.`
       }
     }
     if (mKey.startsWith('log-')) {
@@ -168,7 +196,7 @@ export default function HipaaTab() {
   if (error) return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 text-xs text-[#f85149]">Error: {error}</motion.div>
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }} className="p-3">
+    <motion.div ref={containerRef} data-export-container initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }} className="p-3">
       {/* Page Header */}
       <div className="flex items-start justify-between mb-3">
         <div>
@@ -183,41 +211,18 @@ export default function HipaaTab() {
         </div>
       </div>
 
-      {activeFilters.length > 0 && (
-        <div className="flex items-center gap-2 mb-2.5 px-1 flex-wrap">
-          <span className="text-xs text-[#8b949e]">Filtered by:</span>
-          {Object.entries(filters).map(([key, val]) => {
-            const st = FILTER_STYLES[key]?.(val) || { bg: '#e8681a18', color: '#e8681a' }
-            return (
-              <span key={key} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: st.bg, color: st.color }}>
-                {key === 'severity' ? '' : key + ': '}{val}
-                <button onClick={() => clearFilter(key)} className="hover:opacity-70">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                  </svg>
-                </button>
-              </span>
-            )
-          })}
-        </div>
-      )}
-
       {/* Metric Cards */}
       <div className="grid grid-cols-6 gap-2.5 mb-3">
         {[
-          { key: 'm-events', label: 'HIPAA Events', val: totalEvents.toLocaleString(), change: '20%', up: true, icon: 'certificate', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
-          { key: 'm-crit', label: 'Critical Violations', val: (data?.severity?.Critical || 14).toLocaleString(), change: '12%', up: true, icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b' },
-          { key: 'm-high', label: 'High Severity Violations', val: (data?.severity?.High || 41).toLocaleString(), change: '17%', up: true, icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a' },
-          { key: 'm-assets', label: 'Monitored Assets', val: 18, sub: 'Active agents', icon: 'device-desktop', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
+          { key: 'm-events', label: 'HIPAA Events', val: totalEvents.toLocaleString(), icon: 'certificate', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
+          { key: 'm-crit', label: 'Critical Violations', val: (data?.severity?.Critical || 0).toLocaleString(), icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b' },
+          { key: 'm-high', label: 'High Severity Violations', val: (data?.severity?.High || 0).toLocaleString(), icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a' },
+          { key: 'm-assets', label: 'Monitored Assets', val: data?.topAgents?.length || 0, sub: 'Active agents', icon: 'device-desktop', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
           { key: 'm-controls', label: 'Controls Violated', val: data?.topRules?.length || '--', sub: 'Unique HIPAA controls', icon: 'list-check', iconBg: '#3fb95018', iconColor: '#3fb950' },
           { key: 'm-top-ctrl', label: 'Most Active Control', val: (data?.topRules?.[0]?.ruleId || '--'), sub: ((data?.topRules?.[0]?.description || '').substring(0, 30) + ' · ' + (data?.topRules?.[0]?.count || '0') + ' Events'), icon: 'award', iconBg: '#3fb95018', iconColor: '#3fb950', valSize: 'text-base' },
         ].map(card => (
           <div key={card.key} onClick={() => openModal(card.key)}
-            className={`bg-white dark:bg-[#161b22] border rounded-xl p-3 cursor-pointer transition-all duration-300 hover:-translate-y-[3px] shadow-lg hover:shadow-[0_8px_25px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] ${
-              (card.key === 'm-crit' && filters.severity === 'Critical') || (card.key === 'm-high' && filters.severity === 'High')
-                ? 'border-[#e8681a] dark:border-[#e8681a] ring-1 ring-[#e8681a]/30'
-                : 'border-[#d0d7de] dark:border-[#30363d] hover:border-[#e8681a]/50 dark:hover:border-[#e8681a]/60'
-            }`}
+            className="bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-xl p-3 cursor-pointer hover:border-[#e8681a]/50 dark:hover:border-[#e8681a]/60 transition-all duration-300 hover:-translate-y-[3px] shadow-lg hover:shadow-[0_8px_25px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)]"
             style={{}}>
             <div className="float-right w-[34px] h-[34px] rounded-lg flex items-center justify-center text-lg" style={{ background: card.iconBg }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={card.iconColor} strokeWidth="2">
@@ -231,7 +236,7 @@ export default function HipaaTab() {
             </div>
             <div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-1 clear-both">{card.label}</div>
             <div className={`text-2xl font-bold text-[#1f2328] dark:text-[#f0f6fc] ${card.valSize || ''} tracking-tight`} style={card.valColor ? { color: card.valColor } : undefined}>{card.val}</div>
-            {card.change && <div className="text-[10px] font-semibold mt-0.5" style={{ color: card.up ? '#3fb950' : '#f85149' }}>{card.up ? '↑' : '↓'} {card.change} vs last 7 days</div>}
+
             {card.sub && <div className="text-[10px] text-[#8b949e] mt-0.5">{card.sub}</div>}
           </div>
         ))}
@@ -268,8 +273,7 @@ export default function HipaaTab() {
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2">Severity Distribution</div>
           <div className="grid grid-cols-2 gap-1 mb-2">
             {SEV_ORDER.filter(s => (data?.severity?.[s] || 0) > 0).map(s => (
-              <span key={s} onClick={() => setFilter('severity', s)}
-                className={`flex items-center gap-1.5 text-[11px] cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] ${filters.severity === s ? 'ring-1 ring-[#e8681a]/30 bg-[#e8681a]/5' : ''} ${filters.severity && filters.severity !== s ? 'opacity-40' : ''}`}>
+              <span key={s} className="flex items-center gap-1.5 text-[11px] text-[#36454f] dark:text-[#c9d1d9] font-medium">
                 <span className="w-[10px] h-[10px] rounded flex-shrink-0" style={{ background: SEV_COLORS[s] }} />
                 {s} <span className="text-[#8b949e]">{data?.severity?.[s] || 0} ({Math.round(((data?.severity?.[s] || 0) / (totalEvents || 1)) * 100)}%)</span>
               </span>
@@ -280,11 +284,7 @@ export default function HipaaTab() {
               <ResponsiveContainer width="100%" height={130}>
                 <PieChart>
                   <Pie data={sevDonut} cx="50%" cy="50%" innerRadius={40} outerRadius={58} dataKey="value" stroke={isDark ? '#161b22' : '#ffffff'} strokeWidth={3}>
-                    {sevDonut.map((e, i) => (
-                      <Cell key={i} fill={e.color} style={{ cursor: 'pointer' }}
-                        onClick={() => setFilter('severity', e.name)}
-                      />
-                    ))}
+                    {sevDonut.map((e, i) => <Cell key={i} fill={e.color} />)}
                   </Pie>
                   <Tooltip content={<CustomTip />} />
                 </PieChart>
@@ -298,8 +298,8 @@ export default function HipaaTab() {
         <div className="bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2 flex items-center justify-between">
             <span>HIPAA Events Trend</span>
-            <span className="text-[10px] text-[#8b949e] bg-[#f0f2f4] dark:bg-[#21262d] px-2 py-0.5 rounded font-medium normal-case cursor-pointer hover:bg-[#e5e7eb] dark:hover:bg-[#2d3140]">
-              Last 7 Days <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="inline ml-0.5"><polyline points="6 9 12 15 18 9"/></svg>
+            <span className="text-[10px] text-[#8b949e] bg-[#f0f2f4] dark:bg-[#21262d] px-2 py-0.5 rounded font-medium normal-case">
+              {startDate === 'now-24h' ? 'Last 24 Hours' : startDate === 'now-7d' ? 'Last 7 Days' : startDate === 'now-30d' ? 'Last 30 Days' : startDate === 'now-90d' ? 'Last 90 Days' : startDate || 'Last 7 Days'}
             </span>
           </div>
           <div className="h-[150px]">
@@ -316,7 +316,7 @@ export default function HipaaTab() {
             )}
           </div>
           <div className="flex justify-between text-[9px] text-[#8b949e] mt-1 px-0.5">
-            <span>May 18</span><span>May 19</span><span>May 20</span><span>May 21</span><span>May 22</span><span>May 23</span><span>May 24</span>
+            {(data?.timeline || []).slice(0, 7).map((t, i) => <span key={i}>{t.time}</span>)}
           </div>
         </div>
       </div>
@@ -368,9 +368,9 @@ export default function HipaaTab() {
                         <span className="font-bold text-[#1f2328] dark:text-[#f0f6fc]">{a.doc_count || 0}</span>
                       </div>
                     </td>
-                  </tr>
-                )
-              })}
+                    </tr>
+                  )
+                })}
             </tbody>
           </table>
           <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
@@ -404,7 +404,21 @@ export default function HipaaTab() {
 
       {/* Event Logs */}
       <div className="mb-3">
-        <div className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc] mb-2.5 tracking-tight">HIPAA Event Logs</div>
+        <div className="flex items-center justify-between mb-2.5">
+          <div className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">HIPAA Event Logs</div>
+          <div className="flex items-center gap-1.5">
+            <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportExcel(filteredLogs, EXPORT_COLS, `hipaa-logs-${ts}.xlsx`) }}
+              className="text-[10px] px-2 py-1 rounded font-medium bg-[#e8eaed] dark:bg-[#21262d] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Excel
+            </button>
+            <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportPDFReport({ filename: `hipaa-report-${ts}.pdf`, title: 'HIPAA Event Report', dateRange: `${startDate || 'now-24h'} to ${endDate || 'now'}`, metrics: [{ label: 'Events (24h)', value: (data?.count24 || 0).toLocaleString() }, { label: 'Events (7d)', value: (data?.count7d || 0).toLocaleString() }, { label: 'Alert Sources', value: data?.topAgents?.length || 0 }, { label: 'Total Logs', value: filteredLogs.length }], severity: Object.entries(data?.severity || {}).map(([l, c]) => ({ level: l, count: c })), topRules: (data?.topRules || []).map(r => ({ key: r.key || r.ruleId || r.id || '--', count: r.doc_count || r.count || 0 })), topAgents: (data?.topAgents || []).map(a => ({ key: a.key || a.agent || a.name || '--', count: a.doc_count || a.events || 0 })), topArticles: (data?.topControls || []).map(c => ({ key: c.key || c.code || '--', count: c.doc_count || c.count || 0 })), timeline: (data?.timeline || []).map(t => ({ time: t.time, count: t.count })), logHeaders: EXPORT_COLS.map(c => c.header.toLowerCase()), logRows: prepareRows(filteredLogs, EXPORT_COLS) }) }}
+              className="text-[10px] px-2 py-1 rounded font-medium bg-[#e8eaed] dark:bg-[#21262d] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              PDF Report
+            </button>
+          </div>
+        </div>
         <table className="w-full text-[10px] border-collapse table-fixed">
           <colgroup>
             <col style={{ width: '110px' }} /><col style={{ width: '100px' }} /><col style={{ width: '55px' }} />
@@ -425,32 +439,83 @@ export default function HipaaTab() {
             </tr>
           </thead>
           <tbody>
-            {filteredLogs.slice((logPage - 1) * LOG_PAGE_SIZE, logPage * LOG_PAGE_SIZE).map((l, i) => (
-              <tr key={i} onClick={() => openModal('log-' + ((logPage - 1) * LOG_PAGE_SIZE + i))}
-                className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{l.time}</td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
-                  <button onClick={(e) => { e.stopPropagation(); setFilter('agent', l.agent) }}
-                    className={`font-semibold text-left hover:underline ${filters.agent === l.agent ? 'text-[#58a6ff]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
-                    {l.agent}
-                  </button>
-                </td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
-                  <button onClick={(e) => { e.stopPropagation(); setFilter('rule', l.rule) }}
-                    className={`font-bold text-left hover:underline ${filters.rule === l.rule ? 'text-[#e8681a] underline' : 'text-[#e8681a]'}`}>
-                    {l.rule}
-                  </button>
-                </td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#e8681a]">{l.ctrl}</td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9] overflow-hidden text-ellipsis whitespace-nowrap">{l.desc}</td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
-                  <button onClick={(e) => { e.stopPropagation(); setFilter('severity', l.sev) }}><SevBadge s={l.sev} /></button>
-                </td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-medium">{l.event}</td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e] text-[9px] overflow-hidden text-ellipsis whitespace-nowrap">{l.file}</td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] text-[9px] font-medium overflow-hidden text-ellipsis whitespace-nowrap">{l.groups}</td>
-              </tr>
-            ))}
+            {filteredLogs.slice((logPage - 1) * LOG_PAGE_SIZE, logPage * LOG_PAGE_SIZE).map((l, i) => {
+              const idx = (logPage - 1) * LOG_PAGE_SIZE + i
+              const rowId = l.raw?._id || String(idx)
+              const isExp = expandedRow[rowId]
+              return (
+                <React.Fragment key={idx}>
+                  <tr onClick={() => toggleRow(rowId)}
+                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] ${isExp ? 'bg-[#f6f8fa] dark:bg-[#161b22]' : ''}`}>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">
+                      <span className="inline-flex items-center gap-1">
+                        <span className="text-[10px] w-3">{isExp ? '▾' : '▸'}</span>
+                        {l.time}
+                      </span>
+                    </td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <button onClick={(e) => { e.stopPropagation(); setFilter('agent', l.agent) }}
+                        className={`font-semibold text-left hover:underline ${filters.agent === l.agent ? 'text-[#58a6ff]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
+                        {l.agent}
+                      </button>
+                    </td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <button onClick={(e) => { e.stopPropagation(); setFilter('rule', l.rule) }}
+                        className={`font-bold text-left hover:underline ${filters.rule === l.rule ? 'text-[#e8681a] underline' : 'text-[#e8681a]'}`}>
+                        {l.rule}
+                      </button>
+                    </td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#e8681a]">{l.ctrl}</td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9] overflow-hidden text-ellipsis whitespace-nowrap">{l.desc}</td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <button onClick={(e) => { e.stopPropagation(); setFilter('severity', l.sev) }}><SevBadge s={l.sev} /></button>
+                    </td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-medium">{l.event}</td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e] text-[9px] overflow-hidden text-ellipsis whitespace-nowrap">{l.file}</td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] text-[9px] font-medium overflow-hidden text-ellipsis whitespace-nowrap">{l.groups}</td>
+                  </tr>
+                  {isExp && l.raw && (
+                    <tr>
+                      <td colSpan={9} className="p-0 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} transition={{ duration: 0.15 }}>
+                          <div className="bg-[#f6f8fa] dark:bg-[#0d1117] border-t border-[#d0d7de] dark:border-[#30363d]">
+                            <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#d0d7de] dark:border-[#30363d]">
+                              <div className="flex items-center gap-2">
+                                <button onClick={(e) => { e.stopPropagation(); setJsonView(prev => ({ ...prev, [rowId]: false })) }}
+                                  className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${!jsonView[rowId] ? 'bg-[#e8681a] text-white' : 'text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#21262d]'}`}>Table</button>
+                                <button onClick={(e) => { e.stopPropagation(); setJsonView(prev => ({ ...prev, [rowId]: true })) }}
+                                  className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${jsonView[rowId] ? 'bg-[#e8681a] text-white' : 'text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#21262d]'}`}>JSON</button>
+                              </div>
+                              <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(JSON.stringify(l.raw, null, 2)) }}
+                                className="text-[10px] px-2 py-0.5 rounded font-medium bg-[#e8eaed] dark:bg-[#21262d] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                                Copy
+                              </button>
+                            </div>
+                            <div className="max-h-56 overflow-y-auto">
+                              {jsonView[rowId] ? (
+                                <pre className="text-xs text-[#c9d1d9] bg-[#0d1117] p-3 overflow-x-auto whitespace-pre-wrap break-all font-mono leading-relaxed m-0">{JSON.stringify(l.raw, null, 2)}</pre>
+                              ) : (
+                                <table className="w-full text-[11px]">
+                                  <tbody>
+                                    {flattenDoc(l.raw).map((fld, fi) => (
+                                      <tr key={fi} className="border-b border-[#d0d7de]/30 dark:border-[#30363d]/30 hover:bg-[#f0f2f4] dark:hover:bg-[#161b22]">
+                                        <td className="px-3 py-1 font-medium text-[#1f2328] dark:text-[#f0f6fc] whitespace-nowrap w-1/3 align-top text-[10px]">{fld.path}</td>
+                                        <td className="px-3 py-1 text-[#36454f] dark:text-[#c9d1d9] break-all text-[11px]">{String(fld.value ?? '')}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          </div>
+                        </motion.div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              )
+            })}
             {filteredLogs.length === 0 && (
               <tr><td colSpan={9} className="text-center py-4 text-xs text-[#8b949e]">No matching logs found</td></tr>
             )}

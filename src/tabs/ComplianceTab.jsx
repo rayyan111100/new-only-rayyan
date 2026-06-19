@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useApp } from '../context/AppContext'
 import { formatPretty } from '../utils'
@@ -6,11 +6,31 @@ import DateRangePicker from '../components/DateRangePicker'
 import AssetSidebar from '../components/AssetSidebar'
 import LogDetailModal from '../components/LogDetailModal'
 import useCompliance from '../hooks/useCompliance'
+import { exportExcel, exportPDFReport, prepareRows } from '../utils/exportLogs'
 import { PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
-const FRAMEWORKS = ['PCI-DSS', 'HIPAA', 'GDPR', 'TSC (SOC 2)', 'MITRE ATT&CK']
+const FRAMEWORKS = ['PCI-DSS', 'HIPAA', 'GDPR', 'TSC (SOC 2)', 'MITRE ATT&CK', 'NIST 800-53']
 const SEV_COLORS = { Critical: '#f85149', High: '#e8681a', Medium: '#d29922', Low: '#3fb950' }
 const SEV_ORDER = ['Critical', 'High', 'Medium', 'Low']
+const QUICK_TIMES = [
+  { label: '24h', value: 'now-24h' },
+  { label: '7d', value: 'now-7d' },
+  { label: '30d', value: 'now-30d' },
+  { label: '90d', value: 'now-90d' }
+]
+
+const COMPLIANCE_EXPORT_COLS = [
+  { header: 'Time', accessor: r => r['@timestamp'] || r.timestamp || '--' },
+  { header: 'Agent', accessor: r => r.agent?.name || r.agent || '--' },
+  { header: 'Rule', accessor: r => r.rule?.id || r.rule || '--' },
+  { header: 'Level', accessor: r => r.rule?.level || r.level || 0 },
+  { header: 'Severity', accessor: r => { const lv = parseInt(r.rule?.level || r.level || 0); return lv >= 12 ? 'Critical' : lv >= 7 ? 'High' : lv >= 4 ? 'Medium' : 'Low' } },
+  { header: 'Description', accessor: r => r.rule?.description || r.description || '--' },
+  { header: 'Event', accessor: r => r.rule?.groups?.[0] || r.event_type || '--' },
+  { header: 'Frameworks', accessor: r => (r._frameworks || []).join(', ') || '--' },
+  { header: 'Control', accessor: r => r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || '--' },
+  { header: 'File', accessor: r => r.data?.file || r.file || '--' },
+]
 
 const CustomTip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
@@ -41,14 +61,40 @@ function groupSev(buckets) {
   return map
 }
 
-
-
 export default function ComplianceTab() {
   const { isDark, startDate, endDate } = useApp()
   const [modal, setModal] = useState(null)
   const [assetSidebarOpen, setAssetSidebarOpen] = useState(false)
   const [filters, setFilters] = useState({})
+  const [timeRange, setTimeRange] = useState('now-7d')
+  const [expandedRow, setExpandedRow] = useState({})
+  const [jsonView, setJsonView] = useState({})
+  const containerRef = useRef(null)
+  const [logPage, setLogPage] = useState(1)
+  const LOG_PAGE_SIZE = 50
+  const MAX_LOG_PAGES = 10
   const { data, loading, error, refresh } = useCompliance()
+  const toggleRow = useCallback((id) => {
+    setExpandedRow(prev => ({ ...prev, [id]: !prev[id] }))
+  }, [])
+  const flattenDoc = useCallback((obj, prefix) => {
+    prefix = prefix || ''
+    if (obj === null || obj === undefined) return [{ path: prefix || 'value', value: null }]
+    if (typeof obj !== 'object') return [{ path: prefix || 'value', value: obj }]
+    if (Array.isArray(obj)) {
+      if (!obj.length) return [{ path: prefix || 'value', value: '' }]
+      if (obj.every(v => v === null || v === undefined || typeof v !== 'object'))
+        return [{ path: prefix || 'value', value: obj.join(', ') }]
+      return [{ path: prefix || 'value', value: JSON.stringify(obj) }]
+    }
+    let result = []
+    for (const k of Object.keys(obj)) {
+      if (k.startsWith('_') && k !== '_frameworks') continue
+      const p = prefix ? prefix + '.' + k : k
+      result = result.concat(flattenDoc(obj[k], p))
+    }
+    return result
+  }, [])
 
   const setFilter = (key, value) => {
     setFilters(prev => {
@@ -92,11 +138,13 @@ export default function ComplianceTab() {
         if (ruleId !== filters.rule) return false
       }
       if (filters.framework) {
-        if (!(r.frameworks || []).includes(filters.framework)) return false
+        if (!(r._frameworks || []).includes(filters.framework)) return false
       }
       return true
     })
   }, [data?.recent, filters])
+
+  const totalLogPages = Math.max(1, Math.ceil(filteredRecent.length / LOG_PAGE_SIZE))
 
   const FILTER_STYLES = {
     severity: (v) => ({
@@ -107,7 +155,6 @@ export default function ComplianceTab() {
     agent: () => ({ bg: '#58a6ff1a', color: '#58a6ff' }),
     rule: () => ({ bg: '#e8681a18', color: '#e8681a' })
   }
-
   const SevBadge = ({ s }) => {
     const BG = { Critical: '#4a0a0e', High: '#3d1a00', Medium: '#2d1f00', Low: '#052e16' }
     const TXT = { Critical: '#ff8a8a', High: '#ffbe7a', Medium: '#fde68a', Low: '#86efac' }
@@ -129,24 +176,6 @@ export default function ComplianceTab() {
   const modalContent = () => {
     if (!modal) return null
     const mKey = modal
-    if (mKey.startsWith('log-')) {
-      const idx = parseInt(mKey.replace('log-', ''))
-      const r = filteredRecent[idx]
-      if (!r) return null
-      const logObj = {
-        time: r.timestamp ? new Date(r.timestamp).toLocaleString() : '--',
-        agent: r.agent?.name || r.agent || '--',
-        rule: r.rule?.id || r.rule || '--',
-        level: parseInt(r.rule?.level || r.level || 0),
-        description: r.rule?.description || r.description || '--',
-        event: r.rule?.groups?.[0] || r.event_type || '--',
-        frameworks: Array.isArray(r.frameworks) ? r.frameworks.join(', ') : '--',
-        file: r.data?.file || r.file || '--',
-        groups: r.rule?.groups?.join(', ') || '--'
-      }
-      return <LogDetailModal log={logObj} onClose={closeModal} label="Compliance Log" />
-    }
-
     const md = {
       'm-events': { t: 'Compliance Events', b: `Total compliance events across all frameworks: ${totalEvents.toLocaleString()}. Top framework: ${data?.frameworkCounts?.[0]?.framework || 'N/A'} with ${data?.frameworkCounts?.[0]?.count || 0} events.` },
       'm-crit': { t: 'Critical Violations', b: `Critical violations: ${data?.severity?.Critical || 0}. These require immediate remediation.` },
@@ -174,7 +203,7 @@ export default function ComplianceTab() {
   if (error) return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 text-xs text-[#f85149]">Error: {error}</motion.div>
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }} className="p-3">
+    <motion.div ref={containerRef} data-export-container initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }} className="p-3">
       {/* Page Header */}
       <div className="flex items-start justify-between mb-3">
         <div>
@@ -189,41 +218,18 @@ export default function ComplianceTab() {
         </div>
       </div>
 
-      {activeFilters.length > 0 && (
-        <div className="flex items-center gap-2 mb-2.5 px-1 flex-wrap">
-          <span className="text-xs text-[#8b949e]">Filtered by:</span>
-          {Object.entries(filters).map(([key, val]) => {
-            const st = FILTER_STYLES[key]?.(val) || { bg: '#e8681a18', color: '#e8681a' }
-            return (
-              <span key={key} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: st.bg, color: st.color }}>
-                {key === 'severity' ? '' : key + ': '}{val}
-                <button onClick={() => clearFilter(key)} className="hover:opacity-70">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                  </svg>
-                </button>
-              </span>
-            )
-          })}
-        </div>
-      )}
-
       {/* Metric Cards */}
       <div className="grid grid-cols-6 gap-2.5 mb-3">
         {[
-          { key: 'm-events', label: 'Compliance Events', val: totalEvents.toLocaleString(), change: '20%', up: true, icon: 'certificate', iconBg: '#a371f71a', iconColor: '#a371f7' },
-          { key: 'm-crit', label: 'Critical Violations', val: (data?.severity?.Critical || 0).toLocaleString(), change: '12%', up: true, icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b' },
-          { key: 'm-high', label: 'High Severity Violations', val: (data?.severity?.High || 0).toLocaleString(), change: '17%', up: true, icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a' },
-          { key: 'm-med', label: 'Medium Severity Violations', val: (data?.severity?.Medium || 0).toLocaleString(), change: '8%', up: true, icon: 'alert-circle', iconBg: '#d2992218', iconColor: '#d29922', valColor: '#d29922' },
+          { key: 'm-events', label: 'Compliance Events', val: totalEvents.toLocaleString(), sub: `24h: ${(data?.count24 || 0).toLocaleString()} · 7d: ${(data?.count7d || 0).toLocaleString()}`, icon: 'certificate', iconBg: '#a371f71a', iconColor: '#a371f7' },
+          { key: 'm-crit', label: 'Critical Violations', val: (data?.severity?.Critical || 0).toLocaleString(), icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b' },
+          { key: 'm-high', label: 'High Severity Violations', val: (data?.severity?.High || 0).toLocaleString(), icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a' },
+          { key: 'm-med', label: 'Medium Severity Violations', val: (data?.severity?.Medium || 0).toLocaleString(), icon: 'alert-circle', iconBg: '#d2992218', iconColor: '#d29922', valColor: '#d29922' },
           { key: 'm-assets', label: 'Monitored Assets', val: data?.topAgents?.length || 0, sub: 'Active agents', icon: 'device-desktop', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
           { key: 'm-frameworks', label: 'Active Frameworks', val: FRAMEWORKS.length, sub: FRAMEWORKS.join(', '), icon: 'layout-grid', iconBg: '#7c3aed1a', iconColor: '#7c3aed' },
         ].map(card => (
           <div key={card.key} onClick={() => openModal(card.key)}
-              className={`bg-white dark:bg-[#0d1117] border rounded-xl p-3 cursor-pointer transition-all duration-300 hover:-translate-y-[3px] shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] hover:shadow-[0_8px_25px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] ${
-                (card.key === 'm-crit' && filters.severity === 'Critical') || (card.key === 'm-high' && filters.severity === 'High') || (card.key === 'm-med' && filters.severity === 'Medium')
-                  ? 'border-[#e8681a] dark:border-[#e8681a] ring-1 ring-[#e8681a]/30'
-                  : 'border-[#d0d7de] dark:border-[#1d2432] hover:border-[#e8681a]/50 dark:hover:border-[#e8681a]/60'
-              }`}
+              className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 cursor-pointer hover:border-[#e8681a]/50 dark:hover:border-[#e8681a]/60 transition-all duration-300 hover:-translate-y-[3px] shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] hover:shadow-[0_8px_25px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)]"
             style={{}}>
             <div className="float-right w-[34px] h-[34px] rounded-lg flex items-center justify-center text-lg" style={{ background: card.iconBg }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={card.iconColor} strokeWidth="2">
@@ -236,7 +242,6 @@ export default function ComplianceTab() {
             </div>
             <div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-1 clear-both">{card.label}</div>
             <div className={`text-2xl font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight`} style={card.valColor ? { color: card.valColor } : undefined}>{card.val}</div>
-            {card.change && <div className="text-[10px] font-semibold mt-0.5" style={{ color: card.up ? '#3fb950' : '#f85149' }}>{card.up ? '↑' : '↓'} {card.change} vs last 7 days</div>}
             {card.sub && <div className="text-[10px] text-[#8b949e] mt-0.5">{card.sub}</div>}
           </div>
         ))}
@@ -298,8 +303,8 @@ export default function ComplianceTab() {
         <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2 flex items-center justify-between">
             <span>Compliance Trend</span>
-            <span className="text-[10px] text-[#8b949e] bg-[#f0f2f4] dark:bg-[#21262d] px-2 py-0.5 rounded font-medium normal-case cursor-pointer hover:bg-[#e5e7eb] dark:hover:bg-[#2d3140]">
-              {formatPretty(startDate, endDate)} <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="inline ml-0.5"><polyline points="6 9 12 15 18 9"/></svg>
+            <span onClick={() => setTimeRange(t => t === 'now-24h' ? 'now-7d' : t === 'now-7d' ? 'now-30d' : t === 'now-30d' ? 'now-90d' : 'now-24h')} className="text-[10px] text-[#8b949e] bg-[#f0f2f4] dark:bg-[#21262d] px-2 py-0.5 rounded font-medium normal-case cursor-pointer hover:bg-[#e5e7eb] dark:hover:bg-[#2d3140]">
+              {timeRange === 'now-24h' ? 'Last 24 Hours' : timeRange === 'now-7d' ? 'Last 7 Days' : timeRange === 'now-30d' ? 'Last 30 Days' : 'Last 90 Days'} <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="inline ml-0.5"><polyline points="6 9 12 15 18 9"/></svg>
             </span>
           </div>
           <div className="h-[150px]">
@@ -330,13 +335,13 @@ export default function ComplianceTab() {
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Framework</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Control</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Events</th></tr></thead>
             <tbody>
               {(data?.topRules || []).slice(0, 5).map((r, i) => {
-                const ruleId = r.key || r.rule || r.id || ''
+                const ruleId = r.ruleId || r.key || r.rule || r.id || ''
                 return (
                   <tr key={r.key || i} onClick={() => setFilter('rule', ruleId)}
                     className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors ${filters.rule === ruleId ? 'bg-[#e8681a]/5 ring-1 ring-inset ring-[#e8681a]/30' : ''}`}>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">{i + 1}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#e8681a] font-semibold">{ruleId}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#36454f] dark:text-[#c9d1d9]">{r.description?.substring(0, 30) || 'Control violation'}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#36454f] dark:text-[#c9d1d9]">{r.control || r.description?.substring(0, 30) || 'Control violation'}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{r.doc_count || r.count || 0}</td>
                   </tr>
                 )
@@ -377,83 +382,51 @@ export default function ComplianceTab() {
             onClick={() => openModal('all-agents')}>View all agents <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
         </div>
 
-        {/* Recent Compliance Violations */}
+        {/* Event Categories */}
         <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
-          <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Recent Violations</div>
+          <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Event Categories</div>
           <table className="w-full text-[11px] border-collapse">
-            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Time</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Agent</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Rule</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Sev</th></tr></thead>
+            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Category</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Events</th></tr></thead>
             <tbody>
-                {filteredRecent.slice(0, 5).map((r, i) => {
-                const level = parseInt(r.rule?.level || r.level || 0)
-                const sev = toSev(level)
-                const agentName = r.agent?.name || r.agent || '--'
-                const ruleId = r.rule?.id || r.rule || '--'
-                return (
-                  <tr key={r._id || i} onClick={() => openModal('log-' + i)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">
-                      {r.timestamp ? new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}
-                    </td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                      <button onClick={(e) => { e.stopPropagation(); setFilter('agent', agentName) }}
-                        className={`font-semibold text-left hover:underline ${filters.agent === agentName ? 'text-[#58a6ff]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
-                        {agentName}
-                      </button>
-                    </td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                      <button onClick={(e) => { e.stopPropagation(); setFilter('rule', ruleId) }}
-                        className={`font-bold text-left hover:underline ${filters.rule === ruleId ? 'text-[#e8681a] underline' : 'text-[#e8681a]'}`}>
-                        {ruleId}
-                      </button>
-                    </td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-right">
-                      <button onClick={(e) => { e.stopPropagation(); setFilter('severity', sev) }}><SevBadge s={sev} /></button>
-                    </td>
-                  </tr>
-                )
-              })}
-              {filteredRecent.length === 0 && (
-                <tr><td colSpan={4} className="text-center py-4 text-xs text-[#8b949e]">No {activeFilters.length > 0 ? 'matching' : ''} violations found</td></tr>
+              {(data?.categories || []).slice(0, 7).map((c, i) => (
+                <tr key={c.key || i} className="hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
+                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">{i + 1}</td>
+                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#36454f] dark:text-[#c9d1d9]">{c.key || '--'}</td>
+                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{(c.doc_count || 0).toLocaleString()}</td>
+                </tr>
+              ))}
+              {(!data?.categories || data.categories.length === 0) && (
+                <tr><td colSpan={3} className="text-center py-4 text-xs text-[#8b949e]">No categories data</td></tr>
               )}
             </tbody>
           </table>
-          <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
-            onClick={() => openModal('all-violations')}>View all violations <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
         </div>
       </div>
 
       {/* Compliance Heatmap */}
       <div className="mb-3">
-        <div className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc] mb-2.5 tracking-tight">Compliance Heatmap (Events by Severity)</div>
+        <div className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc] mb-2.5 tracking-tight">Framework Event Distribution</div>
         <table className="w-full text-[11px] border-collapse">
           <thead>
             <tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide bg-[#f0f2f4] dark:bg-[#161b22]">
               <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Framework</th>
-              {SEV_ORDER.map(s => (
-                <th key={s} className="text-center py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">{s}</th>
-              ))}
-              <th className="text-center py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Total</th>
+              <th className="text-center py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Events</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Distribution</th>
             </tr>
           </thead>
           <tbody>
             {(data?.frameworkCounts || []).map(fw => {
-              const sevSplit = {
-                Critical: Math.round(fw.count * 0.05),
-                High: Math.round(fw.count * 0.2),
-                Medium: Math.round(fw.count * 0.35),
-                Low: Math.round(fw.count * 0.4)
-              }
+              const pct = maxFw ? (fw.count / maxFw) * 100 : 0
               return (
-                <tr key={fw.framework} className="hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] cursor-pointer transition-colors">
+                <tr key={fw.framework} onClick={() => setFilter('framework', fw.framework)}
+                  className={`hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] cursor-pointer transition-colors ${filters.framework === fw.framework ? 'bg-[#a371f7]/5 ring-1 ring-inset ring-[#a371f7]/30' : ''}`}>
                   <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{fw.framework}</td>
-                  {SEV_ORDER.map(s => (
-                    <td key={s} className="text-center py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                      <span className="rounded px-2 py-0.5 font-semibold text-[10px] inline-block min-w-[28px]"
-                        style={{ background: isDark ? '#161b22' : '#f0f2f4', color: SEV_COLORS[s] }}>
-                        {sevSplit[s]}
-                      </span>
-                    </td>
-                  ))}
-                  <td className="text-center py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-bold text-[#1f2328] dark:text-[#f0f6fc]">{fw.count}</td>
+                  <td className="text-center py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-bold text-[#1f2328] dark:text-[#f0f6fc]">{fw.count}</td>
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
+                    <div className="h-2 bg-[#d0d7de] dark:bg-[#1d2432] rounded-full overflow-hidden w-32">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
+                    </div>
+                  </td>
                 </tr>
               )
             })}
@@ -461,17 +434,10 @@ export default function ComplianceTab() {
           <tfoot>
             <tr className="font-bold text-[#1f2328] dark:text-[#f0f6fc] bg-[#f0f2f4] dark:bg-[#161b22]">
               <td className="py-1.5 px-2 border-t border-[#d0d7de] dark:border-[#1d2432]">Total</td>
-              {SEV_ORDER.map(s => (
-                <td key={s} className="text-center py-1.5 px-2 border-t border-[#d0d7de] dark:border-[#1d2432]">
-                  {data?.frameworkCounts?.reduce((sum, fw) => {
-                    const split = { Critical: 0.05, High: 0.2, Medium: 0.35, Low: 0.4 }
-                    return sum + Math.round(fw.count * (split[s] || 0))
-                  }, 0) || 0}
-                </td>
-              ))}
               <td className="text-center py-1.5 px-2 border-t border-[#d0d7de] dark:border-[#1d2432]">
                 {data?.frameworkCounts?.reduce((sum, fw) => sum + fw.count, 0) || 0}
               </td>
+              <td className="py-1.5 px-2 border-t border-[#d0d7de] dark:border-[#1d2432]"></td>
             </tr>
           </tfoot>
         </table>
@@ -479,83 +445,166 @@ export default function ComplianceTab() {
 
       {/* Compliance Logs */}
       <div className="mb-3">
-        <div className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc] mb-2.5 tracking-tight">Compliance Logs</div>
-        <table className="w-full text-[10px] border-collapse table-fixed">
-          <colgroup>
-            <col style={{ width: '130px' }} /><col style={{ width: '100px' }} /><col style={{ width: '50px' }} />
-            <col style={{ width: '35px' }} /><col style={{ width: '140px' }} /><col style={{ width: '90px' }} />
-            <col style={{ width: '140px' }} /><col style={{ width: '120px' }} /><col style={{ width: '150px' }} />
-          </colgroup>
-          <thead>
-            <tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide bg-[#f0f2f4] dark:bg-[#161b22]">
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Time</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Agent</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Rule</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Lvl</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Description</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Event</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Frameworks</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Control</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">File / Resource</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredRecent.slice(0, 10).map((r, i) => {
-              const level = parseInt(r.rule?.level || r.level || 0)
-              const agentName = r.agent?.name || r.agent || '--'
-              const ruleId = r.rule?.id || r.rule || '--'
-              return (
-                <tr key={r._id || i} onClick={() => openModal('log-' + i)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">
-                    {r.timestamp ? new Date(r.timestamp).toLocaleString() : '--'}
-                  </td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                    <button onClick={(e) => { e.stopPropagation(); setFilter('agent', agentName) }}
-                      className={`font-semibold text-left hover:underline ${filters.agent === agentName ? 'text-[#58a6ff]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
-                      {agentName}
-                    </button>
-                  </td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                    <button onClick={(e) => { e.stopPropagation(); setFilter('rule', ruleId) }}
-                      className={`font-bold text-left hover:underline ${filters.rule === ruleId ? 'text-[#e8681a] underline' : 'text-[#e8681a]'}`}>
-                      {ruleId}
-                    </button>
-                  </td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">{
-                    (() => { const lv = parseInt(r.rule?.level || r.level || 0); return <span className="inline-flex items-center justify-center w-[22px] h-[18px] rounded text-[10px] font-semibold" style={{ background: lv >= 7 ? '#450a0a' : lv >= 4 ? '#3d1a00' : '#0d1117', color: lv >= 7 ? '#fca5a5' : lv >= 4 ? '#fdba74' : '#8b949e' }}>{lv}</span> })()
-                  }</td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap text-[#36454f] dark:text-[#c9d1d9]">
-                    {r.rule?.description || r.description || '--'}
-                  </td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#e8681a] font-medium">
-                    {r.rule?.groups?.[0] || r.event_type || '--'}
-                  </td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e] font-medium">PCI-DSS, HIPAA</td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">--</td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e] text-[9px] overflow-hidden text-ellipsis whitespace-nowrap">--</td>
-                </tr>
-              )
-            })}
-            {filteredRecent.length === 0 && (
-              <tr><td colSpan={9} className="text-center py-4 text-xs text-[#8b949e]">No {activeFilters.length > 0 ? 'matching' : ''} logs found</td></tr>
-            )}
-          </tbody>
-        </table>
-        <div className="flex items-center justify-between mt-2.5 flex-wrap gap-2">
-          <div className="text-[#e8681a] text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
-            onClick={() => openModal('all-logs')}>View all logs <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+        <div className="flex items-center justify-between mb-2.5">
+          <div className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">Compliance Logs</div>
+          <div className="flex items-center gap-1.5">
+            <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportExcel(filteredRecent, COMPLIANCE_EXPORT_COLS, `compliance-logs-${ts}.xlsx`) }}
+              className="text-[10px] px-2 py-1 rounded font-medium bg-[#e8eaed] dark:bg-[#21262d] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Excel
+            </button>
+            <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportPDFReport({ filename: `compliance-report-${ts}.pdf`, title: 'Compliance Report', dateRange: `${startDate || 'now-24h'} to ${endDate || 'now'}`, metrics: [{ label: 'Events (24h)', value: (data?.count24 || 0).toLocaleString() }, { label: 'Events (7d)', value: (data?.count7d || 0).toLocaleString() }, { label: 'Alert Sources', value: data?.topAgents?.length || 0 }, { label: 'Total Logs', value: filteredRecent.length }], severity: Object.entries(data?.severity || {}).map(([level, count]) => ({ level, count })), topRules: (data?.topRules || []).map(r => ({ key: r.key || r.ruleId || r.id || '--', count: r.doc_count || r.count || 0 })), topAgents: (data?.topAgents || []).map(a => ({ key: a.key || a.agent || a.name || '--', count: a.doc_count || a.events || 0 })), frameworkCounts: (data?.frameworkCounts || []).map(f => ({ framework: f.framework || f.key || '--', count: f.count || f.doc_count || 0 })), timeline: (data?.timeline || []).map(t => ({ time: t.time, count: t.count })), logHeaders: COMPLIANCE_EXPORT_COLS.map(c => c.header.toLowerCase()), logRows: prepareRows(filteredRecent, COMPLIANCE_EXPORT_COLS) }) }}
+              className="text-[10px] px-2 py-1 rounded font-medium bg-[#e8eaed] dark:bg-[#21262d] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              PDF
+            </button>
+          </div>
         </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[10px] border-collapse">
+            <colgroup>
+              <col style={{ minWidth: '120px', width: '16%' }} /><col style={{ minWidth: '90px', width: '12%' }} /><col style={{ minWidth: '45px', width: '6%' }} />
+              <col style={{ minWidth: '32px', width: '4%' }} /><col style={{ minWidth: '120px', width: '22%' }} /><col style={{ minWidth: '75px', width: '10%' }} />
+              <col style={{ minWidth: '100px', width: '12%' }} /><col style={{ minWidth: '85px', width: '10%' }} /><col style={{ minWidth: '70px', width: '8%' }} />
+            </colgroup>
+            <thead>
+              <tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide bg-[#f0f2f4] dark:bg-[#161b22]">
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Time</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Agent</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Rule</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Lvl</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Description</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Event</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Frameworks</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Control</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">File</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRecent.slice((logPage - 1) * LOG_PAGE_SIZE, logPage * LOG_PAGE_SIZE).map((r, i) => {
+                const rowId = r._id || String(i)
+                const isExp = expandedRow[rowId]
+                const level = parseInt(r.rule?.level || r.level || 0)
+                const agentName = r.agent?.name || r.agent || '--'
+                const ruleId = r.rule?.id || r.rule || '--'
+                return (
+                  <React.Fragment key={rowId}>
+                    <tr onClick={() => toggleRow(rowId)}
+                      className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors ${isExp ? 'bg-[#f6f8fa] dark:bg-[#161b22]' : ''}`}>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e] overflow-hidden text-ellipsis whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1">
+                          <span className="text-[10px] w-3 shrink-0">{isExp ? '▾' : '▸'}</span>
+                          <span className="truncate">{(r['@timestamp'] || r.timestamp) ? new Date(r['@timestamp'] || r.timestamp).toLocaleString() : '--'}</span>
+                        </span>
+                      </td>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap">
+                        <button onClick={(e) => { e.stopPropagation(); setFilter('agent', agentName) }}
+                          className={`font-semibold text-left hover:underline truncate max-w-full ${filters.agent === agentName ? 'text-[#58a6ff]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
+                          {agentName}
+                        </button>
+                      </td>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap">
+                        <button onClick={(e) => { e.stopPropagation(); setFilter('rule', ruleId) }}
+                          className={`font-bold text-left hover:underline truncate max-w-full ${filters.rule === ruleId ? 'text-[#e8681a] underline' : 'text-[#e8681a]'}`}>
+                          {ruleId}
+                        </button>
+                      </td>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">{
+                        (() => { const lv = parseInt(r.rule?.level || r.level || 0); return <span className="inline-flex items-center justify-center w-[22px] h-[18px] rounded text-[10px] font-semibold" style={{ background: lv >= 7 ? '#450a0a' : lv >= 4 ? '#3d1a00' : '#0d1117', color: lv >= 7 ? '#fca5a5' : lv >= 4 ? '#fdba74' : '#8b949e' }}>{lv}</span> })()
+                      }</td>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap text-[#36454f] dark:text-[#c9d1d9] max-w-0">
+                        {r.rule?.description || r.description || '--'}
+                      </td>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap text-[#e8681a] font-medium">
+                        {r.rule?.groups?.[0] || r.event_type || '--'}
+                      </td>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap text-[#8b949e] font-medium">{(r._frameworks || []).join(', ') || '--'}</td>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap text-[#8b949e]">{r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || '--'}</td>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap text-[#8b949e]">{r.data?.file || r.file || '--'}</td>
+                    </tr>
+                    {isExp && (
+                      <tr>
+                        <td colSpan={9} className="p-0 border-b border-[#f0f2f4] dark:border-[#1d2432]">
+                          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} transition={{ duration: 0.15 }}>
+                            <div className="bg-[#f6f8fa] dark:bg-[#0d1117] border-t border-[#d0d7de] dark:border-[#1d2432]">
+                              <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#d0d7de] dark:border-[#1d2432]">
+                                <div className="flex items-center gap-2">
+                                  <button onClick={(e) => { e.stopPropagation(); setJsonView(prev => ({ ...prev, [rowId]: false })) }}
+                                    className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${!jsonView[rowId] ? 'bg-[#e8681a] text-white' : 'text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#21262d]'}`}>Table</button>
+                                  <button onClick={(e) => { e.stopPropagation(); setJsonView(prev => ({ ...prev, [rowId]: true })) }}
+                                    className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${jsonView[rowId] ? 'bg-[#e8681a] text-white' : 'text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#21262d]'}`}>JSON</button>
+                                </div>
+                                <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(JSON.stringify(r, null, 2)) }}
+                                  className="text-[10px] px-2 py-0.5 rounded font-medium bg-[#e8eaed] dark:bg-[#21262d] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                                  Copy
+                                </button>
+                              </div>
+                              <div className="max-h-56 overflow-y-auto">
+                                {jsonView[rowId] ? (
+                                  <pre className="text-xs text-[#c9d1d9] bg-[#0d1117] p-3 overflow-x-auto whitespace-pre-wrap break-all font-mono leading-relaxed m-0">{JSON.stringify(r, null, 2)}</pre>
+                                ) : (
+                                  <table className="w-full text-[11px]">
+                                    <tbody>
+                                      {flattenDoc(r).map((fld, fi) => (
+                                        <tr key={fi} className="border-b border-[#d0d7de]/30 dark:border-[#1d2432]/30 hover:bg-[#f0f2f4] dark:hover:bg-[#161b22]">
+                                          <td className="px-3 py-1 font-medium text-[#1f2328] dark:text-[#f0f6fc] whitespace-nowrap w-1/3 align-top text-[10px]">{fld.path}</td>
+                                          <td className="px-3 py-1 text-[#36454f] dark:text-[#c9d1d9] break-all text-[11px]">{String(fld.value ?? '')}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                )}
+                              </div>
+                            </div>
+                          </motion.div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                )
+              })}
+              {filteredRecent.length === 0 && (
+                <tr><td colSpan={9} className="text-center py-4 text-xs text-[#8b949e]">No {activeFilters.length > 0 ? 'matching' : ''} logs found</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {totalLogPages > 1 && (
+          <div className="flex items-center justify-between mt-2.5 flex-wrap gap-2">
+            <div className="flex items-center gap-1 text-[11px] text-[#8b949e]">
+              <span className="mr-1 text-[10px]">{(logPage - 1) * LOG_PAGE_SIZE + 1}-{Math.min(logPage * LOG_PAGE_SIZE, filteredRecent.length)} of {filteredRecent.length}</span>
+              <button onClick={() => setLogPage(p => Math.max(1, p - 1))} disabled={logPage === 1}
+                className="bg-transparent border border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+              {Array.from({ length: Math.min(totalLogPages, 5) }, (_, i) => {
+                const startPage = Math.max(1, Math.min(logPage - 2, totalLogPages - 4))
+                const p = startPage + i
+                if (p > totalLogPages) return null
+                return (
+                  <button key={p} onClick={() => setLogPage(p)}
+                    className={`bg-transparent border px-2 py-0.5 rounded text-[11px] min-w-[28px] transition-all ${
+                      p === logPage ? 'bg-[#e8681a] text-white border-[#e8681a]' : 'border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a]'
+                    }`}>{p}</button>
+                )
+              })}
+              {totalLogPages > 5 && logPage < totalLogPages - 2 && <span className="px-0.5 text-[#8b949e] text-[10px]">...</span>}
+              {totalLogPages > 5 && logPage < totalLogPages - 2 && (
+                <button onClick={() => setLogPage(totalLogPages)}
+                  className="bg-transparent border border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] transition-all">{totalLogPages}</button>
+              )}
+              <button onClick={() => setLogPage(p => Math.min(totalLogPages, p + 1))} disabled={logPage === totalLogPages}
+                className="bg-transparent border border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="text-center text-[10px] text-[#8b949e] py-3 border-t border-[#d0d7de] dark:border-[#1d2432]">&copy; 2025 UniShield 360. All rights reserved.</div>
 
-      <AssetSidebar
-        open={assetSidebarOpen}
-        onClose={() => setAssetSidebarOpen(false)}
-        onSelectAgent={(name) => setFilter('agent', name)}
-        agents={data?.topAgents || []}
-        title="Monitored Assets"
-      />
       {modalContent()}
     </motion.div>
   )
