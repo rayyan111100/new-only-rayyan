@@ -1,12 +1,14 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { useApp } from '../context/AppContext'
 import DateRangePicker from '../components/DateRangePicker'
-import AssetSidebar from '../components/AssetSidebar'
+import DetailSidebar from '../components/DetailSidebar'
 import LogDetailModal from '../components/LogDetailModal'
 import useCompliance from '../hooks/useCompliance'
 import { exportExcel, exportPDFReport, prepareRows } from '../utils/exportLogs'
 import { PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import FilterableMetricCard from '../components/FilterableMetricCard'
+import InlineFilter from '../components/InlineFilter'
 
 const SEV_COLORS = { Critical: '#f85149', High: '#e8681a', Medium: '#d29922', Low: '#3fb950' }
 const SEV_ORDER = ['Critical', 'High', 'Medium', 'Low']
@@ -15,7 +17,7 @@ const EXPORT_COLS = [
   { header: 'Time', accessor: 'time' }, { header: 'Agent', accessor: 'agent' },
   { header: 'Rule', accessor: 'rule' }, { header: 'Severity', accessor: 'sev' },
   { header: 'Description', accessor: 'desc' }, { header: 'Event', accessor: 'event' },
-  { header: 'Control', accessor: 'ctrl' }, { header: 'File', accessor: 'file' },
+  { header: 'Control', accessor: 'ctrl' },
   { header: 'Groups', accessor: 'groups' },
 ]
 
@@ -50,15 +52,17 @@ const CustomTip = ({ active, payload, label }) => {
 }
 
 export default function HipaaTab() {
-  const { isDark, startDate } = useApp()
+  const { isDark, startDate, endDate } = useApp()
   const [modal, setModal] = useState(null)
-  const [assetSidebarOpen, setAssetSidebarOpen] = useState(false)
+  const [sidebar, setSidebar] = useState(null)
   const [filters, setFilters] = useState({})
+  const [excludes, setExcludes] = useState({})
   const [logPage, setLogPage] = useState(1)
   const [expandedRow, setExpandedRow] = useState({})
   const [jsonView, setJsonView] = useState({})
+  const [timelineFilter, setTimelineFilter] = useState(null)
   const containerRef = useRef(null)
-  const LOG_PAGE_SIZE = 5
+  const LOG_PAGE_SIZE = 10
   const { data, loading, error, refresh } = useCompliance('HIPAA')
   const toggleRow = useCallback((id) => {
     setExpandedRow(prev => ({ ...prev, [id]: !prev[id] }))
@@ -84,24 +88,87 @@ export default function HipaaTab() {
 
   const setFilter = (key, value) => {
     setFilters(prev => {
-      if (prev[key] === value) {
-        const next = { ...prev }
-        delete next[key]
-        return next
+      const arr = prev[key] || []
+      const next = { ...prev }
+      if (arr.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[key] = filtered
+        else delete next[key]
+      } else {
+        next[key] = [...arr, value]
       }
-      return { ...prev, [key]: value }
+      return next
+    })
+    setExcludes(prev => {
+      const next = { ...prev }
+      const arr = next[key]
+      if (arr?.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[key] = filtered
+        else delete next[key]
+      }
+      return next
     })
   }
 
-  const clearFilter = (key) => setFilters(prev => {
-    const next = { ...prev }
-    delete next[key]
-    return next
-  })
+  const clearFilter = (key, value) => { setFilters(prev => { const next = { ...prev }; const arr = next[key]; if (arr) { const f = arr.filter(v => v !== value); if (f.length) next[key] = f; else delete next[key] } return next }); setExcludes(prev => { const next = { ...prev }; const arr = next[key]; if (arr) { const f = arr.filter(v => v !== value); if (f.length) next[key] = f; else delete next[key] } return next }) }
+
+  const clearAllFilters = () => { setFilters({}); setExcludes({}); setTimelineFilter(null) }
+
+  const setInclude = (field, value) => {
+    setFilters(prev => {
+      const arr = prev[field] || []
+      const next = { ...prev }
+      if (arr.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[field] = filtered
+        else delete next[field]
+      } else {
+        next[field] = [...arr, value]
+      }
+      return next
+    })
+    setExcludes(prev => {
+      const next = { ...prev }
+      const arr = next[field]
+      if (arr?.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[field] = filtered
+        else delete next[field]
+      }
+      return next
+    })
+  }
+
+  const setExclude = (field, value) => {
+    setExcludes(prev => {
+      const arr = prev[field] || []
+      const next = { ...prev }
+      if (arr.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[field] = filtered
+        else delete next[field]
+      } else {
+        next[field] = [...arr, value]
+      }
+      return next
+    })
+    setFilters(prev => {
+      const next = { ...prev }
+      const arr = next[field]
+      if (arr?.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[field] = filtered
+        else delete next[field]
+      }
+      return next
+    })
+  }
 
   const activeFilters = Object.keys(filters)
+  const activeExcludes = Object.keys(excludes)
 
-  const allLogs = (data?.recent || []).map(r => ({
+  const allLogs = useMemo(() => (data?.recent || []).map(r => ({
     time: r['@timestamp'] || r.timestamp || '--',
     agent: r.agent?.name || r.agent || '--',
     rule: r.rule?.id || r.rule || '--',
@@ -112,29 +179,100 @@ export default function HipaaTab() {
     groups: r.rule?.groups?.join(', ') || '--',
     ctrl: r.rule?.hipaa || r.control || r.hipaa_standard || '--',
     raw: r
-  }))
+  })), [data])
 
+  const hasActiveFilter = activeFilters.length > 0 || activeExcludes.length > 0 || !!timelineFilter
+
+  const DAY_MS = 86400000
   const filteredLogs = allLogs.filter(l => {
-    if (filters.severity && l.sev !== filters.severity) return false
-    if (filters.agent && l.agent !== filters.agent) return false
-    if (filters.rule && l.rule !== filters.rule) return false
+    if (timelineFilter) {
+      const t = new Date(l.time).getTime()
+      if (t < timelineFilter || t >= timelineFilter + DAY_MS) return false
+    }
+    if (filters.severity?.length && !filters.severity.includes(l.sev)) return false
+    if (filters.agent?.length && !filters.agent.includes(l.agent)) return false
+    if (filters.rule?.length && !filters.rule.includes(l.rule)) return false
+    if (filters.control?.length && !filters.control.includes(l.ctrl)) return false
+    if (filters.desc?.length && !filters.desc.includes(l.desc)) return false
+    if (filters.event?.length && !filters.event.includes(l.event)) return false
+    if (filters.groups?.length && !filters.groups.includes(l.groups)) return false
+    if (excludes.severity?.length && excludes.severity.includes(l.sev)) return false
+    if (excludes.agent?.length && excludes.agent.includes(l.agent)) return false
+    if (excludes.rule?.length && excludes.rule.includes(l.rule)) return false
+    if (excludes.control?.length && excludes.control.includes(l.ctrl)) return false
+    if (excludes.desc?.length && excludes.desc.includes(l.desc)) return false
+    if (excludes.event?.length && excludes.event.includes(l.event)) return false
+    if (excludes.groups?.length && excludes.groups.includes(l.groups)) return false
     return true
   })
 
   const totalLogPages = Math.ceil(filteredLogs.length / LOG_PAGE_SIZE)
 
-  const totalEvents = data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
+  useEffect(() => { setLogPage(1) }, [activeFilters.join(), activeExcludes.join()])
 
-  useEffect(() => { setLogPage(1) }, [activeFilters.join()])
-  const maxAgent = data ? Math.max(...data.topAgents.map(a => a.doc_count || 0), 1) : 1
-  const maxControl = Math.max(...HIPAA_CONTROLS.map(c => {
-    const r = data?.topRules?.find(r => r.control === c.req)
-    return r?.count || 0
-  }), 1)
+  const chartData = useMemo(() => {
+    if (!hasActiveFilter) return null
+    const logs = filteredLogs
+    const sev = {}
+    SEV_ORDER.forEach(s => sev[s] = 0)
+    logs.forEach(l => { if (l.sev) sev[l.sev] = (sev[l.sev] || 0) + 1 })
+    const ctrlMap = {}
+    logs.forEach(l => { if (l.ctrl) ctrlMap[l.ctrl] = (ctrlMap[l.ctrl] || 0) + 1 })
+    const agMap = {}
+    logs.forEach(l => { if (l.agent) agMap[l.agent] = (agMap[l.agent] || 0) + 1 })
+    const ruleMap = {}
+    logs.forEach(l => { if (l.rule) ruleMap[l.rule] = (ruleMap[l.rule] || 0) + 1 })
+    return {
+      severity: sev,
+      controls: ctrlMap,
+      topAgents: Object.entries(agMap).map(([key, doc_count]) => ({ key, doc_count })).sort((a, b) => b.doc_count - a.doc_count).slice(0, 10),
+      topRules: Object.entries(ruleMap).map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count).slice(0, 10)
+    }
+  }, [filteredLogs, hasActiveFilter])
 
-  const sevDonut = SEV_ORDER.filter(s => (data?.severity?.[s] || 0) > 0).map(s => ({
-    name: s, value: data.severity[s] || 0, color: SEV_COLORS[s]
+  const severitySource = hasActiveFilter && chartData ? chartData.severity : data?.severity || {}
+
+  const totalEvents = hasActiveFilter && chartData
+    ? Object.values(chartData.severity).reduce((a, b) => a + b, 0)
+    : data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
+
+  const maxAgent = hasActiveFilter && chartData
+    ? Math.max(...chartData.topAgents.map(a => a.doc_count || 0), 1)
+    : data ? Math.max(...data.topAgents.map(a => a.doc_count || 0), 1) : 1
+
+  const controlEvents = useMemo(() => {
+    const map = {}
+    if (hasActiveFilter && chartData) {
+      HIPAA_CONTROLS.forEach(c => { map[c.req] = chartData.controls[c.req] || 0 })
+      return map
+    }
+    if (data?.topRules) {
+      data.topRules.forEach(r => {
+        const ctrl = r.control || ''
+        if (ctrl && HIPAA_CONTROLS.some(c => c.req === ctrl)) {
+          map[ctrl] = (map[ctrl] || 0) + (r.count || 0)
+        }
+      })
+    }
+    if (Object.keys(map).length === 0 && data?.recent) {
+      data.recent.forEach(r => {
+        const ctrl = r.rule?.hipaa || r.control || r.hipaa_standard || '--'
+        if (ctrl && HIPAA_CONTROLS.some(c => c.req === ctrl)) {
+          map[ctrl] = (map[ctrl] || 0) + 1
+        }
+      })
+    }
+    HIPAA_CONTROLS.forEach(c => { if (!map[c.req]) map[c.req] = 0 })
+    return map
+  }, [data, chartData, hasActiveFilter])
+
+  const maxControl = Math.max(...Object.values(controlEvents), 1)
+
+  const sevDonut = SEV_ORDER.filter(s => (severitySource[s] || 0) > 0).map(s => ({
+    name: s, value: severitySource[s], color: SEV_COLORS[s]
   }))
+
+  const getControlEvents = (req) => controlEvents[req] || 0
 
   const FILTER_STYLES = {
     severity: (v) => ({
@@ -156,7 +294,12 @@ export default function HipaaTab() {
   }
 
   const closeModal = () => setModal(null)
-  const openModal = (k) => setModal(k)
+  const openModal = (k) => {
+    if (k === 'm-assets' || k === 'all-agents') { setSidebar('agents'); return }
+    if (k === 'all-controls') { setSidebar('controls'); return }
+    if (k === 'all-rules') { setSidebar('rules'); return }
+    setModal(k)
+  }
 
   const modalContent = () => {
     if (!modal) return null
@@ -211,35 +354,82 @@ export default function HipaaTab() {
         </div>
       </div>
 
+      {(activeFilters.length > 0 || activeExcludes.length > 0 || timelineFilter) && (
+        <div className="flex items-center gap-2 mb-2.5 px-1 flex-wrap">
+          <span className="text-xs text-[#8b949e]">Filters:</span>
+          {Object.entries(filters).flatMap(([key, vals]) =>
+            vals.map(val => {
+              const st = FILTER_STYLES[key]?.(val) || { bg: '#3fb95018', color: '#3fb950' }
+              return (
+                <span key={key + val} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: st.bg, color: st.color }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                  {key === 'severity' ? '' : key + ': '}{val}
+                  <button onClick={() => clearFilter(key, val)} className="hover:opacity-70">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </span>
+              )
+            })
+          )}
+          {Object.entries(excludes).flatMap(([key, vals]) =>
+            vals.map(val => (
+              <span key={'ex-' + key + val} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: '#f8514918', color: '#f85149' }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                Exclude {key === 'severity' ? '' : key + ': '}{val}
+                <button onClick={() => clearFilter(key, val)} className="hover:opacity-70">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </span>
+            ))
+          )}
+          {timelineFilter && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: '#e8681a18', color: '#e8681a' }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+              Time: {data?.timeline?.find(t => t.rawTime === timelineFilter)?.time || 'Selected'}
+              <button onClick={() => setTimelineFilter(null)} className="hover:opacity-70">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </span>
+          )}
+          {((activeFilters.length + activeExcludes.length) > 0 || timelineFilter) && (
+            <button onClick={clearAllFilters} className="text-[10px] px-2 py-0.5 rounded border border-[#d0d7de] dark:border-[#30363d] text-[#8b949e] hover:text-[#f85149] hover:border-[#f85149] transition-all">
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Metric Cards */}
       <div className="grid grid-cols-6 gap-2.5 mb-3">
-        {[
-          { key: 'm-events', label: 'HIPAA Events', val: totalEvents.toLocaleString(), icon: 'certificate', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
-          { key: 'm-crit', label: 'Critical Violations', val: (data?.severity?.Critical || 0).toLocaleString(), icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b' },
-          { key: 'm-high', label: 'High Severity Violations', val: (data?.severity?.High || 0).toLocaleString(), icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a' },
-          { key: 'm-assets', label: 'Monitored Assets', val: data?.topAgents?.length || 0, sub: 'Active agents', icon: 'device-desktop', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
-          { key: 'm-controls', label: 'Controls Violated', val: data?.topRules?.length || '--', sub: 'Unique HIPAA controls', icon: 'list-check', iconBg: '#3fb95018', iconColor: '#3fb950' },
-          { key: 'm-top-ctrl', label: 'Most Active Control', val: (data?.topRules?.[0]?.ruleId || '--'), sub: ((data?.topRules?.[0]?.description || '').substring(0, 30) + ' · ' + (data?.topRules?.[0]?.count || '0') + ' Events'), icon: 'award', iconBg: '#3fb95018', iconColor: '#3fb950', valSize: 'text-base' },
-        ].map(card => (
-          <div key={card.key} onClick={() => openModal(card.key)}
-            className="bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-xl p-3 cursor-pointer hover:border-[#e8681a]/50 dark:hover:border-[#e8681a]/60 transition-all duration-300 hover:-translate-y-[3px] shadow-lg hover:shadow-[0_8px_25px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)]"
-            style={{}}>
-            <div className="float-right w-[34px] h-[34px] rounded-lg flex items-center justify-center text-lg" style={{ background: card.iconBg }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={card.iconColor} strokeWidth="2">
-                {card.icon === 'certificate' && <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></>}
-                {card.icon === 'alert-triangle' && <><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>}
-                {card.icon === 'alert-circle' && <><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>}
-                {card.icon === 'device-desktop' && <><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></>}
-                {card.icon === 'list-check' && <><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><polyline points="3 6 4 7 6 5"/><polyline points="3 12 4 13 6 11"/><polyline points="3 18 4 19 6 17"/></>}
-                {card.icon === 'award' && <><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></>}
-              </svg>
-            </div>
-            <div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-1 clear-both">{card.label}</div>
-            <div className={`text-2xl font-bold text-[#1f2328] dark:text-[#f0f6fc] ${card.valSize || ''} tracking-tight`} style={card.valColor ? { color: card.valColor } : undefined}>{card.val}</div>
-
-            {card.sub && <div className="text-[10px] text-[#8b949e] mt-0.5">{card.sub}</div>}
-          </div>
-        ))}
+        {(() => {
+          const topControl = HIPAA_CONTROLS.map(c => ({ ...c, ev: getControlEvents(c.req) })).sort((a, b) => b.ev - a.ev)[0]
+          const cards = [
+            { key: 'm-events', label: 'HIPAA Events', val: totalEvents.toLocaleString(), icon: 'certificate', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
+            { key: 'm-crit', label: 'Critical Violations', val: (severitySource?.Critical || 0).toLocaleString(), icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b', filterField: 'severity', filterValue: 'Critical' },
+            { key: 'm-high', label: 'High Severity Violations', val: (severitySource?.High || 0).toLocaleString(), icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a', filterField: 'severity', filterValue: 'High' },
+            { key: 'm-assets', label: 'Monitored Assets', val: hasActiveFilter && chartData ? chartData.topAgents.length : data?.topAgents?.length || 0, sub: 'Active agents', icon: 'device-desktop', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
+            { key: 'm-controls', label: 'Controls Violated', val: HIPAA_CONTROLS.filter(c => getControlEvents(c.req) > 0).length, sub: 'Unique HIPAA controls', icon: 'list-check', iconBg: '#3fb95018', iconColor: '#3fb950' },
+            { key: 'm-top-ctrl', label: 'Most Active Control', val: topControl ? topControl.req : '--', sub: topControl ? topControl.desc + ' · ' + topControl.ev + ' Events' : '', icon: 'award', iconBg: '#3fb95018', iconColor: '#3fb950', valColor: '#e8681a', valSize: 'text-base', filterField: 'control', filterValue: topControl?.req || '' },
+          ]
+          return cards.map(card => (
+            <FilterableMetricCard
+              key={card.key}
+              card={card}
+              isDark={isDark}
+              filterField={card.filterField}
+              filterValue={card.filterValue}
+              isIncluded={card.filterField && filters[card.filterField]?.includes(card.filterValue)}
+              isExcluded={card.filterField && excludes[card.filterField]?.includes(card.filterValue)}
+              onInclude={() => setInclude(card.filterField, card.filterValue)}
+              onExclude={() => setExclude(card.filterField, card.filterValue)}
+              onCustomClick={card.key === 'm-assets' ? () => setSidebar('agents') : !card.filterField ? () => openModal(card.key) : undefined}
+            />
+          ))
+        })()}
       </div>
 
       {/* Tri Row */}
@@ -248,9 +438,8 @@ export default function HipaaTab() {
         <div className="bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Events by HIPAA Requirement (Top 5)</div>
           {HIPAA_CONTROLS.map(c => {
-            const r = data?.topRules?.find(t => t.control === c.req)
-            const count = r?.count || 0
-            const pct = (count / Math.max(...HIPAA_CONTROLS.map(x => { const xr = data?.topRules?.find(t => t.control === x.req); return xr?.count || 1 }), 1)) * 100
+            const ev = getControlEvents(c.req)
+            const pct = (ev / maxControl) * 100
             return (
               <div key={c.req} onClick={() => openModal('ctrl-' + c.req)}
                 className="flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] cursor-pointer text-[11px]">
@@ -258,7 +447,7 @@ export default function HipaaTab() {
                 <div className="flex-1 h-2 bg-[#d0d7de] dark:bg-[#30363d] rounded-full overflow-hidden">
                   <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
                 </div>
-                <span className="w-7 text-right text-[#1f2328] dark:text-[#f0f6fc] font-bold">{count}</span>
+                <span className="w-7 text-right text-[#1f2328] dark:text-[#f0f6fc] font-bold">{ev}</span>
               </div>
             )
           })}
@@ -305,7 +494,11 @@ export default function HipaaTab() {
           <div className="h-[150px]">
             {data?.timeline?.length > 0 && (
               <ResponsiveContainer width="100%" height={150}>
-                <AreaChart data={data.timeline}>
+                <AreaChart data={data.timeline}
+                  onClick={(e) => {
+                    const rt = e?.activePayload?.[0]?.payload?.rawTime
+                    if (rt) setTimelineFilter(timelineFilter === rt ? null : rt)
+                  }}>
                   <defs><linearGradient id="hipaaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e8681a" stopOpacity={0.12} /><stop offset="95%" stopColor="#e8681a" stopOpacity={0} /></linearGradient></defs>
                   <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
@@ -330,14 +523,13 @@ export default function HipaaTab() {
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">HIPAA Control</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Desc</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Events</th></tr></thead>
             <tbody>
               {HIPAA_CONTROLS.map((c, i) => {
-                const r = data?.topRules?.find(t => t.control === c.req)
-                const count = r?.count || 0
+                const ev = getControlEvents(c.req)
                 return (
                   <tr key={c.req} onClick={() => openModal('ctrl-' + c.req)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-semibold">{c.req}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">{c.desc}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{count}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{ev}</td>
                   </tr>
                 )
               })}
@@ -353,11 +545,11 @@ export default function HipaaTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Agent</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Events</th></tr></thead>
             <tbody>
-              {(data?.topAgents || []).slice(0, 5).map((a, i) => {
+              {(hasActiveFilter && chartData ? chartData.topAgents : data?.topAgents || []).slice(0, 5).map((a, i) => {
                 const agentName = a.key || a.agent || 'Unknown'
                 return (
                   <tr key={a.key || i} onClick={() => setFilter('agent', agentName)}
-                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${filters.agent === agentName ? 'bg-[#58a6ff]/5 ring-1 ring-inset ring-[#58a6ff]/30' : ''}`}>
+                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${filters.agent?.includes(agentName) ? 'bg-[#58a6ff]/5 ring-1 ring-inset ring-[#58a6ff]/30' : ''}`}>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{agentName}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
@@ -383,11 +575,11 @@ export default function HipaaTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Rule ID</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Description</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#30363d]">Fired</th></tr></thead>
             <tbody>
-              {(data?.topRules || []).slice(0, 5).map((r, i) => {
+              {(hasActiveFilter && chartData ? chartData.topRules : data?.topRules || []).slice(0, 5).map((r, i) => {
                 const ruleId = r.ruleId || r.key || r.id || ''
                 return (
                   <tr key={r.ruleId || i} onClick={() => setFilter('rule', ruleId)}
-                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${filters.rule === ruleId ? 'bg-[#e8681a]/5 ring-1 ring-inset ring-[#e8681a]/30' : ''}`}>
+                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${filters.rule?.includes(ruleId) ? 'bg-[#e8681a]/5 ring-1 ring-inset ring-[#e8681a]/30' : ''}`}>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-bold">{ruleId || '--'}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">{(r.description || 'Event').substring(0, 30)}</td>
@@ -404,6 +596,12 @@ export default function HipaaTab() {
 
       {/* Event Logs */}
       <div className="mb-3">
+        {data?.recentTotal > 500 && (
+          <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-[#ddf4ff] dark:bg-[#0c2d6b] border border-[#54aeff66] dark:border-[#1f6feb66] text-[11px] text-[#0969da] dark:text-[#58a6ff]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span><strong>{data.recentTotal.toLocaleString()}</strong> events found. Select a narrower time range for detailed log views.</span>
+          </div>
+        )}
         <div className="flex items-center justify-between mb-2.5">
           <div className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">HIPAA Event Logs</div>
           <div className="flex items-center gap-1.5">
@@ -422,8 +620,8 @@ export default function HipaaTab() {
         <table className="w-full text-[10px] border-collapse table-fixed">
           <colgroup>
             <col style={{ width: '110px' }} /><col style={{ width: '100px' }} /><col style={{ width: '55px' }} />
-            <col style={{ width: '80px' }} /><col style={{ width: '150px' }} /><col style={{ width: '88px' }} />
-            <col style={{ width: '110px' }} /><col style={{ width: '158px' }} /><col style={{ width: '160px' }} />
+            <col style={{ width: '130px' }} /><col style={{ width: '145px' }} /><col style={{ width: '88px' }} />
+            <col style={{ width: '110px' }} /><col style={{ width: '145px' }} />
           </colgroup>
           <thead>
             <tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide bg-[#f0f2f4] dark:bg-[#21262d]">
@@ -434,7 +632,6 @@ export default function HipaaTab() {
               <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">Description</th>
               <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">Severity</th>
               <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">Event</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">File / Resource</th>
               <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#30363d]">Groups</th>
             </tr>
           </thead>
@@ -454,29 +651,69 @@ export default function HipaaTab() {
                       </span>
                     </td>
                     <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
-                      <button onClick={(e) => { e.stopPropagation(); setFilter('agent', l.agent) }}
-                        className={`font-semibold text-left hover:underline ${filters.agent === l.agent ? 'text-[#58a6ff]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
+                      <InlineFilter field="agent" value={l.agent}
+                        onInclude={() => setInclude('agent', l.agent)}
+                        onExclude={() => setExclude('agent', l.agent)}
+                        isIncluded={filters.agent?.includes(l.agent)}
+                        isExcluded={excludes.agent?.includes(l.agent)}
+                        className={`font-semibold text-left ${filters.agent?.includes(l.agent) ? 'text-[#58a6ff]' : excludes.agent?.includes(l.agent) ? 'text-[#f85149]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
                         {l.agent}
-                      </button>
+                      </InlineFilter>
                     </td>
                     <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
-                      <button onClick={(e) => { e.stopPropagation(); setFilter('rule', l.rule) }}
-                        className={`font-bold text-left hover:underline ${filters.rule === l.rule ? 'text-[#e8681a] underline' : 'text-[#e8681a]'}`}>
+                      <InlineFilter field="rule" value={l.rule}
+                        onInclude={() => setInclude('rule', l.rule)}
+                        onExclude={() => setExclude('rule', l.rule)}
+                        isIncluded={filters.rule?.includes(l.rule)}
+                        isExcluded={excludes.rule?.includes(l.rule)}
+                        className={`font-bold text-left ${filters.rule?.includes(l.rule) ? 'text-[#e8681a] underline' : excludes.rule?.includes(l.rule) ? 'text-[#f85149]' : 'text-[#e8681a]'}`}>
                         {l.rule}
-                      </button>
+                      </InlineFilter>
                     </td>
                     <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#e8681a]">{l.ctrl}</td>
-                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9] overflow-hidden text-ellipsis whitespace-nowrap">{l.desc}</td>
                     <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
-                      <button onClick={(e) => { e.stopPropagation(); setFilter('severity', l.sev) }}><SevBadge s={l.sev} /></button>
+                      <InlineFilter field="desc" value={l.desc}
+                        onInclude={() => setInclude('desc', l.desc)}
+                        onExclude={() => setExclude('desc', l.desc)}
+                        isIncluded={filters.desc?.includes(l.desc)}
+                        isExcluded={excludes.desc?.includes(l.desc)}
+                        className={`text-left ${filters.desc?.includes(l.desc) ? 'text-[#58a6ff]' : excludes.desc?.includes(l.desc) ? 'text-[#f85149]' : 'text-[#36454f] dark:text-[#c9d1d9]'}`}>
+                        {l.desc}
+                      </InlineFilter>
                     </td>
-                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-medium">{l.event}</td>
-                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e] text-[9px] overflow-hidden text-ellipsis whitespace-nowrap">{l.file}</td>
-                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] text-[9px] font-medium overflow-hidden text-ellipsis whitespace-nowrap">{l.groups}</td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <InlineFilter field="severity" value={l.sev}
+                        onInclude={() => setInclude('severity', l.sev)}
+                        onExclude={() => setExclude('severity', l.sev)}
+                        isIncluded={filters.severity?.includes(l.sev)}
+                        isExcluded={excludes.severity?.includes(l.sev)}>
+                        <SevBadge s={l.sev} />
+                      </InlineFilter>
+                    </td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <InlineFilter field="event" value={l.event}
+                        onInclude={() => setInclude('event', l.event)}
+                        onExclude={() => setExclude('event', l.event)}
+                        isIncluded={filters.event?.includes(l.event)}
+                        isExcluded={excludes.event?.includes(l.event)}
+                        className={`text-left font-medium ${filters.event?.includes(l.event) ? 'text-[#58a6ff]' : excludes.event?.includes(l.event) ? 'text-[#f85149]' : 'text-[#e8681a]'}`}>
+                        {l.event}
+                      </InlineFilter>
+                    </td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <InlineFilter field="groups" value={l.groups}
+                        onInclude={() => setInclude('groups', l.groups)}
+                        onExclude={() => setExclude('groups', l.groups)}
+                        isIncluded={filters.groups?.includes(l.groups)}
+                        isExcluded={excludes.groups?.includes(l.groups)}
+                        className={`text-left font-medium ${filters.groups?.includes(l.groups) ? 'text-[#58a6ff]' : excludes.groups?.includes(l.groups) ? 'text-[#f85149]' : 'text-[#e8681a] text-[9px]'}`}>
+                        {l.groups}
+                      </InlineFilter>
+                    </td>
                   </tr>
                   {isExp && l.raw && (
                     <tr>
-                      <td colSpan={9} className="p-0 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <td colSpan={8} className="p-0 border-b border-[#f0f2f4] dark:border-[#21262d]">
                         <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} transition={{ duration: 0.15 }}>
                           <div className="bg-[#f6f8fa] dark:bg-[#0d1117] border-t border-[#d0d7de] dark:border-[#30363d]">
                             <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#d0d7de] dark:border-[#30363d]">
@@ -517,13 +754,11 @@ export default function HipaaTab() {
               )
             })}
             {filteredLogs.length === 0 && (
-              <tr><td colSpan={9} className="text-center py-4 text-xs text-[#8b949e]">No matching logs found</td></tr>
+              <tr><td colSpan={8} className="text-center py-4 text-xs text-[#8b949e]">No matching logs found</td></tr>
             )}
           </tbody>
         </table>
         <div className="flex items-center justify-between mt-2.5 flex-wrap gap-2">
-          <div className="text-[#e8681a] text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
-            onClick={() => openModal('all-logs')}>View all logs <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
           <div className="flex items-center gap-1 text-[11px] text-[#8b949e]">
             <span className="mr-1">{(logPage - 1) * LOG_PAGE_SIZE + 1}-{Math.min(logPage * LOG_PAGE_SIZE, filteredLogs.length)} of {filteredLogs.length}</span>
             <button onClick={() => setLogPage(p => Math.max(1, p - 1))} disabled={logPage === 1}
@@ -551,12 +786,39 @@ export default function HipaaTab() {
 
       <div className="text-center text-[10px] text-[#8b949e] py-3 border-t border-[#d0d7de] dark:border-[#30363d]">&copy; 2025 UniShield 360. All rights reserved.</div>
 
-      <AssetSidebar
-        open={assetSidebarOpen}
-        onClose={() => setAssetSidebarOpen(false)}
-        onSelectAgent={(name) => setFilter('agent', name)}
-        agents={data?.topAgents || []}
-        title="Monitored Assets"
+      <DetailSidebar
+        open={sidebar === 'agents'}
+        onClose={() => setSidebar(null)}
+        onSelectItem={(name) => setInclude('agent', name)}
+        items={hasActiveFilter && chartData ? chartData.topAgents : data?.topAgents || []}
+        title="All Agents"
+        icon="agent"
+        itemLabel="agents"
+        accentColor="#58a6ff"
+      />
+      <DetailSidebar
+        open={sidebar === 'controls'}
+        onClose={() => setSidebar(null)}
+        onSelectItem={(name) => setInclude('control', name)}
+        items={HIPAA_CONTROLS.map(c => {
+          const ev = controlEvents[c.req] || 0
+          return { key: c.req, description: c.desc, doc_count: ev }
+        })}
+        title="All Controls"
+        icon="control"
+        itemLabel="controls"
+        accentColor="#e8681a"
+        labelKey="key"
+      />
+      <DetailSidebar
+        open={sidebar === 'rules'}
+        onClose={() => setSidebar(null)}
+        onSelectItem={(name) => setInclude('rule', name)}
+        items={hasActiveFilter && chartData ? chartData.topRules : data?.topRules || []}
+        title="All Rule IDs"
+        icon="rule"
+        itemLabel="rules"
+        accentColor="#d29922"
       />
       {modalContent()}
     </motion.div>

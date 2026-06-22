@@ -26,6 +26,7 @@ function transform(d) {
     topAgents: (d.topAgents || []).slice(0, 8),
     timeline: (d.timeline || []).map(b => ({
       time: new Date(b.time || b.key).toLocaleDateString([], { month: 'short', day: 'numeric' }),
+      rawTime: b.time || b.key,
       count: b.count || b.doc_count || 0
     })),
     categories: (d.categories || []).slice(0, 8),

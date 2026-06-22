@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
-import jsPDF from 'jspdf'
-import 'jspdf-autotable'
+import { jsPDF } from 'jspdf'
+import { autoTable } from 'jspdf-autotable'
 
 function getValue(obj, accessor) {
   if (typeof accessor === 'function') return accessor(obj)
@@ -29,36 +29,20 @@ export function exportExcel(logs, columns, filename = 'export.xlsx') {
   XLSX.writeFile(wb, filename)
 }
 
-function sectionHeader(doc, y, label) {
-  doc.setFillColor(232, 104, 26)
-  doc.rect(4, y, 2, 6, 'F')
-  doc.setFontSize(11)
-  doc.setTextColor(30, 30, 30)
-  doc.setFont('helvetica', 'bold')
-  doc.text(label, 10, y + 5)
-  return y + 9
-}
-
-function metricBox(doc, x, y, w, h, label, value, color) {
-  doc.setFillColor(248, 249, 250)
-  doc.setDrawColor(222, 226, 230)
-  doc.roundedRect(x, y, w, h, 2, 2, 'FD')
-  doc.setFontSize(9)
-  doc.setTextColor(100, 100, 100)
-  doc.setFont('helvetica', 'normal')
-  doc.text(label, x + 4, y + 7)
-  doc.setFontSize(16)
-  doc.setTextColor(color || 232, 104, 26)
-  doc.setFont('helvetica', 'bold')
-  doc.text(String(value), x + 4, y + 20)
-}
-
 function severityColor(level) {
   if (level === 'Critical') return [248, 81, 73]
   if (level === 'High') return [232, 104, 26]
   if (level === 'Medium') return [210, 153, 34]
   if (level === 'Low') return [63, 185, 80]
   return [100, 100, 100]
+}
+
+function severityBg(level) {
+  if (level === 'Critical') return [255, 235, 235]
+  if (level === 'High') return [255, 242, 230]
+  if (level === 'Medium') return [255, 248, 225]
+  if (level === 'Low') return [230, 250, 235]
+  return [245, 245, 245]
 }
 
 export function exportPDFReport({
@@ -76,250 +60,262 @@ export function exportPDFReport({
   logHeaders = [],
   logRows = [],
 }) {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-  const pageW = doc.internal.pageSize.getWidth()
-  const pageH = doc.internal.pageSize.getHeight()
-  const margin = 14
-  const contentW = pageW - margin * 2
-  const orange = [232, 104, 26]
-  const dark = [30, 30, 30]
-  const gray = [100, 100, 100]
-  const lightGray = [200, 200, 200]
-  let y = margin
+  try {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const pageW = doc.internal.pageSize.getWidth()
+    const pageH = doc.internal.pageSize.getHeight()
+    const m = 14
+    const cw = pageW - m * 2
+    const orange = [232, 104, 26]
+    const dark = [31, 35, 40]
+    const gray = [108, 117, 125]
+    const border = [208, 215, 222]
+    let y = m
 
-  function checkPage(needed) {
-    if (y + needed > pageH - margin) {
-      doc.addPage()
-      y = margin
+    function checkPage(needed) {
+      if (y + needed > pageH - m) {
+        doc.addPage()
+        y = m
+      }
     }
-  }
 
-  // Header
-  doc.setFillColor(...orange)
-  doc.rect(0, 0, pageW, 16, 'F')
-  doc.setFontSize(13)
-  doc.setTextColor(255, 255, 255)
-  doc.setFont('helvetica', 'bold')
-  doc.text(title, margin, 11)
-  doc.setFontSize(7)
-  doc.setFont('helvetica', 'normal')
-  doc.text(`${dateRange} | ${new Date().toLocaleString()}`, pageW - margin, 11, { align: 'right' })
-  y = 24
-
-  // Metrics row
-  if (metrics.length > 0) {
-    const cols = Math.min(metrics.length, 4)
-    const boxW = (contentW - (cols - 1) * 4) / cols
-    metrics.slice(0, cols).forEach((m, i) => {
-      const cx = margin + i * (boxW + 4)
-      metricBox(doc, cx, y, boxW, 26, m.label, m.value, orange)
-    })
-    y += 34
-  }
-
-  const colW = (contentW - 4) / 2
-
-  // Severity table
-  if (severity.length > 0) {
-    checkPage(50)
-    y = sectionHeader(doc, y, 'Severity Distribution')
-    severity.forEach((s, i) => {
-      const c = severityColor(s.level)
-      checkPage(8)
-      const barW = (s.count / Math.max(...severity.map(x => x.count))) * 80
-      doc.setFillColor(245, 245, 245)
-      doc.rect(margin, y, 80, 5, 'F')
-      doc.setFillColor(...c)
-      doc.rect(margin, y, Math.max(barW, 2), 5, 'F')
-      doc.setFontSize(8)
+    function sectionLabel(label) {
+      checkPage(14)
+      doc.setFillColor(245, 247, 249)
+      doc.roundedRect(m, y, cw, 8, 2, 2, 'F')
+      doc.setFillColor(...orange)
+      doc.rect(m, y, 3, 8, 'F')
+      doc.setFontSize(10)
       doc.setTextColor(...dark)
       doc.setFont('helvetica', 'bold')
-      doc.text(s.level, margin + 84, y + 4)
-      doc.setFont('helvetica', 'normal')
-      doc.setTextColor(...gray)
-      doc.text(String(s.count), margin + 84 + doc.getTextWidth(s.level) + 4, y + 4)
-      y += 8
-    })
-    y += 4
-  }
+      doc.text(label, m + 7, y + 5.5)
+      y += 14
+    }
 
-  // Two-column tables
-  function renderTable(x, w, label, items, keyLabel, countLabel, maxCount) {
-    checkPage(items.length * 7 + 20)
-    doc.setFontSize(9)
+    // ── Branded Header ──
+    doc.setFillColor(...orange)
+    doc.rect(0, 0, pageW, 20, 'F')
+    doc.setFontSize(14)
+    doc.setTextColor(255, 255, 255)
+    doc.setFont('helvetica', 'bold')
+    doc.text('UniShield360', m, 13)
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'normal')
+    doc.text('Security Operations Center', m + 35, 13, { align: 'left' })
+    doc.setFontSize(7)
+    doc.text(new Date().toLocaleString(), pageW - m, 13, { align: 'right' })
+
+    // ── Report title block ──
+    y = 30
+    checkPage(30)
+    doc.setFontSize(18)
     doc.setTextColor(...dark)
     doc.setFont('helvetica', 'bold')
-    doc.text(label, x, y)
-    y += 5
-    items.forEach((item, i) => {
-      checkPage(7)
-      const name = item.key || item.name || item.id || '--'
-      const cnt = item.count || item.doc_count || 0
-      const pct = maxCount > 0 ? (cnt / maxCount) * 50 : 0
-      doc.setFillColor(245, 245, 245)
-      doc.rect(x, y, 50, 4, 'F')
-      doc.setFillColor(...orange)
-      doc.rect(x, y, Math.max(pct, 1), 4, 'F')
-      doc.setFontSize(7)
-      doc.setTextColor(...dark)
-      doc.setFont('helvetica', 'bold')
-      doc.text(`${i + 1}. ${name}`, x + 54, y + 3)
-      doc.setTextColor(...orange)
-      doc.setFont('helvetica', 'bold')
-      doc.text(String(cnt), x + w - 4, y + 3, { align: 'right' })
-      y += 6
-    })
-    y += 2
-  }
-
-  let maxRule = Math.max(...(topRules.map(r => r.count || r.doc_count || 0)), 1)
-  let maxAgent = Math.max(...(topAgents.map(a => a.count || a.doc_count || 0)), 1)
-  let maxArticle = Math.max(...(topArticles.map(a => a.count || a.doc_count || 0)), 1)
-
-  if (topRules.length > 0 || topAgents.length > 0) {
-    checkPage(40)
-    const leftX = margin
-    const rightX = margin + colW + 4
-    y += 0
-    const saveY = y
-    let y1 = y, y2 = y
-
-    if (topRules.length > 0) {
-      const rulesLabel = 'Top Rules'
-      const rulesStartY = y1
-      doc.setFontSize(9)
-      doc.setTextColor(...dark)
-      doc.setFont('helvetica', 'bold')
-      doc.text(rulesLabel, leftX, y1)
-      y1 += 5
-      topRules.slice(0, 8).forEach((r, i) => {
-        const cnt = r.count || r.doc_count || 0
-        const pct = (cnt / maxRule) * 50
-        doc.setFillColor(245, 245, 245)
-        doc.rect(leftX, y1, 50, 4, 'F')
-        doc.setFillColor(...orange)
-        doc.rect(leftX, y1, Math.max(pct, 1), 4, 'F')
-        doc.setFontSize(7)
-        doc.setTextColor(...dark)
-        doc.setFont('helvetica', 'bold')
-        doc.text(`${i + 1}. ${r.key || r.id || '--'}`, leftX + 54, y1 + 3)
-        doc.setTextColor(...orange)
-        doc.setFont('helvetica', 'bold')
-        doc.text(String(cnt), leftX + colW - 4, y1 + 3, { align: 'right' })
-        y1 += 6
-      })
-      y1 += 2
-    }
-
-    if (topAgents.length > 0) {
-      const agentsLabel = 'Top Agents'
-      doc.setFontSize(9)
-      doc.setTextColor(...dark)
-      doc.setFont('helvetica', 'bold')
-      doc.text(agentsLabel, rightX, y2)
-      y2 += 5
-      topAgents.slice(0, 8).forEach((a, i) => {
-        const cnt = a.count || a.doc_count || 0
-        const pct = (cnt / maxAgent) * 50
-        doc.setFillColor(245, 245, 245)
-        doc.rect(rightX, y2, 50, 4, 'F')
-        doc.setFillColor(...orange)
-        doc.rect(rightX, y2, Math.max(pct, 1), 4, 'F')
-        doc.setFontSize(7)
-        doc.setTextColor(...dark)
-        doc.setFont('helvetica', 'bold')
-        doc.text(`${i + 1}. ${a.key || a.name || '--'}`, rightX + 54, y2 + 3)
-        doc.setTextColor(...orange)
-        doc.setFont('helvetica', 'bold')
-        doc.text(String(cnt), rightX + colW - 4, y2 + 3, { align: 'right' })
-        y2 += 6
-      })
-      y2 += 2
-    }
-    y = Math.max(y1, y2)
-  }
-
-  // Top Articles
-  if (topArticles.length > 0) {
-    checkPage(topArticles.length * 7 + 20)
-    y = sectionHeader(doc, y, 'Top Articles / Controls')
-    topArticles.slice(0, 10).forEach((a, i) => {
-      checkPage(7)
-      const name = a.key || a.code || a.article || '--'
-      const cnt = a.count || a.doc_count || 0
-      const pct = maxArticle > 0 ? (cnt / maxArticle) * 50 : 0
-      doc.setFillColor(245, 245, 245)
-      doc.rect(margin, y, 50, 4, 'F')
-      doc.setFillColor(...orange)
-      doc.rect(margin, y, Math.max(pct, 1), 4, 'F')
-      doc.setFontSize(7)
-      doc.setTextColor(...dark)
-      doc.setFont('helvetica', 'bold')
-      doc.text(`${i + 1}. ${name}`, margin + 54, y + 3)
-      doc.setTextColor(...orange)
-      doc.setFont('helvetica', 'bold')
-      doc.text(String(cnt), margin + contentW - 4, y + 3, { align: 'right' })
-      y += 6
-    })
+    doc.text(title, m, y)
+    y += 6
+    doc.setFontSize(8)
+    doc.setTextColor(...gray)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`Time Range: ${dateRange}`, m, y)
     y += 4
-  }
+    doc.text(`Generated: ${new Date().toLocaleString()}`, m, y)
+    y += 4
+    const totalEvents = severity.reduce((s, sev) => s + (sev.count || 0), 0)
+    doc.text(`Total Events: ${totalEvents.toLocaleString()}`, m, y)
+    y += 10
 
-  // Framework Distribution
-  if (frameworkCounts.length > 0) {
-    checkPage(frameworkCounts.length * 7 + 20)
-    y = sectionHeader(doc, y, 'Framework Distribution')
-    const maxFw = Math.max(...frameworkCounts.map(f => f.count || f.doc_count || 0), 1)
-    frameworkCounts.forEach((fw, i) => {
-      checkPage(7)
-      const cnt = fw.count || fw.doc_count || 0
-      const pct = (cnt / maxFw) * 80
-      doc.setFillColor(245, 245, 245)
-      doc.rect(margin, y, 80, 5, 'F')
-      doc.setFillColor(163, 113, 247)
-      doc.rect(margin, y, Math.max(pct, 1), 5, 'F')
-      doc.setFontSize(8)
-      doc.setTextColor(...dark)
-      doc.setFont('helvetica', 'bold')
-      doc.text(fw.framework || fw.key || '--', margin + 84, y + 4)
+    // ── Summary Metrics ──
+    if (metrics.length > 0) {
+      sectionLabel('Executive Summary')
+      const cols = Math.min(metrics.length, 4)
+      const gap = 3
+      const boxW = (cw - (cols - 1) * gap) / cols
+      metrics.slice(0, cols).forEach((mtr, i) => {
+        const cardH = 22
+        checkPage(cardH + 4)
+        const cx = m + i * (boxW + gap)
+        doc.setFillColor(255, 255, 255)
+        doc.setDrawColor(...border)
+        doc.roundedRect(cx, y, boxW, cardH, 3, 3, 'FD')
+        doc.setFontSize(7)
+        doc.setTextColor(...gray)
+        doc.setFont('helvetica', 'normal')
+        doc.text(mtr.label.toUpperCase(), cx + 4, y + 7)
+        doc.setFontSize(16)
+        doc.setTextColor(...orange)
+        doc.setFont('helvetica', 'bold')
+        doc.text(String(mtr.value), cx + 4, y + 18)
+      })
+      y += 28
+    }
+
+    // ── Timeline ──
+    if (timeline.length > 0) {
+      sectionLabel('Events Timeline')
+      checkPage(40)
+      const maxCnt = Math.max(...timeline.map(t => t.count || 0), 1)
+      const visCount = Math.min(timeline.length, 48)
+      const segW = cw / visCount
+      doc.setDrawColor(...border)
+      timeline.slice(0, visCount).forEach((t, i) => {
+        const ratio = (t.count || 0) / maxCnt
+        const bw = Math.max(segW - 0.5, 1)
+        const bh = Math.max(ratio * 25, 1)
+        doc.setFillColor(...orange)
+        doc.rect(m + i * segW, y + 25 - bh, bw, bh, 'F')
+      })
+      doc.setFontSize(6)
       doc.setTextColor(...gray)
       doc.setFont('helvetica', 'normal')
-      doc.text(String(cnt), margin + contentW - 4, y + 4, { align: 'right' })
-      y += 8
-    })
-    y += 4
-  }
+      const step = Math.max(1, Math.floor(visCount / 6))
+      for (let i = 0; i < visCount; i += step) {
+        doc.text(String(timeline[i]?.count || ''), m + i * segW, y + 27)
+      }
+      y += 32
+    }
 
-  // Event Logs Table
-  if (logHeaders.length > 0 && logRows.length > 0) {
-    checkPage(30)
-    y = sectionHeader(doc, Math.max(y, 30), 'Event Logs')
-    y += 2
-    const tableStartY = y + 2
-    doc.autoTable({
-      head: [logHeaders.map(h => h.charAt(0).toUpperCase() + h.slice(1))],
-      body: logRows.slice(0, 200),
-      startY: tableStartY,
-      styles: { fontSize: 6, cellPadding: 1.5, lineColor: [230, 230, 230], lineWidth: 0.3 },
-      headStyles: { fillColor: [232, 104, 26], fontSize: 6, textColor: [255, 255, 255], fontStyle: 'bold' },
-      bodyStyles: { textColor: [50, 50, 50] },
-      alternateRowStyles: { fillColor: [248, 249, 250] },
-      margin: { left: margin, right: margin },
-      tableWidth: contentW,
-      didDrawPage: (data) => {
-        if (data.pageCount > 1) {
-          doc.setFillColor(...orange)
-          doc.rect(0, 0, pageW, 16, 'F')
-          doc.setFontSize(9)
-          doc.setTextColor(255, 255, 255)
-          doc.setFont('helvetica', 'bold')
-          doc.text(`${title} (cont.)`, margin, 11)
-          doc.setFontSize(7)
-          doc.setFont('helvetica', 'normal')
-          doc.text(new Date().toLocaleString(), pageW - margin, 11, { align: 'right' })
-        }
-      },
-    })
-  }
+    // ── Severity Distribution ──
+    if (severity.length > 0) {
+      sectionLabel('Severity Distribution')
+      const maxSev = Math.max(...severity.map(s => s.count || 0), 1)
+      severity.forEach((s) => {
+        checkPage(10)
+        const c = severityColor(s.level)
+        const bg = severityBg(s.level)
+        const barW = ((s.count || 0) / maxSev) * (cw - 100)
+        doc.setFillColor(...bg)
+        doc.roundedRect(m, y, cw - 24, 7, 2, 2, 'F')
+        doc.setFillColor(...c)
+        doc.roundedRect(m, y, Math.max(barW, 2), 7, 2, 2, 'F')
+        doc.setFontSize(8)
+        doc.setTextColor(...c)
+        doc.setFont('helvetica', 'bold')
+        doc.text(s.level, m + cw - 22, y + 5)
+        doc.setFontSize(7)
+        doc.setTextColor(...gray)
+        doc.text(String(s.count || 0), m + cw - 22 + doc.getTextWidth(s.level) + 2, y + 5)
+        y += 10
+      })
+      y += 2
+    }
 
-  doc.save(filename)
+    // ── Top Rules ──
+    const halfW = (cw - 4) / 2
+    if (topRules.length > 0) {
+      sectionLabel('Top Rules')
+      const maxR = Math.max(...(topRules.map(r => r.count || r.doc_count || 0)), 1)
+      topRules.slice(0, 8).forEach((r, i) => {
+        checkPage(7)
+        const cnt = r.count || r.doc_count || 0
+        const pct = (cnt / maxR) * (halfW - 10)
+        doc.setFillColor(245, 245, 245)
+        doc.roundedRect(m, y, halfW - 10, 4, 1.5, 1.5, 'F')
+        doc.setFillColor(...orange)
+        doc.roundedRect(m, y, Math.max(pct, 1), 4, 1.5, 1.5, 'F')
+        doc.setFontSize(6.5)
+        doc.setTextColor(...dark)
+        doc.setFont('helvetica', 'bold')
+        const rLabel = `${i + 1}. ${r.key || r.ruleId || r.id || '--'}`
+        doc.text(rLabel, m + halfW - 8, y + 3)
+        doc.setTextColor(...orange)
+        doc.setFont('helvetica', 'bold')
+        doc.text(String(cnt), m + halfW - 8 + doc.getTextWidth(rLabel) + 2, y + 3)
+        y += 6
+      })
+      y += 4
+    }
+
+    // ── Top Agents ──
+    if (topAgents.length > 0) {
+      sectionLabel('Top Agents')
+      const maxA = Math.max(...(topAgents.map(a => a.count || a.doc_count || 0)), 1)
+      topAgents.slice(0, 8).forEach((a, i) => {
+        checkPage(7)
+        const cnt = a.count || a.doc_count || 0
+        const pct = (cnt / maxA) * (halfW - 10)
+        doc.setFillColor(245, 245, 245)
+        doc.roundedRect(m, y, halfW - 10, 4, 1.5, 1.5, 'F')
+        doc.setFillColor(...orange)
+        doc.roundedRect(m, y, Math.max(pct, 1), 4, 1.5, 1.5, 'F')
+        doc.setFontSize(6.5)
+        doc.setTextColor(...dark)
+        doc.setFont('helvetica', 'bold')
+        const aLabel = `${i + 1}. ${a.key || a.agent || a.name || '--'}`
+        doc.text(aLabel, m + halfW - 8, y + 3)
+        doc.setTextColor(...orange)
+        doc.setFont('helvetica', 'bold')
+        doc.text(String(cnt), m + halfW - 8 + doc.getTextWidth(aLabel) + 2, y + 3)
+        y += 6
+      })
+      y += 4
+    }
+
+    // ── Top Articles / Controls ──
+    if (topArticles.length > 0) {
+      sectionLabel('Top Articles / Controls')
+      const maxArt = Math.max(...(topArticles.map(a => a.count || a.doc_count || 0)), 1)
+      topArticles.slice(0, 10).forEach((a, i) => {
+        checkPage(7)
+        const cnt = a.count || a.doc_count || 0
+        const pct = (cnt / maxArt) * (cw - 60)
+        doc.setFillColor(245, 245, 245)
+        doc.roundedRect(m, y, cw - 60, 4, 1.5, 1.5, 'F')
+        doc.setFillColor(...orange)
+        doc.roundedRect(m, y, Math.max(pct, 1), 4, 1.5, 1.5, 'F')
+        doc.setFontSize(6.5)
+        doc.setTextColor(...dark)
+        doc.setFont('helvetica', 'bold')
+        const artLabel = `${i + 1}. ${a.key || a.code || a.article || '--'}`
+        doc.text(artLabel, m + cw - 58, y + 3)
+        doc.setTextColor(...orange)
+        doc.setFont('helvetica', 'bold')
+        doc.text(String(cnt), m + cw - 58 + doc.getTextWidth(artLabel) + 2, y + 3)
+        y += 6
+      })
+      y += 4
+    }
+
+    // ── Event Logs Table ──
+    if (logHeaders.length > 0 && logRows.length > 0) {
+      checkPage(30)
+      sectionLabel('Event Log Details')
+      y += 1
+      autoTable(doc, {
+        head: [logHeaders.map(h => h.charAt(0).toUpperCase() + h.slice(1))],
+        body: logRows.slice(0, 200),
+        startY: y + 1,
+        styles: { fontSize: 6, cellPadding: 1.2, lineColor: [220, 220, 225], lineWidth: 0.2 },
+        headStyles: { fillColor: [232, 104, 26], fontSize: 6.5, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'left' },
+        bodyStyles: { textColor: [50, 50, 50] },
+        alternateRowStyles: { fillColor: [248, 249, 250] },
+        margin: { left: m, right: m },
+        tableWidth: cw,
+        didDrawPage: (data) => {
+          if (data.pageCount > 1) {
+            doc.setFillColor(...orange)
+            doc.rect(0, 0, pageW, 14, 'F')
+            doc.setFontSize(8)
+            doc.setTextColor(255, 255, 255)
+            doc.setFont('helvetica', 'bold')
+            doc.text('UniShield360 — Event Log Details (cont.)', m, 9.5)
+            doc.setFontSize(6)
+            doc.setFont('helvetica', 'normal')
+            doc.text(new Date().toLocaleString(), pageW - m, 9.5, { align: 'right' })
+          }
+        },
+      })
+    }
+
+    // ── Footer on each page ──
+    const pageCount = doc.internal.getNumberOfPages()
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i)
+      doc.setFontSize(5.5)
+      doc.setTextColor(...gray)
+      doc.setFont('helvetica', 'normal')
+      doc.text(`UniShield360 SOC Dashboard | Page ${i}`, pageW / 2, pageH - 5, { align: 'center' })
+    }
+
+    doc.save(filename)
+  } catch (e) { console.error('PDF error:', e); alert('PDF failed: ' + e.message) }
 }

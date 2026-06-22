@@ -386,7 +386,7 @@ app.get('/api/compliance', async (req, res) => {
       })
     ) : [];
 
-    const rawRecent = (recent.data?.results || []).slice(0, 20);
+    const rawRecent = recent.data?.results || [];
     const recentDocs = rawRecent.map(doc => ({
       ...doc,
       _frameworks: classifyDocFrameworks(doc)
@@ -395,7 +395,8 @@ app.get('/api/compliance', async (req, res) => {
 
     const count24val = count24.data.count || 0;
     const count7dval = count7d.data.count || 0;
-    console.log(`[compliance] framework=${framework || 'all'} count24=${count24val} count7d=${count7dval} recent=${filteredRecent.length} totalRecent=${recentDocs.length}`);
+    const recentActualTotal = recent.data?.total?.value || rawRecent.length;
+    console.log(`[compliance] framework=${framework || 'all'} count24=${count24val} count7d=${count7dval} recent=${filteredRecent.length} totalRecent=${recentDocs.length} actualTotal=${recentActualTotal}`);
 
     const body = {
       count24: count24val,
@@ -417,7 +418,7 @@ app.get('/api/compliance', async (req, res) => {
         count: b.doc_count || 0
       })),
       recent: filteredRecent,
-      recentTotal: filteredRecent.length
+      recentTotal: recentActualTotal
     };
 
     complianceCache.set(cacheKey, { data: body, ts: Date.now() });
