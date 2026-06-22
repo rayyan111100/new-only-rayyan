@@ -1,0 +1,149 @@
+╔══════════════════════════════════════════════════════════════════╗
+║    UniShield360 vs Wazuh — Feature Gap Analysis & Action Plan   ║
+╚══════════════════════════════════════════════════════════════════╝
+
+═══════════════════════════════════════════════════════════════════
+                    AUDIT METHODOLOGY
+═══════════════════════════════════════════════════════════════════
+  Compared: 25 registered tabs, 11 sidebar sections, 74 components,
+            30+ API endpoints, 24 chart types
+  Against:  Wazuh 4.x standard dashboard modules
+
+═══════════════════════════════════════════════════════════════════
+        1. PRESENT IN UniShield360 (Already Covered)
+═══════════════════════════════════════════════════════════════════
+
+  Feature                  | Status        | Location
+  ─────────────────────────┼───────────────┼────────────────────────
+  Security Events Overview | ✅ Complete   | Security Hub tab
+  Alert Timeline           | ✅ Complete   | Security Hub / Dashboard
+  Alert Severity Breakdown | ✅ Complete   | Security Hub / Dashboard
+  Top Rules & Agents       | ✅ Complete   | Security Hub / Dashboard
+  Windows Events           | ✅ Complete   | Windows Event tab (16 widgets)
+  Compliance Overview      | ✅ Complete   | Compliance tab (5 frameworks)
+  PCI-DSS Dashboard        | ✅ Complete   | PCI-DSS tab
+  HIPAA Dashboard          | ✅ Complete   | HIPAA tab
+  GDPR Dashboard           | ✅ Complete   | GDPR tab (3 sub-tabs)
+  Vulnerability Overview   | ✅ Complete   | Vulnerability tab (4 sub-tabs)
+  Rule Management          | ✅ Complete   | Rules tab + Create Rule + Groups
+  Rule Guide               | ✅ Complete   | Rule Guide tab (50+ templates)
+  Rule Testing             | ✅ Complete   | Test Lab / RuleTestTool
+  Rule Evaluation View     | ✅ Complete   | Rule View tab
+  Rule Groups Management   | ✅ Complete   | Group Rules tab (drag-drop)
+  Decoder / Log Parse      | ✅ Complete   | Decoder tab
+  API Console              | ✅ Complete   | API Console (interactive)
+  API Guide                | ✅ Complete   | API Guide (48 endpoints)
+  Health Monitoring        | ✅ Complete   | Health tab
+  Index Management          | ✅ Complete   | Indices tab
+  Geo Location             | ✅ Complete   | Geo tab
+  Visualization Builder    | ✅ Complete   | VizBuilder (9 chart types)
+  Visualization Manager    | ✅ Complete   | VizManager (grid/list/paginate)
+  Dashboard Management     | ✅ Complete   | Dashboard (CRUD + grid)
+  Real-Time Alerts         | ✅ Complete   | WebSocket + SSE + REST
+  Inspect Panel            | ✅ Complete   | Inspect (Request/Response/Timings)
+  Share & Export           | ✅ Complete   | Share (link/PNG/PDF/CSV/JSON)
+  Report Creator           | ✅ Complete   | Report (schedule/email/PDF)
+
+═══════════════════════════════════════════════════════════════════
+        2. MISSING FROM UniShield360 (Needs Implementation)
+═══════════════════════════════════════════════════════════════════
+
+  ┌───────┬─────────────────────────────────┬──────────────────────┐
+  │ PRIOR │ FEATURE                         │ ACTION               │
+  ├───────┼─────────────────────────────────┼──────────────────────┤
+  │ P0    │ MITRE ATT&CK dedicated page     │ New page             │
+  │       │ (sidebar has entry but no tab)  │ Create MitreAttackTab│
+  ├───────┼─────────────────────────────────┼──────────────────────┤
+  │ P0    │ Dedicated Alerts page           │ New page             │
+  │       │ (components exist, not wired)   │ Create AlertsTab     │
+  ├───────┼─────────────────────────────────┼──────────────────────┤
+  │ P1    │ Agent-specific dashboard        │ New page             │
+  │       │ (Wazuh Agents module)           │ Create AgentsTab     │
+  ├───────┼─────────────────────────────────┼──────────────────────┤
+  │ P1    │ FIM Dashboard                   │ New page             │
+  │       │ (File Integrity Monitoring)     │ Create FimTab        │
+  ├───────┼─────────────────────────────────┼──────────────────────┤
+  │ P1    │ Cloud Monitoring dashboard      │ New page             │
+  │       │ (AWS/Azure/GCP)                 │ Create CloudTab      │
+  ├───────┼─────────────────────────────────┼──────────────────────┤
+  │ P1    │ Configuration Assessment        │ New page             │
+  │       │ (CIS benchmarks, SCA)           │ Create ScaTab        │
+  ├───────┼─────────────────────────────────┼──────────────────────┤
+  │ P2    │ Threat Hunting workspace        │ New page             │
+  │       │ (investigation flow)            │ Create ThreatHuntTab │
+  ├───────┼─────────────────────────────────┼──────────────────────┤
+  │ P2    │ Saved Viz → Dashboard flow      │ Add to VizBuilder    │
+  │       │ (add-to-dashboard button)       │ + DashboardPanel     │
+  ├───────┼─────────────────────────────────┼──────────────────────┤
+  │ P2    │ API Use Cases doc page          │ Add to ApiGuideTab   │
+  │       │ (real-world query examples)     │ or new page          │
+  ├───────┼─────────────────────────────────┼──────────────────────┤
+  │ P3    │ Rule/Decoder XML import/export  │ Enhance Rules tab    │
+  │       │ (batch operations)              │ Add bulk actions     │
+  ├───────┼─────────────────────────────────┼──────────────────────┤
+  │ P3    │ CDB Lists management            │ New page (low)       │
+  │       │ (Wazuh CDB lookup tables)       │ Create CdbTab        │
+  └───────┴─────────────────────────────────┴──────────────────────┘
+
+═══════════════════════════════════════════════════════════════════
+        3. NEEDS BETTER DOCUMENTATION
+═══════════════════════════════════════════════════════════════════
+
+  Feature                  | Issue                         | Fix
+  ─────────────────────────┼───────────────────────────────┼────────────────────
+  Query Syntax (Lucene)    | No written guide for          | Add to API Guide
+                           | complex queries                | section
+  Dashboard CRUD           | No user-facing docs for       | Add to Dashboard
+                           | save/load workflow             | tab header
+  Real-time WebSocket      | No documentation on re-       | Add note to
+                           | connect behavior               | visualization.txt
+  Aggregate endpoint params| No list of valid agg types    | Add to API Guide
+  Field reference          | No field descriptions          | Add to API Guide
+
+═══════════════════════════════════════════════════════════════════
+        4. NEEDS NEW BACKEND ENDPOINT
+═══════════════════════════════════════════════════════════════════
+
+  Feature                  | Endpoint Needed               | Priority
+  ─────────────────────────┼───────────────────────────────┼────────────────────
+  Agent details            | /api/query/agents             | P1
+  Agent by ID              | /api/query/agents/:id         | P1
+  FIM events               | /api/query/fim-events         | P1
+  SCA checks               | /api/query/sca-checks         | P1
+  Cloud events             | /api/query/cloud-events       | P1
+  MITRE statistics         | /api/query/mitre-stats        | P0
+  Alert acknowledge        | PUT /api/realtime/alerts/:id  | P2
+
+═══════════════════════════════════════════════════════════════════
+        5. EXECUTION PLAN (Priority Order)
+═══════════════════════════════════════════════════════════════════
+
+  Phase 1 — P0 (Critical — missing pages for existing sidebar entries)
+  ─────────────────────────────────────────────────────────────────
+  [ ] 1. Create MitreAttackTab.jsx   — MITRE ATT&CK dedicated page
+  [ ] 2. Create AlertsTab.jsx        — Wire existing alert components
+  [ ] 3. Register both in App.jsx TABS
+  [ ] 4. Build & verify
+
+  Phase 2 — P1 (Major — new Wazuh module pages)
+  ─────────────────────────────────────────────────────────────────
+  [ ] 5. Create AgentsTab.jsx        — Agent management dashboard
+  [ ] 6. Create FimTab.jsx           — File Integrity Monitoring
+  [ ] 7. Create CloudTab.jsx         — AWS/Azure/GCP monitoring
+  [ ] 8. Create ScaTab.jsx           — Security Configuration Assessment
+  [ ] 9. Add backend query endpoints for each
+
+  Phase 3 — P2 (Enhancements)
+  ─────────────────────────────────────────────────────────────────
+  [ ] 10. Create ThreatHuntTab.jsx   — Threat hunting workspace
+  [ ] 11. Add "Add to Dashboard" btn — In VizBuilder Settings tab
+  [ ] 12. Add API use-cases section  — To API Guide or new page
+
+  Phase 4 — P3 (Nice to have)
+  ─────────────────────────────────────────────────────────────────
+  [ ] 13. Bulk rule import/export     — Add to Rules tab
+  [ ] 14. CDB lists management       — New page (low priority)
+
+═══════════════════════════════════════════════════════════════════
+              End of Gap Analysis Report
+═══════════════════════════════════════════════════════════════════

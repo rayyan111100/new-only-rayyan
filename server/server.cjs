@@ -5,7 +5,7 @@ const path = require('path');
 const axios = require('axios');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 const API = process.env.UNISHIELD360_API_URL;
 const WUSER = process.env.UNISHIELD360_USER;
 const WPASS = process.env.UNISHIELD360_PASSWORD;
@@ -400,11 +400,214 @@ app.get('/api/notifications/logs', auth.authMiddleware, auth.roleMiddleware('adm
 
 // ─── Notifier integration ───
 const notifier = require('./notifier.cjs');
+notifier.initMailer();
+
+// ─── Query API Routes ───
+const queryRoutes = require('./services/queryRoutes.cjs');
+app.use('/api/query', queryRoutes);
+
+// ─── Realtime REST Routes ───
+const realtimeRoutes = require('./services/realtimeRoutes.cjs');
+app.use('/api/realtime', realtimeRoutes);
+
+// ─── SSE (Server-Sent Events) Routes ───
+const SSEService = require('./services/sseService.cjs');
 
 // Send test webhook
 app.post('/api/notifications/test', auth.authMiddleware, auth.roleMiddleware('admin'), async (req, res) => {
   const result = await notifier.sendWebhook(req.body, { type: 'test', message: 'Test notification from dashboard' })
   res.json(result)
+})
+
+// ─── Reports API ───
+const cron = require('node-cron')
+
+app.get('/api/reports', auth.authMiddleware, (req, res) => {
+  res.json(db.getAllReports())
+})
+
+app.post('/api/reports', auth.authMiddleware, (req, res) => {
+  try {
+    const r = db.createReport(req.body)
+    if (r.scheduled) {
+      const nextRun = calculateNextRun(r)
+      db.updateReport(r.id, { nextRun })
+    }
+    res.status(201).json(r)
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+app.put('/api/reports/:id', auth.authMiddleware, (req, res) => {
+  const r = db.updateReport(req.params.id, req.body)
+  if (r) {
+    if (r.scheduled) {
+      const nextRun = calculateNextRun(r)
+      db.updateReport(r.id, { nextRun })
+    }
+    res.json(r)
+  } else {
+    res.status(404).json({ error: 'Report not found' })
+  }
+})
+
+app.delete('/api/reports/:id', auth.authMiddleware, (req, res) => {
+  db.deleteReport(req.params.id)
+  res.json({ ok: true })
+})
+
+app.post('/api/reports/:id/generate', auth.authMiddleware, async (req, res) => {
+  try {
+    const report = db.getReport(req.params.id)
+    if (!report) return res.status(404).json({ error: 'Report not found' })
+
+    db.updateReport(report.id, { status: 'generating', lastRun: new Date().toISOString() })
+
+    // Fetch dashboard data for the report
+    const fs = require('fs')
+    const dashPath = require('path').join(__dirname, '..', 'data', 'dashboards.json')
+    let dashboards = []
+    if (fs.existsSync(dashPath)) {
+      try { dashboards = JSON.parse(fs.readFileSync(dashPath, 'utf-8')) } catch {}
+    }
+    const dashboard = dashboards.find(d => d.id === report.dashboardId)
+    const panelData = await Promise.all(
+      (dashboard?.panels || []).slice(0, 20).map(async (panel) => {
+        try {
+          const params = {
+            index: 'unishield360-alerts-4.x-*',
+            limit: 20,
+            start_date: report.timeRange || 'now-24h',
+            end_date: 'now',
+          }
+          const resp = await api.get('/search', { params }).catch(() => ({ data: { results: [], total: 0 } }))
+          return { id: panel.id, title: panel.title, vizType: panel.vizType, data: resp.data }
+        } catch {
+          return { id: panel.id, title: panel.title, vizType: panel.vizType, data: null }
+        }
+      })
+    )
+
+    const result = {
+      reportId: report.id,
+      reportName: report.name,
+      dashboard: dashboard?.name || 'Unknown',
+      panels: panelData,
+      total: dashboard?.panels?.length || 0,
+      generatedAt: new Date().toISOString(),
+    }
+
+    db.updateReport(report.id, {
+      status: 'completed',
+      lastRun: new Date().toISOString(),
+    })
+
+    // Send email if configured
+    if (report.sendEmail && report.emailTo) {
+      const emailResult = await notifier.sendEmail({
+        to: report.emailTo,
+        from: report.emailFrom || process.env.SMTP_FROM,
+        subject: report.emailSubject || 'Report: ' + report.name,
+        body: 'Report "' + report.name + '" has been generated.\nDashboard: ' + (dashboard?.name || report.dashboardId) + '\nPanels: ' + (dashboard?.panels?.length || 0) + '\nGenerated: ' + new Date().toLocaleString(),
+      })
+      db.updateReport(report.id, { lastEmailSent: new Date().toISOString() })
+      result.emailResult = emailResult
+    }
+
+    res.json(result)
+  } catch (e) {
+    db.updateReport(req.params.id, { status: 'failed', error: e.message })
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// Schedule checker — runs every minute
+cron.schedule('* * * * *', () => {
+  try {
+    const reports = db.getScheduledReports()
+    const now = new Date()
+    for (const r of reports) {
+      if (r.nextRun && new Date(r.nextRun) <= now) {
+        const nextRun = calculateNextRun(r)
+        db.updateReport(r.id, { status: 'scheduled', lastRun: new Date().toISOString(), nextRun })
+        console.log('⏰ Report due: ' + r.name + ' (' + r.id + ') — next run: ' + nextRun)
+      }
+    }
+  } catch (e) {
+    console.error('Schedule check error:', e.message)
+  }
+})
+
+function calculateNextRun(config) {
+  const now = new Date()
+  const [h, m] = (config.time || '08:00').split(':').map(Number)
+  const next = new Date(now)
+  next.setHours(h || 8, m || 0, 0, 0)
+  if (config.frequency === 'daily') {
+    if (next <= now) next.setDate(next.getDate() + 1)
+  } else if (config.frequency === 'weekly') {
+    const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+    const days = (config.days || ['Monday']).map(d => dayMap.indexOf(d.toLowerCase()))
+    const today = now.getDay()
+    let nextDay = days.find(d => d > today)
+    if (nextDay === undefined) nextDay = days[0] + 7
+    next.setDate(next.getDate() + ((nextDay + 7 - today) % 7 || 7))
+  } else if (config.frequency === 'monthly') {
+    if (next <= now) next.setMonth(next.getMonth() + 1, 1)
+  }
+  return next.toISOString()
+}
+
+// ─── Shares API ───
+
+app.get('/api/shares', auth.authMiddleware, (req, res) => {
+  if (req.query.dashboardId) {
+    res.json(db.getSharesByDashboard(req.query.dashboardId))
+  } else {
+    res.json(db.getAllShares())
+  }
+})
+
+app.post('/api/shares', auth.authMiddleware, (req, res) => {
+  try {
+    const s = db.createShare({ ...req.body, createdBy: req.user?.sub || 'system' })
+    res.status(201).json(s)
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+app.put('/api/shares/:id', auth.authMiddleware, (req, res) => {
+  const s = db.updateShare(req.params.id, req.body)
+  s ? res.json(s) : res.status(404).json({ error: 'Share not found' })
+})
+
+app.delete('/api/shares/:id', auth.authMiddleware, (req, res) => {
+  db.deleteShare(req.params.id)
+  res.json({ ok: true })
+})
+
+app.get('/api/shared/:token', async (req, res) => {
+  try {
+    const share = db.getShareByToken(req.params.token)
+    if (!share) return res.status(404).json({ error: 'Share not found' })
+    if (share.expiresAt && new Date(share.expiresAt) < new Date()) {
+      return res.status(410).json({ error: 'Share has expired' })
+    }
+    // Return dashboard data from localStorage backup (stored as JSON file)
+    const fs = require('fs')
+    const path = require('path')
+    const dashPath = path.join(__dirname, '..', 'data', 'dashboards.json')
+    let dashboard = null
+    if (fs.existsSync(dashPath)) {
+      const all = JSON.parse(fs.readFileSync(dashPath, 'utf-8'))
+      dashboard = all.find(d => d.id === share.dashboardId) || null
+    }
+    res.json({ share, dashboard })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // ─── Settings (auth-protected) ───
@@ -428,40 +631,52 @@ app.get('*', (req, res) => {
 app.use((req, res, next) => { res.setTimeout(120000); next(); });
 
 // ─── Realtime Engine ───
-const RealtimeEngine = require('./realtime.cjs');
+  const RealtimeEngine = require('./realtime.cjs');
+  const RealtimeManager = require('./realtimeManager.cjs');
 
-function startServer(port) {
-  const server = app.listen(port)
-    .on('error', (err) => {
-      if (err.code === 'EADDRINUSE') {
-        console.error(`✖ Port ${port} is already in use. Trying port ${port + 1}...`);
-        startServer(port + 1);
-      } else {
-        console.error('✖ Server error:', err.message);
-      }
-    })
-    .on('listening', () => {
-      const addr = server.address();
-      console.log(`✔ UniShield360 Dashboard at http://localhost:${addr.port}`);
-      console.log(`✔ Proxy → ${API}`);
-
-      const rt = new RealtimeEngine(server, api, db, re, de);
-      const pollInterval = parseInt(process.env.UNISHIELD360_POLL_INTERVAL || '15000');
-      rt.startPolling(pollInterval);
-      console.log(`✔ Realtime engine polling every ${pollInterval}ms`);
-
-      // Realtime stats endpoint
-      app.get('/api/realtime/stats', (req, res) => res.json(rt.getStats()));
-
-      // Integrate notifier with realtime engine
-      const origBroadcast = rt.broadcast.bind(rt);
-      rt.broadcast = function(data) {
-        origBroadcast(data);
-        if (data.type === 'match' || data.type === 'alert') {
-          notifier.processNotifications(db, data).catch(() => {});
+  function startServer(port) {
+    const server = app.listen(port)
+      .on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+          console.error(`✖ Port ${port} is already in use. Trying port ${port + 1}...`);
+          startServer(port + 1);
+        } else {
+          console.error('✖ Server error:', err.message);
         }
-      };
-    });
-}
+      })
+      .on('listening', () => {
+        const addr = server.address();
+        console.log(`✔ UniShield360 Dashboard at http://localhost:${addr.port}`);
+        console.log(`✔ Proxy → ${API}`);
+
+        // Initialize RealtimeManager (WebSocket + polling)
+        const rt = new RealtimeManager(server, api, db, re, de);
+        app.set('realtime', rt);
+        const pollInterval = parseInt(process.env.UNISHIELD360_POLL_INTERVAL || '15000');
+        rt.startPolling(pollInterval);
+
+        // Initialize SSE service
+        const sse = new SSEService(api);
+        app.get('/sse/alerts', (req, res) => sse.handleAlerts(req, res));
+        app.get('/sse/timeseries', (req, res) => sse.handleTimeseries(req, res));
+        app.get('/sse/dashboard/:id', (req, res) => sse.handleDashboard(req, res, req.params.id));
+        console.log(`✔ SSE endpoints at /sse/alerts, /sse/timeseries, /sse/dashboard/:id`);
+
+        // Legacy realtime stats endpoint
+        app.get('/api/realtime/stats', (req, res) => {
+          const rtStats = rt.getStats();
+          res.json(rtStats);
+        });
+
+        // Integrate notifier with realtime engine
+        const origBroadcast = rt.broadcast.bind(rt);
+        rt.broadcast = function(data) {
+          origBroadcast(data);
+          if (data.type === 'match' || data.type === 'alert') {
+            notifier.processNotifications(db, data).catch(() => {});
+          }
+        };
+      });
+  }
 
 startServer(PORT);

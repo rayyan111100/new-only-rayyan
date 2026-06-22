@@ -1,3 +1,2 @@
 ⚠ JWT_SECRET not set — using insecure default. Set JWT_SECRET in .env for production.
 ⚠ JWT_SECRET not set — using default. Set JWT_SECRET in .env for production security.
-✖ Port 3000 is already in use. Trying port 30001...

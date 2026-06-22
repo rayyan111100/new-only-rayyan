@@ -257,6 +257,53 @@ function migrate() {
     console.log(`✔ Seeded MITRE groups (${groups.length}) + techniques (${techniques.length})`)
   }
 
+  // Phase 5: reports + shares
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS reports (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL DEFAULT '',
+      description TEXT DEFAULT '',
+      dashboardId TEXT DEFAULT '',
+      timeRange TEXT DEFAULT 'now-24h',
+      format TEXT DEFAULT 'PDF',
+      includeCharts INTEGER NOT NULL DEFAULT 1,
+      includeTables INTEGER NOT NULL DEFAULT 1,
+      includeMetrics INTEGER NOT NULL DEFAULT 1,
+      scheduled INTEGER NOT NULL DEFAULT 0,
+      frequency TEXT DEFAULT 'Daily',
+      time TEXT DEFAULT '08:00',
+      days TEXT DEFAULT '["Monday"]',
+      emailTo TEXT DEFAULT '',
+      emailFrom TEXT DEFAULT '',
+      emailSubject TEXT DEFAULT '',
+      includeInBody INTEGER NOT NULL DEFAULT 0,
+      attachAsFile INTEGER NOT NULL DEFAULT 1,
+      status TEXT DEFAULT 'created',
+      lastRun TEXT,
+      nextRun TEXT,
+      lastEmailSent TEXT,
+      error TEXT DEFAULT '',
+      createdBy TEXT DEFAULT '',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS shares (
+      id TEXT PRIMARY KEY,
+      dashboardId TEXT NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      isPublic INTEGER NOT NULL DEFAULT 0,
+      includeTime INTEGER NOT NULL DEFAULT 1,
+      includeFilters INTEGER NOT NULL DEFAULT 1,
+      expiresAt TEXT,
+      createdBy TEXT DEFAULT '',
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_shares_token ON shares(token);
+    CREATE INDEX IF NOT EXISTS idx_shares_dashboardId ON shares(dashboardId);
+    CREATE INDEX IF NOT EXISTS idx_reports_dashboardId ON reports(dashboardId);
+    CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
+  `)
+
   // Seed security roles/policies if empty
   const roleCount = db.prepare('SELECT COUNT(*) as cnt FROM security_roles').get()
   if (roleCount.cnt === 0) {
@@ -759,6 +806,126 @@ function getClusterNodes() {
   return [{ name: 'node01', type: 'master', ip: '0.0.0.0', status: 'active', version: 'UniShield360 v3.0.0' }]
 }
 
+// ─── REPORTS CRUD ───
+
+function getAllReports() {
+  return db.prepare('SELECT * FROM reports ORDER BY updatedAt DESC').all()
+}
+
+function getReport(id) {
+  return db.prepare('SELECT * FROM reports WHERE id = ?').get(id) || null
+}
+
+function createReport(data) {
+  const id = data.id || 'rpt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)
+  const now = new Date().toISOString()
+  db.prepare(`
+    INSERT INTO reports (id, name, description, dashboardId, timeRange, format, includeCharts, includeTables, includeMetrics, scheduled, frequency, time, days, emailTo, emailFrom, emailSubject, includeInBody, attachAsFile, status, createdBy, createdAt, updatedAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, data.name || 'New Report', data.description || '', data.dashboardId || '',
+    data.timeRange || 'now-24h', data.format || 'PDF',
+    data.includeCharts !== false ? 1 : 0,
+    data.includeTables !== false ? 1 : 0,
+    data.includeMetrics !== false ? 1 : 0,
+    data.scheduled ? 1 : 0, data.frequency || 'Daily', data.time || '08:00',
+    JSON.stringify(data.days || ['Monday']),
+    data.emailTo || '', data.emailFrom || '', data.emailSubject || '',
+    data.includeInBody ? 1 : 0, data.attachAsFile !== false ? 1 : 0,
+    data.status || 'created', data.createdBy || '',
+    data.createdAt || now, data.updatedAt || now
+  )
+  return getReport(id)
+}
+
+function updateReport(id, data) {
+  const existing = getReport(id)
+  if (!existing) return null
+  const merged = { ...existing, ...data, updatedAt: new Date().toISOString() }
+  db.prepare(`
+    UPDATE reports SET name=?, description=?, dashboardId=?, timeRange=?, format=?, includeCharts=?, includeTables=?, includeMetrics=?, scheduled=?, frequency=?, time=?, days=?, emailTo=?, emailFrom=?, emailSubject=?, includeInBody=?, attachAsFile=?, status=?, lastRun=?, nextRun=?, lastEmailSent=?, error=?, updatedAt=? WHERE id=?
+  `).run(
+    merged.name, merged.description, merged.dashboardId, merged.timeRange, merged.format,
+    merged.includeCharts ? 1 : 0, merged.includeTables ? 1 : 0, merged.includeMetrics ? 1 : 0,
+    merged.scheduled ? 1 : 0, merged.frequency, merged.time,
+    JSON.stringify(merged.days || ['Monday']),
+    merged.emailTo, merged.emailFrom, merged.emailSubject,
+    merged.includeInBody ? 1 : 0, merged.attachAsFile !== false ? 1 : 0,
+    merged.status, merged.lastRun || null, merged.nextRun || null,
+    merged.lastEmailSent || null, merged.error || '',
+    merged.updatedAt, id
+  )
+  return getReport(id)
+}
+
+function deleteReport(id) {
+  db.prepare('DELETE FROM reports WHERE id = ?').run(id)
+  return true
+}
+
+function getScheduledReports() {
+  return db.prepare("SELECT * FROM reports WHERE scheduled = 1 AND status != 'disabled' ORDER BY nextRun ASC").all()
+}
+
+// ─── SHARES CRUD ───
+
+function getAllShares() {
+  return db.prepare('SELECT * FROM shares ORDER BY createdAt DESC').all()
+}
+
+function getSharesByDashboard(dashboardId) {
+  return db.prepare('SELECT * FROM shares WHERE dashboardId = ? ORDER BY createdAt DESC').all(dashboardId)
+}
+
+function getShare(id) {
+  return db.prepare('SELECT * FROM shares WHERE id = ?').get(id) || null
+}
+
+function getShareByToken(token) {
+  return db.prepare('SELECT * FROM shares WHERE token = ?').get(token) || null
+}
+
+function createShare(data) {
+  const id = data.id || 'shr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)
+  const token = data.token || require('crypto').randomBytes(16).toString('hex')
+  const now = new Date().toISOString()
+  db.prepare(`
+    INSERT INTO shares (id, dashboardId, token, isPublic, includeTime, includeFilters, expiresAt, createdBy, createdAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, data.dashboardId, token,
+    data.isPublic ? 1 : 0,
+    data.includeTime !== false ? 1 : 0,
+    data.includeFilters !== false ? 1 : 0,
+    data.expiresAt || null,
+    data.createdBy || '',
+    data.createdAt || now
+  )
+  return getShare(id)
+}
+
+function updateShare(id, data) {
+  const existing = getShare(id)
+  if (!existing) return null
+  const merged = { ...existing, ...data }
+  db.prepare(`
+    UPDATE shares SET isPublic=?, includeTime=?, includeFilters=?, expiresAt=?, createdAt=? WHERE id=?
+  `).run(
+    merged.isPublic ? 1 : 0,
+    merged.includeTime !== false ? 1 : 0,
+    merged.includeFilters !== false ? 1 : 0,
+    merged.expiresAt || null,
+    merged.createdAt || existing.createdAt,
+    id
+  )
+  return getShare(id)
+}
+
+function deleteShare(id) {
+  db.prepare('DELETE FROM shares WHERE id = ?').run(id)
+  return true
+}
+
 // ─── HELPERS ───
 
 function deserializeRule(row) {
@@ -792,5 +959,7 @@ module.exports = {
   createLogtestSession, deleteLogtestSession, getLogtestSessions,
   getSecurityRoles, getSecurityRole, getSecurityPolicies,
   getManagerInfo, getManagerStatus,
-  getClusterStatus, getClusterNodes
+  getClusterStatus, getClusterNodes,
+  getAllReports, getReport, createReport, updateReport, deleteReport, getScheduledReports,
+  getAllShares, getSharesByDashboard, getShare, getShareByToken, createShare, updateShare, deleteShare
 }

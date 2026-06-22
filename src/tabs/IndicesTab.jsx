@@ -6,7 +6,7 @@ export default function IndicesTab() {
   const [loading, setLoading] = useState(true)
   useEffect(() => {
     (async () => {
-      try { const d = await api('indices', {}); setIndices(d.indices || d.results || d) }
+      try { const d = await api('indices', {}); setIndices(d.all_indices || d.indices || d.results || []) }
       catch {}
       finally { setLoading(false) }
     })()

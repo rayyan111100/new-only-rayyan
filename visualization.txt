@@ -1,0 +1,519 @@
+╔══════════════════════════════════════════════════════════════╗
+║        UniShield360 SOC Dashboard — Visualization Guide     ║
+║                     Complete Documentation                   ║
+╚══════════════════════════════════════════════════════════════╝
+
+═══════════════════════════════════════════════════════════════════
+                    1. PROJECT OVERVIEW
+═══════════════════════════════════════════════════════════════════
+
+  Total Frontend Files  : 54+ visualization files
+  Total Backend Files   : 6 service files
+  Total Lines of Code   : ~6,121 lines (visualization-related)
+  UI Pages/Tabs         : 25 registered tabs (+ vizmanager)
+  Sidebar Sections      : 11 sections (4 expandable)
+  Chart Components      : 24 individual chart types
+  Builder Components    : 9 files (VisualizationBuilder + 8 sub-components)
+  API Endpoints         : 30+ backend query endpoints + real-time
+
+  Frontend Port         : 5181
+  Backend Port          : 3099
+  WebSocket             : ws://localhost:3099/ws
+  SSE                   : http://localhost:3099/sse/alerts
+
+
+═══════════════════════════════════════════════════════════════════
+                    2. SIDEBAR — ALL PAGES
+═══════════════════════════════════════════════════════════════════
+
+  The sidebar has 11 navigation sections. Pages marked [VIZ]
+  are visualization-specific. Pages marked [NEW] were created
+  as part of this project.
+
+  Discover          → Alert search + histogram + results table
+  Dashboard         → SOC overview: metrics, timeline, top rules
+  Security Hub      → Overview + Windows Event (expandable)
+    ├ Overview      → SOC metrics with drill-down filters
+    └ Windows Event → 16 draggable widgets (events, logons, MITRE)
+  Health            → API health check status
+  Vulnerability     → 4 tabs: Overview, Inventory, CVE, Patch
+  Compliance Mgmt   → Overview + 4 framework dashboards (expandable)
+    ├ Overview      → 5 frameworks overview
+    ├ PCI-DSS       → PCI-DSS detailed dashboard
+    ├ HIPAA         → HIPAA detailed dashboard
+    ├ GDPR          → GDPR 3-tab dashboard
+    └ MITRE ATT&CK  → (coming soon)
+  Rules             → Create Rule + Groups + View + Guide (expandable)
+    ├ Create Rule   → Full rule builder UI
+    ├ Groups        → Group management with drag-and-drop
+    ├ Rule View     → Rule evaluation against live data
+    └ Rule Guide    → Rule writing guide + 50+ templates
+  Decoder           → Log decoder with format detection
+  Visualizations    → [NEW] [VIZ] Manager + Builder
+    ├ Manager       → [NEW] [VIZ] List/grid view, search, pagination, rename, delete
+    └ Builder       → [NEW] [VIZ] Full viz builder with live preview
+  API Console       → [NEW] Interactive API console with live execute
+  API Guide         → [NEW] API documentation with 48 endpoints
+
+
+═══════════════════════════════════════════════════════════════════
+           3. ALL 24 VISUALIZATION CHART COMPONENTS
+═══════════════════════════════════════════════════════════════════
+
+  Located in: src/components/visualizations/
+
+  ┌────────────────────────┬──────────────────┬──────────────────────┐
+  │ Component              │ Library          │ Features             │
+  ├────────────────────────┼──────────────────┼──────────────────────┤
+  │ AreaChart              │ Plotly.js        │ Fill, stacked, multi │
+  │ VerticalBarChart       │ Plotly.js        │ Palettes, labels     │
+  │ HorizontalBarChart     │ Plotly.js        │ Sort asc/desc        │
+  │ LineChart              │ Plotly.js        │ Markers, smoothing   │
+  │ PieChart               │ Plotly.js        │ Donut mode, legend   │
+  │ HeatMap                │ D3.js            │ MITRE matrix style   │
+  │ GaugeChart             │ D3.js            │ Arc gauge, ranges    │
+  │ GoalChart              │ D3.js            │ Progress % bar       │
+  │ MetricChart            │ Pure CSS         │ Auto K/M/B format    │
+  │ DataTable              │ TanStack Table   │ Sort, paginate       │
+  │ CoordinateMap          │ Leaflet          │ Geo markers, popups  │
+  │ RegionMap              │ Leaflet          │ Choropleth colors    │
+  │ Maps                   │ Leaflet          │ Points/heat/clusters │
+  │ ThematicRegionMap      │ Leaflet          │ 5 color schemes      │
+  │ GanttChart             │ Plotly.js        │ Tasks, milestones    │
+  │ Timeline               │ Plotly.js        │ Zones, range slider  │
+  │ TSVB                   │ Plotly.js        │ Moving avg, shift    │
+  │ TagCloud               │ D3.js            │ Force simulation     │
+  │ Markdown               │ Custom parser    │ Headers, code, links │
+  │ VegaChart              │ Vega/Vega-Lite   │ Custom JSON spec     │
+  │ FilterPanel            │ Pure React       │ Field/KQL modes      │
+  │ Controls               │ Pure React       │ Dropdown, slider     │
+  │ NewVisualization       │ Pure React       │ 19 viz type selector │
+  │ VisBuilder             │ Pure React       │ 9 chart type builder │
+  └────────────────────────┴──────────────────┴──────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════
+          4. VISUALIZATION BUILDER (MAIN FEATURE)
+═══════════════════════════════════════════════════════════════════
+
+  Located: src/components/visualization-builder/
+  Sidebar path: Visualizations → Builder
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │                    BUILDER COMPONENTS                       │
+  ├──────────────────────────────────────────────────────────────┤
+  │ VisualizationBuilder.jsx   — Main builder (responsive,       │
+  │                               resizable panels, 3 tabs)      │
+  │ PreviewPanel.jsx           — Plotly chart preview            │
+  │ YAxisSelector.jsx          — 11 metrics + pipeline aggs     │
+  │ XAxisSelector.jsx          — 8 bucket types + field search  │
+  │ FieldSearch.jsx            — [NEW] Custom searchable field   │
+  │                              dropdown (replaces native       │
+  │                              datalist) with keyboard nav     │
+  │ TimeRangeSelector.jsx      — 8 presets + custom             │
+  │ FilterModal.jsx            — Field/operator/value picker    │
+  │ TabsSystem.jsx             — Data / Metrics / Settings tabs │
+  │ Select.jsx                 — Custom dropdown component      │
+  └──────────────────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │                    LAYOUT (Split Panel)                     │
+  ├──────────────────────┬───────────────────────────────────────┤
+  │ LEFT: Configuration  │ RIGHT: Preview + Data                │
+  │ (3 tabs, resizable)  │                                      │
+  │                      │                                      │
+  │ TAB 1: DATA          │ • Live Plotly.js chart preview       │
+  │  • Index pattern     │ • Auto-detect chart type             │
+  │  • Query (KQL/DQL)   │ • Legend on RIGHT side               │
+  │  • Time range        │ • Labels toggle (Lbl/No Lbl)         │
+  │  • Auto-refresh      │ • Max items selector (5/10/20/50/100)│
+  │  • Filters list      │ • Data summary bar                   │
+  │  • Status indicator  │                                      │
+  │                      │                                      │
+  │ TAB 2: METRICS/AXES  │                                      │
+  │  • Y-Axis (11 types) │                                      │
+  │    Count, Avg, Max,  │                                      │
+  │    Min, Sum, Median, │                                      │
+  │    Unique, Percentile│                                      │
+  │    Top Hit, Std Dev, │                                      │
+  │    Weighted Avg      │                                      │
+  │  • Pipeline aggs:    │                                      │
+  │    Cumul Sum, Deriv, │                                      │
+  │    Moving Avg,       │                                      │
+  │    Serial Diff       │                                      │
+  │  • X-Axis (8 types): │                                      │
+  │    dateHistogram,    │                                      │
+  │    terms, histogram, │                                      │
+  │    range, filters,   │                                      │
+  │    geohash, nested,  │                                      │
+  │    reverseNested     │                                      │
+  │  • FieldSearch:      │                                      │
+  │    Custom searchable │                                      │
+  │    dropdown with 70+ │                                      │
+  │    field suggestions │                                      │
+  │  • Chart Type cards  │                                      │
+  │    (Auto/Line/Bar/   │                                      │
+  │     Area/Pie)        │                                      │
+  │                      │                                      │
+  │ TAB 3: SETTINGS      │                                      │
+  │  • Panel title       │                                      │
+  │  • Width, Background │                                      │
+  │  • Legend position   │                                      │
+  │  • X-axis label      │                                      │
+  │  • Save / Back       │                                      │
+  └──────────────────────┴───────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │                    RESPONSIVE & RESIZE                       │
+  ├──────────────────────────────────────────────────────────────┤
+  │ Desktop (lg+):                                               │
+  │  • Side-by-side (config panel + preview)                     │
+  │  • Config panel resizable via drag handle (240-600px)        │
+  │  • Toggle config panel show/hide button in toolbar           │
+  │                                                              │
+  │ Mobile/Tablet (below lg):                                    │
+  │  • Config panel hidden by default                            │
+  │  • Floating "⚙ Config" button at bottom-left                 │
+  │  • Full-screen config panel when opened                      │
+  │  • Preview takes full width when config hidden               │
+  │                                                              │
+  │ Resize Handle:                                                │
+  │  • Vertical line cursor between panels                       │
+  │  • Drag left/right to resize (min 240px, max 600px)          │
+  │  • Smooth transition on mouse events                         │
+  └──────────────────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │              NEW: FieldSearch COMPONENT                      │
+  ├──────────────────────────────────────────────────────────────┤
+  │ Located: src/components/visualization-builder/FieldSearch.jsx│
+  │                                                              │
+  │ Replaces native <datalist> with a pro-level custom dropdown: │
+  │  • Search bar with real-time filtering                       │
+  │  • Dropdown shows matching fields as user types               │
+  │  • Keyboard navigation: ↑↓ navigate, ↵ select, Esc close    │
+  │  • Active item highlight with color-coded theme               │
+  │  • Selected field shown as badge below input                 │
+  │  • Clear button to reset                                     │
+  │  • Color prop for theming (#EF843C for Y, #8b5cf6 for X)    │
+  │  • Footer hints: "↑↓ Navigate · ↵ Select · Esc Close"       │
+  │  • Uses 70+ fields from actual Wazuh API                     │
+  └──────────────────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │              CHART DISPLAY CONTROLS                          │
+  ├──────────────────────────────────────────────────────────────┤
+  │ Located in the toolbar next to the Run button (desktop only):│
+  │                                                              │
+  │ Labels Toggle (Lbl/No Lbl):                                  │
+  │  • Toggle button to show/hide text labels on chart           │
+  │  • Pie charts: toggles "label+percent" on slices             │
+  │  • Bar charts: toggles value labels on bars                  │
+  │  • Line charts: toggles markers at data points               │
+  │  • Area charts: toggles markers                             │
+  │                                                              │
+  │ Max Items Selector (5/10/20/50/100):                        │
+  │  • Dropdown selects max data points to display               │
+  │  • When data exceeds limit, shows amber "10 of 50" warning   │
+  │  • Slices data before passing to Plotly                      │
+  └──────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════
+          5. VISUALIZATION MANAGER
+═══════════════════════════════════════════════════════════════════
+
+  Located: src/components/visualizations/VizManager.jsx
+  Sidebar path: Visualizations → Manager
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │                    MANAGER FEATURES                          │
+  ├──────────────────────────────────────────────────────────────┤
+  │ Header:                                                      │
+  │  • Title + visualization count                                │
+  │  • Bulk delete button (appears when items selected)          │
+  │  • "New" button to create visualization (opens type picker)  │
+  │                                                              │
+  │ Search:                                                      │
+  │  • Real-time search by name                                   │
+  │  • Resets pagination on new search                           │
+  │                                                              │
+  │ View Toggle:                                                 │
+  │  • Grid view (cards with color bar, icon, name, type badge)  │
+  │  • List view (table with checkbox + name + type + created    │
+  │    date + action buttons)                                    │
+  │                                                              │
+  │ Per-item Actions:                                            │
+  │  • Checkbox selection (bulk operations)                      │
+  │  • Star/favorite toggle (yellow star)                        │
+  │  • Edit → navigates to Builder with viz data pre-loaded      │
+  │  • Duplicate → creates copy with "(Copy)" suffix             │
+  │  • Delete → removes from localStorage                        │
+  │  • Inline rename → click name to edit, Enter to save          │
+  │                                                              │
+  │ Pagination:                                                  │
+  │  • 12 items per page                                         │
+  │  • Prev/Next buttons + page numbers                          │
+  │  • Smart truncation for large page sets                      │
+  │                                                              │
+  │ Type Picker Modal:                                           │
+  │  • 20 visualization types in searchable grid                 │
+  │  • Each type shows icon, name, description, key              │
+  │  • Click → creates viz + navigates to Builder               │
+  │                                                              │
+  │ Delete Confirmation:                                         │
+  │  • Modal with count, "cannot be undone" warning               │
+  │                                                              │
+  │ Navigation:                                                  │
+  │  • Uses localStorage bridge for reliable cross-tab nav       │
+  │  • localStorage.setItem + window.location.reload()           │
+  └──────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════
+           6. DASHBOARD MANAGEMENT SYSTEM
+═══════════════════════════════════════════════════════════════════
+
+  Located: src/components/dashboard/
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │                     DASHBOARD FEATURES                      │
+  ├──────────────────────────────────────────────────────────────┤
+  │ Toolbar:                                                     │
+  │  • Dashboard selector with search + favorites                │
+  │  • New / Save / Clone / Export / Import buttons              │
+  │  • Stats: dashboard count, favorite count, panel count       │
+  │  • Add Panel button + Fullscreen toggle                     │
+  │                                                              │
+  │ Grid:                                                        │
+  │  • react-grid-layout 12-column grid                          │
+  │  • Drag & drop panels                                        │
+  │  • Resize handles                                            │
+  │  • Vertical compact layout                                   │
+  │                                                              │
+  │ Panels:                                                      │
+  │  • Editable title (click to rename)                          │
+  │  • Context menu: Edit, Duplicate, Lock, Refresh, Remove      │
+  │  • Viz type indicator (color dot + label)                    │
+  │  • Metric/Count/Gauge display                                │
+  │  • Chart placeholder for other types                         │
+  │                                                              │
+  │ Global Filters:                                              │
+  │  • Field filter (preset or custom field)                     │
+  │  • KQL query mode                                            │
+  │  • "Apply to all" toggle                                     │
+  │  • Active filter chips with remove                           │
+  │                                                              │
+  │ Time Range:                                                  │
+  │  7 presets (1h/24h/7d/30d/90d/this month/prev month)        │
+  │  + custom From/To inputs + "Apply to all" toggle             │
+  │                                                              │
+  │ Persistence:                                                 │
+  │  • localStorage-based CRUD (dashboardService.js)             │
+  │  • create, save, load, delete, list, search, favorite        │
+  │  • clone, export JSON, import JSON                           │
+  │  • addPanel, updatePanel, removePanel                        │
+  └──────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════
+              7. REAL-TIME DATA STREAMING
+═══════════════════════════════════════════════════════════════════
+
+  Located: server/realtimeManager.cjs, server/services/sseService.cjs
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │              THREE REAL-TIME CHANNELS                        │
+  ├──────────────────────────────────────────────────────────────┤
+  │ 1. WebSocket → ws://localhost:3099/ws                       │
+  │    • Auto-connects on page load                              │
+  │    • Sends initial snapshot (20 alerts) on connect           │
+  │    • Streams new alerts in real-time (~15s poll)             │
+  │    • Streams timeseries updates (~90s poll)                  │
+  │    • Channels: /ws/alerts, /ws/timeseries, /ws/dashboard    │
+  │    • Each channel supports subscribe/filter messages         │
+  │                                                              │
+  │ 2. SSE → http://localhost:3099/sse/alerts                   │
+  │    • Fallback if WebSocket unavailable                       │
+  │    • Keepalive every 15s                                     │
+  │    • Initial snapshot + periodic poll                        │
+  │    • Same data as WebSocket                                  │
+  │    • Endpoints: /sse/alerts, /sse/timeseries,               │
+  │                 /sse/dashboard/:id                           │
+  │                                                              │
+  │ 3. REST → http://localhost:3099/api/realtime/*              │
+  │    • GET /api/realtime/alerts — paginated, filterable        │
+  │    • POST /api/realtime/dynamic — any aggregation type       │
+  │    • GET /api/realtime/stats — engine statistics             │
+  │                                                              │
+  │ Data pushed per alert:                                       │
+  │  • id, timestamp, severity, level, title                     │
+  │  • agent name + ID, source, ruleId, description              │
+  │  • decoded fields, rule match results                         │
+  └──────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════
+             8. ALERTS & RULES ENGINE
+═══════════════════════════════════════════════════════════════════
+
+  Located: src/components/alerts/, src/components/rules/
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │                     ALERT SYSTEM                             │
+  ├──────────────────────────────────────────────────────────────┤
+  │ AlertService.js:                                             │
+  │  • localStorage CRUD (list, add, delete, clearAll)           │
+  │  • Filter by severity, status, source, search, timeRange     │
+  │  • Status lifecycle: new → acknowledged → resolved          │
+  │  • Suppression with duration                                 │
+  │  • getStats(): total, new, ack, resolved, suppressed         │
+  │  • WebSocket connect/disconnect + subscribe/listener         │
+  │                                                              │
+  │ AlertList.jsx: Severity color-coded cards, status badges     │
+  │ AlertFilter.jsx: Severity chips, search, dropdowns, stats    │
+  │ AlertDetails.jsx: Full detail + Acknowledge/Resolve/Delete   │
+  │ AlertActions.jsx: 6 action buttons with keyboard shortcuts   │
+  └──────────────────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │                     RULES ENGINE                             │
+  ├──────────────────────────────────────────────────────────────┤
+  │ RulesetManager.jsx: Multi-condition ruleset editor           │
+  │ RuleTestTool.jsx: Test rule against JSON or live API data    │
+  └──────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════
+            9. INSPECT, SHARE, REPORTING
+═══════════════════════════════════════════════════════════════════
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │ INSPECT PANEL (src/components/inspect/InspectPanel.jsx)     │
+  ├──────────────────────────────────────────────────────────────┤
+  │ 4 Tabs: Overview, Request, Response, Timings                │
+  │ Performance scores: Fast (<100ms) → Critical (2000ms+)       │
+  └──────────────────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │ SHARE DIALOG (src/components/share/ShareDialog.jsx)         │
+  ├──────────────────────────────────────────────────────────────┤
+  │ 3 Sections: Share Link, Export As (PNG/PDF/CSV/JSON), Embed │
+  └──────────────────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │ REPORT CREATOR (src/components/reporting/ReportCreator.jsx) │
+  ├──────────────────────────────────────────────────────────────┤
+  │ Schedule + Email + Preview + Create Report / Save Template   │
+  └──────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════
+             10. BACKEND API ENDPOINTS (30+ Routes)
+═══════════════════════════════════════════════════════════════════
+
+  All mounted at /api/query/* and /api/realtime/*
+
+  ┌──────────────────────────┬──────────┬────────────────────────┐
+  │ Endpoint                 │ Method   │ Purpose                │
+  ├──────────────────────────┼──────────┼────────────────────────┤
+  │ /api/query/health        │ GET      │ Cluster health check   │
+  │ /api/query/count         │ GET      │ Document count         │
+  │ /api/query/time-series   │ GET      │ Date histogram         │
+  │ /api/query/average       │ GET      │ Avg metric             │
+  │ /api/query/max           │ GET      │ Max metric             │
+  │ /api/query/min           │ GET      │ Min metric             │
+  │ /api/query/sum           │ GET      │ Sum metric             │
+  │ /api/query/terms         │ GET      │ Terms aggregation      │
+  │ /api/query/histogram     │ GET      │ Numeric histogram      │
+  │ /api/query/range         │ GET      │ Custom ranges          │
+  │ /api/query/geohash       │ GET      │ Geo grid aggregation   │
+  │ /api/query/filters       │ GET      │ Named filters agg      │
+  │ /api/query/cumulative-sum│ GET      │ Pipeline: cumul sum    │
+  │ /api/query/derivative    │ GET      │ Pipeline: derivative   │
+  │ /api/query/moving-average│ GET      │ Pipeline: moving avg   │
+  │ /api/query/heat-map      │ GET      │ MITRE tactics/techs    │
+  │ /api/query/pie           │ GET      │ Terms (pie-shaped)     │
+  │ /api/query/metric        │ GET      │ Single value stats     │
+  │ /api/query/data-table    │ GET      │ Paginated results      │
+  │ /api/query/kql-filter    │ GET      │ KQL query filter       │
+  │ /api/query/realtime-alerts│ GET     │ Recent alerts          │
+  │ /api/query/dynamic-builder│ GET     │ Extendable agg query   │
+  │ /api/query/percentile    │ GET      │ Percentile values      │
+  │ /api/query/cardinality   │ GET      │ Unique count           │
+  │ /api/query/geo-query     │ GET      │ Geo-located data       │
+  │ /api/query/dashboard     │ GET      │ Multi-metric dashboard │
+  │ /api/query/viz/:type     │ GET      │ Generic viz dispatcher │
+  │ /api/query/search        │ GET      │ Raw search             │
+  │ /api/query/aggregate     │ GET      │ Generic aggregation    │
+  │ /api/query/fields        │ GET      │ Field listing          │
+  │ /api/query/indices       │ GET      │ Index listing          │
+  │ /api/query/index-stats   │ GET      │ Index statistics       │
+  │                          │          │                        │
+  │ /api/realtime/alerts     │ GET      │ Paginated alerts       │
+  │ /api/realtime/dynamic    │ POST     │ Any aggregation        │
+  │ /api/realtime/stats      │ GET      │ Engine stats           │
+  │                          │          │                        │
+  │ /sse/alerts              │ SSE      │ Real-time alert stream │
+  │ /sse/timeseries          │ SSE      │ Real-time timeseries   │
+  │ /sse/dashboard/:id       │ SSE      │ Real-time dashboard    │
+  │                          │          │                        │
+  │ ws://host/ws             │ WS       │ WebSocket real-time    │
+  └──────────────────────────┴──────────┴────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════
+              11. KEY OUTPUTS / DATA VERIFIED
+═══════════════════════════════════════════════════════════════════
+
+  All tested with live Wazuh API (192.168.1.77:9999) — 2026-06-19:
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │ Metric                    │ Value              │ Endpoint    │
+  ├──────────────────────────┼────────────────────┼─────────────┤
+  │ Events (24h)              │ 3,677              │ /count      │
+  │ Events (7d)               │ 71,082             │ /dashboard  │
+  │ Events (30d)              │ 399,691            │ /dashboard  │
+  │ Total indices             │ 188                │ /indices    │
+  │ Total docs (wazuh-*)     │ 12.9M              │ /indices    │
+  │ Alert index size          │ 4.3 GB             │ /index-stats│
+  │ MITRE tactics             │ 9                  │ /heat-map   │
+  │ MITRE techniques          │ 27                 │ /heat-map   │
+  │ Agents active             │ 5                  │ /aggregate  │
+  │ Top agent: COREGENIX      │ 935 events (24h)   │ /dashboard  │
+  │ Top agent: root           │ 894 events (24h)   │ /dashboard  │
+  │ Top rule #752             │ 689 hits (24h)     │ /dashboard  │
+  │ WebSocket alerts pushed   │ 1631+              │ /realtime   │
+  │ Build status              │ 0 errors           │ npm build   │
+  └──────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════
+                    12. HOW TO RUN
+═══════════════════════════════════════════════════════════════════
+
+  # Start Backend (port 3099):
+  cd server
+  node server.cjs
+
+  # Start Frontend (port 5181):
+  npx vite --port 5181 --host
+
+  # Build for Production:
+  npx vite build
+
+  # View Pages:
+  Frontend      → http://localhost:5181
+  Viz Manager   → Sidebar → Visualizations → Manager
+  Viz Builder   → Sidebar → Visualizations → Builder
+  API Guide     → Sidebar → API Guide
+  API Console   → Sidebar → API Console
+
+  # Real-Time:
+  WebSocket     → ws://localhost:3099/ws
+  SSE           → http://localhost:3099/sse/alerts
+  REST          → http://localhost:3099/api/realtime/alerts?limit=10
+
+═══════════════════════════════════════════════════════════════════
+           End of UniShield360 Visualization Documentation
+═══════════════════════════════════════════════════════════════════

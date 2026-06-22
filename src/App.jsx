@@ -32,6 +32,7 @@ import HipaaTab from './tabs/HipaaTab'
 import GdprTab from './tabs/GdprTab'
 import ApiConsoleTab from './tabs/ApiConsoleTab'
 import ApiGuideTab from './tabs/ApiGuideTab'
+import CustomDashboardTab from './tabs/CustomDashboardTab'
 import LoginModal from './components/LoginModal'
 import ErrorBoundary from './components/ErrorBoundary'
 
@@ -58,7 +59,8 @@ const TABS = {
   hipaa: HipaaTab,
   gdpr: GdprTab,
   apiconsole: ApiConsoleTab,
-  apiguide: ApiGuideTab
+  apiguide: ApiGuideTab,
+  customdashboard: CustomDashboardTab
 }
 
 function DashboardShell() {
@@ -87,7 +89,7 @@ function DashboardShell() {
 
   return (
     <div className="h-screen flex flex-col bg-soc-bg dark:bg-soc-darkbg overflow-hidden">
-      <Navbar />
+      {tab !== 'customdashboard' && <Navbar />}
       <LoginModal />
       <div className="flex flex-1 overflow-hidden">
         <div className="hidden md:flex">
