@@ -31,7 +31,7 @@ function transform(d) {
     })),
     categories: (d.categories || []).slice(0, 8),
     topControls: d.topControls || [],
-    recent: (d.recent || []).slice(0, 500),
+    recent: (d.recent || []).slice(0, 1000),
     recentTotal: d.recentTotal || 0
   }
 }

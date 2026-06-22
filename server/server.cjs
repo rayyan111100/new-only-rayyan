@@ -402,7 +402,7 @@ app.get('/api/compliance', async (req, res) => {
             return { data: { buckets: Object.entries(map).map(([key, doc_count]) => ({ key, doc_count })).sort((a, b) => a.key - b.key) } };
           }),
           Promise.all(overviewQ.map(q => aggOne(q, 'rule.category'))).then(mergeBuckets).then(buckets => ({ data: { buckets } })),
-          Promise.all(overviewQ.map(q => api.get('/search', { params: { index: idx, q, limit: 200, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } })))).then(responses => {
+          Promise.all(overviewQ.map(q => api.get('/search', { params: { index: idx, q, limit: 1000, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } })))).then(responses => {
             const seen = new Set();
             const merged = [];
             for (const r of responses) {
@@ -412,7 +412,7 @@ app.get('/api/compliance', async (req, res) => {
               }
             }
             merged.sort((a, b) => (b['@timestamp'] || '').localeCompare(a['@timestamp'] || ''));
-            return { data: { results: merged.slice(0, 500), total: { value: merged.length } } };
+            return { data: { results: merged.slice(0, 1000), total: { value: merged.length } } };
           }),
           Promise.all(overviewQ.map(q => aggOne(q, frameworkField || 'rule.gdpr'))).then(mergeBuckets).then(buckets => ({ data: { buckets } })),
         ])
@@ -422,7 +422,7 @@ app.get('/api/compliance', async (req, res) => {
           aggOne(fwQ, 'agent.name', 10),
           api.get('/aggregate', { params: { index: idx, q: fwQ, field: '@timestamp', type: 'date_histogram', interval: '1h', start_date: sd, end_date: ed, limit: 48 } }).catch(() => ({ data: { buckets: [] } })),
           aggOne(fwQ, 'rule.category'),
-          api.get('/search', { params: { index: idx, q: fwQ, limit: 500, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } })),
+          api.get('/search', { params: { index: idx, q: fwQ, limit: 1000, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } })),
           frameworkField ? aggOne(fwQ, frameworkField) : Promise.resolve({ data: { buckets: [] } }),
         ]);
 
