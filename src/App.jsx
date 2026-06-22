@@ -40,6 +40,8 @@ import TscTab from './tabs/TscTab'
 import PcidssTab from './tabs/PcidssTab'
 import HipaaTab from './tabs/HipaaTab'
 import GdprTab from './tabs/GdprTab'
+import MitreAttackTab from './tabs/MitreAttackTab'
+import NistTab from './tabs/NistTab'
 import CspmTab from './tabs/CspmTab'
 import LoginModal from './components/LoginModal'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -75,6 +77,8 @@ const TABS = {
   pcidss: PcidssTab,
   hipaa: HipaaTab,
   gdpr: GdprTab,
+  mitreattack: MitreAttackTab,
+  nist80053: NistTab,
   cisbenchmark: ComplianceTab,
   cspm: CspmTab,
   docker: CspmTab,

@@ -32,8 +32,9 @@ const NAV_SECTIONS = [
       { key: 'hipaa', label: 'HIPAA', icon: 'activity' },
       { key: 'gdpr', label: 'GDPR', icon: 'globe' },
       { key: 'tsc', label: 'TSC (SOC 2)', icon: 'shieldCheck' },
-      { key: 'mitreattack', label: 'MITRE ATT&CK', icon: 'target' },
+      { key: 'nist80053', label: 'NIST 800-53', icon: 'shieldCheck' },
       { key: 'cisbenchmark', label: 'CIS Benchmark', icon: 'checklist' },
+      { key: 'mitreattack', label: 'MITRE ATT&CK', icon: 'target' },
     ]
   },
   {

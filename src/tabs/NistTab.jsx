@@ -21,23 +21,13 @@ const EXPORT_COLS = [
   { header: 'Groups', accessor: 'groups' },
 ]
 
-function toSev(level) {
-  const n = parseInt(level) || 0
-  if (n >= 12) return 'Critical'
-  if (n >= 7) return 'High'
-  if (n >= 4) return 'Medium'
-  return 'Low'
-}
-
-const HIPAA_CONTROLS = [
-  { req: '164.312.c.1', desc: 'Integrity Controls' },
-  { req: '164.312.c.2', desc: 'Audit Controls' },
-  { req: '164.308.a.1', desc: 'Administrative Safeguards' },
-  { req: '164.306.a', desc: 'General Rules' },
-  { req: '164.312.a.2.i', desc: 'Access Control' }
+const NIST_CONTROLS = [
+  { id: 'AC-6', desc: 'Least Privilege' },
+  { id: 'AU-6', desc: 'Audit Review, Analysis & Reporting' },
+  { id: 'CM-8', desc: 'System Component Inventory' },
+  { id: 'SI-4', desc: 'System Monitoring' },
+  { id: 'RA-5', desc: 'Vulnerability Scanning' }
 ]
-
-
 
 const CustomTip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
@@ -51,7 +41,7 @@ const CustomTip = ({ active, payload, label }) => {
   )
 }
 
-export default function HipaaTab() {
+export default function NistTab() {
   const { isDark, startDate, endDate } = useApp()
   const [modal, setModal] = useState(null)
   const [sidebar, setSidebar] = useState(null)
@@ -63,7 +53,7 @@ export default function HipaaTab() {
   const [timelineFilter, setTimelineFilter] = useState(null)
   const containerRef = useRef(null)
   const LOG_PAGE_SIZE = 10
-  const { data, loading, error, refresh } = useCompliance('HIPAA')
+  const { data, loading, error, toLogEntry, toSev, refresh } = useCompliance('NIST 800-53')
   const toggleRow = useCallback((id) => {
     setExpandedRow(prev => ({ ...prev, [id]: !prev[id] }))
   }, [])
@@ -168,23 +158,14 @@ export default function HipaaTab() {
   const activeFilters = Object.keys(filters)
   const activeExcludes = Object.keys(excludes)
 
-  const allLogs = useMemo(() => (data?.recent || []).map(r => ({
-    time: r['@timestamp'] || r.timestamp || '--',
-    agent: r.agent?.name || r.agent || '--',
-    rule: r.rule?.id || r.rule || '--',
-    sev: (() => { const n = parseInt(r.rule?.level || r.level || 0); return n >= 12 ? 'Critical' : n >= 7 ? 'High' : n >= 4 ? 'Medium' : 'Low' })(),
-    desc: r.rule?.description || r.description || '--',
-    event: r.rule?.groups?.[0] || r.event_type || '--',
-    file: r.data?.file || r.file || '--',
-    groups: r.rule?.groups?.join(', ') || '--',
-    ctrl: r.rule?.hipaa || r.control || r.hipaa_standard || '--',
-    raw: r
-  })), [data])
+  const logEntries = useMemo(() => {
+    return (data?.recent || []).map(r => ({ ...toLogEntry(r), raw: r }))
+  }, [data, toLogEntry])
 
   const hasActiveFilter = activeFilters.length > 0 || activeExcludes.length > 0 || !!timelineFilter
 
   const DAY_MS = 86400000
-  const filteredLogs = allLogs.filter(l => {
+  const filteredLogs = logEntries.filter(l => {
     if (timelineFilter) {
       const t = new Date(l.time).getTime()
       if (t < timelineFilter || t >= timelineFilter + DAY_MS) return false
@@ -235,7 +216,6 @@ export default function HipaaTab() {
   const totalEvents = hasActiveFilter && chartData
     ? Object.values(chartData.severity).reduce((a, b) => a + b, 0)
     : data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
-
   const maxAgent = hasActiveFilter && chartData
     ? Math.max(...chartData.topAgents.map(a => a.doc_count || 0), 1)
     : data ? Math.max(...data.topAgents.map(a => a.doc_count || 0), 1) : 1
@@ -243,36 +223,34 @@ export default function HipaaTab() {
   const controlEvents = useMemo(() => {
     const map = {}
     if (hasActiveFilter && chartData) {
-      HIPAA_CONTROLS.forEach(c => { map[c.req] = chartData.controls[c.req] || 0 })
+      NIST_CONTROLS.forEach(c => { map[c.id] = chartData.controls[c.id] || 0 })
       return map
     }
     if (data?.topRules) {
       data.topRules.forEach(r => {
         const ctrl = r.control || ''
-        if (ctrl && HIPAA_CONTROLS.some(c => c.req === ctrl)) {
+        if (ctrl && NIST_CONTROLS.some(c => c.id === ctrl)) {
           map[ctrl] = (map[ctrl] || 0) + (r.count || 0)
         }
       })
     }
     if (Object.keys(map).length === 0 && data?.recent) {
       data.recent.forEach(r => {
-        const ctrl = r.rule?.hipaa || r.control || r.hipaa_standard || '--'
-        if (ctrl && HIPAA_CONTROLS.some(c => c.req === ctrl)) {
-          map[ctrl] = (map[ctrl] || 0) + 1
+        const entry = toLogEntry(r)
+        if (entry.ctrl && NIST_CONTROLS.some(c => c.id === entry.ctrl)) {
+          map[entry.ctrl] = (map[entry.ctrl] || 0) + 1
         }
       })
     }
-    HIPAA_CONTROLS.forEach(c => { if (!map[c.req]) map[c.req] = 0 })
+    NIST_CONTROLS.forEach(c => { if (!map[c.id]) map[c.id] = 0 })
     return map
-  }, [data, chartData, hasActiveFilter])
+  }, [data, toLogEntry, chartData, hasActiveFilter])
 
   const maxControl = Math.max(...Object.values(controlEvents), 1)
 
   const sevDonut = SEV_ORDER.filter(s => (severitySource[s] || 0) > 0).map(s => ({
     name: s, value: severitySource[s], color: SEV_COLORS[s]
   }))
-
-  const getControlEvents = (req) => controlEvents[req] || 0
 
   const FILTER_STYLES = {
     severity: (v) => ({
@@ -301,31 +279,105 @@ export default function HipaaTab() {
     setModal(k)
   }
 
+  const getControlEvents = (id) => controlEvents[id] || 0
+
   const modalContent = () => {
     if (!modal) return null
     const mKey = modal
-    const md = {
-      'm-events': {
-        t: 'HIPAA Events',
-        b: `Total HIPAA events: ${totalEvents.toLocaleString()}. Across ${data?.topAgents?.length || 0} monitored assets. Top control: ${data?.topRules?.[0]?.control || 'N/A'}.`
-      },
-      'm-crit': {
-        t: 'Critical Violations',
-        b: `Critical violations: ${data?.severity?.Critical || 0}. These require immediate remediation per HIPAA Security Rule requirements.`
-      }
-    }
+
     if (mKey.startsWith('log-')) {
       const idx = parseInt(mKey.replace('log-', ''))
       const l = filteredLogs[idx]
       if (!l) return null
-      return <LogDetailModal log={l} onClose={closeModal} label="HIPAA Log" />
+      return <LogDetailModal log={l} onClose={closeModal} label="NIST 800-53 Log" />
     }
+
+    if (mKey.startsWith('ctrl-')) {
+      const ctrlId = mKey.replace('ctrl-', '')
+      const control = NIST_CONTROLS.find(c => c.id === ctrlId)
+      if (!control) return null
+      const ev = getControlEvents(ctrlId)
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeModal}>
+          <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-5 w-[500px] max-h-[72vh] overflow-y-auto shadow-lg" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc]">NIST SP 800-53 Control {ctrlId}</span>
+              <button onClick={closeModal} className="text-[#656d76] dark:text-[#8b949e] hover:text-[#1f2328] dark:hover:text-[#f0f6fc] text-lg leading-none">&times;</button>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5 mb-3">
+              <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Control</div><div className="text-sm font-bold text-[#e8681a]">{ctrlId}</div></div>
+              <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Events</div><div className="text-2xl font-bold text-[#f0f6fc]">{ev}</div></div>
+            </div>
+            <p className="text-xs text-[#36454f] dark:text-[#c9d1d9] leading-relaxed mb-3">{control.desc} &mdash; {ev} events detected in this period. Review flagged resources and assess whether compensating controls are required.</p>
+            <div className="p-3 rounded-lg text-xs leading-relaxed" style={{ background: '#e8893a18', border: '1px solid #e8893a44', color: '#fdba74' }}>
+              <strong>Recommendation:</strong> Investigate all {ev} events tied to {ctrlId}. If this indicates a control failure, update the POA&M and implement corrective actions per NIST SP 800-53.
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    if (mKey.startsWith('rule-')) {
+      const rid = mKey.replace('rule-', '')
+      const topRule = (data?.topRules || []).find(r => (r.ruleId || r.key || r.id || '') === rid)
+      const desc = topRule?.description || 'Rule violation'
+      const count = topRule?.count || 0
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeModal}>
+          <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-5 w-[500px] max-h-[72vh] overflow-y-auto shadow-lg" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc]">Rule {rid}</span>
+              <button onClick={closeModal} className="text-[#656d76] dark:text-[#8b949e] hover:text-[#1f2328] dark:hover:text-[#f0f6fc] text-lg leading-none">&times;</button>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5 mb-3">
+              <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Rule ID</div><div className="text-xl font-bold text-[#e8681a]">{rid}</div></div>
+              <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Times Fired</div><div className="text-xl font-bold text-[#f0f6fc]">{count}</div></div>
+            </div>
+            <p className="text-xs text-[#36454f] dark:text-[#c9d1d9] leading-relaxed">{desc} Rule {rid} is among the top triggered rules for NIST 800-53 compliance. High frequency may indicate systemic issues requiring policy or configuration changes.</p>
+          </div>
+        </div>
+      )
+    }
+
+    if (mKey.startsWith('ag-')) {
+      const aname = mKey.replace('ag-', '')
+      const topAgent = (data?.topAgents || []).find(a => (a.key || a.agent || a.name || '') === aname)
+      const cnt = topAgent?.doc_count || 0
+      if (!cnt) return null
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeModal}>
+          <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-5 w-[500px] max-h-[72vh] overflow-y-auto shadow-lg" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc]">Agent: {aname}</span>
+              <button onClick={closeModal} className="text-[#656d76] dark:text-[#8b949e] hover:text-[#1f2328] dark:hover:text-[#f0f6fc] text-lg leading-none">&times;</button>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5 mb-3">
+              <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Agent</div><div className="text-sm font-bold text-[#e8681a]">{aname}</div></div>
+              <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Total Events</div><div className="text-2xl font-bold text-[#f0f6fc]">{cnt}</div></div>
+            </div>
+            <p className="text-xs text-[#36454f] dark:text-[#c9d1d9] leading-relaxed">This endpoint generated {cnt} NIST 800-53-relevant events this period. Review event details to determine if they constitute control failures requiring POA&M updates.</p>
+          </div>
+        </div>
+      )
+    }
+
+    const topControl = NIST_CONTROLS.map(c => ({ ...c, ev: getControlEvents(c.id) })).sort((a, b) => b.ev - a.ev)[0]
+    const md = {
+      'm-events': { t: 'NIST 800-53 Events', b: `Total NIST 800-53 events: ${totalEvents.toLocaleString()} across ${data?.topAgents?.length || 0} active agents. Top control: ${topControl?.id || 'N/A'} with ${topControl?.ev || 0} events.` },
+      'm-crit': { t: 'Critical Violations', b: `Critical violations: ${data?.severity?.Critical || 0}. Immediate action required if any constitute control failures under NIST SP 800-53.` },
+      'm-high': { t: 'High Severity Violations', b: `High severity violations: ${data?.severity?.High || 0}. These require prompt investigation to determine if controls were bypassed.` },
+      'm-med': { t: 'Medium Severity Violations', b: `Medium severity violations: ${data?.severity?.Medium || 0}. Review and address according to incident response procedures.` },
+      'm-assets': { t: 'Monitored Assets', b: `${data?.topAgents?.length || 0} active agents generating NIST 800-53 compliance events.` },
+      'm-controls': { t: 'Controls Violated', b: `${NIST_CONTROLS.filter(c => getControlEvents(c.id) > 0).length} unique NIST 800-53 controls were violated this period: ${NIST_CONTROLS.filter(c => getControlEvents(c.id) > 0).map(c => c.id).join(', ')}. Each maps to specific requirements under NIST SP 800-53.` },
+      'm-top-ctrl': { t: 'Most Active Control', b: topControl ? `Control ${topControl.id} (${topControl.desc}) is the most frequently violated control with ${topControl.ev} events.` : 'No control violation data available.' }
+    }
+
     const d = md[mKey]
     if (!d) return null
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeModal}>
         <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-5 w-[500px] max-h-[72vh] overflow-y-auto shadow-lg" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4">
             <span className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc]">{d.t}</span>
             <button onClick={closeModal} className="text-[#656d76] dark:text-[#8b949e] hover:text-[#1f2328] dark:hover:text-[#f0f6fc] text-lg leading-none">&times;</button>
           </div>
@@ -335,16 +387,15 @@ export default function HipaaTab() {
     )
   }
 
-  if (loading) return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 text-xs text-[#8b949e]">Loading HIPAA data...</motion.div>
+  if (loading) return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 text-xs text-[#8b949e]">Loading NIST 800-53 data...</motion.div>
   if (error) return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 text-xs text-[#f85149]">Error: {error}</motion.div>
 
   return (
     <motion.div ref={containerRef} data-export-container initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }} className="p-3">
-      {/* Page Header */}
       <div className="flex items-start justify-between mb-3">
         <div>
-          <div className="text-[11px] text-[#8b949e]">Home / <span className="text-[#e8681a] cursor-pointer" onClick={() => openModal('go-overview')}>Compliance Management</span> / HIPAA</div>
-          <div className="text-xl font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">HIPAA Compliance</div>
+          <div className="text-[11px] text-[#8b949e]">Home / <span className="text-[#e8681a] cursor-pointer">Compliance Management</span> / NIST 800-53</div>
+          <div className="text-xl font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">NIST SP 800-53 Compliance</div>
         </div>
         <div className="flex items-center gap-2 mt-1.5">
           <DateRangePicker />
@@ -403,17 +454,16 @@ export default function HipaaTab() {
         </div>
       )}
 
-      {/* Metric Cards */}
       <div className="grid grid-cols-6 gap-2.5 mb-3">
         {(() => {
-          const topControl = HIPAA_CONTROLS.map(c => ({ ...c, ev: getControlEvents(c.req) })).sort((a, b) => b.ev - a.ev)[0]
+          const topControl = NIST_CONTROLS.map(c => ({ ...c, ev: getControlEvents(c.id) })).sort((a, b) => b.ev - a.ev)[0]
           const cards = [
-            { key: 'm-events', label: 'HIPAA Events', val: totalEvents.toLocaleString(), icon: 'certificate', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
+            { key: 'm-events', label: 'NIST 800-53 Events', val: totalEvents.toLocaleString(), icon: 'certificate', iconBg: '#a371f71a', iconColor: '#a371f7' },
             { key: 'm-crit', label: 'Critical Violations', val: (severitySource?.Critical || 0).toLocaleString(), icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b', filterField: 'severity', filterValue: 'Critical' },
             { key: 'm-high', label: 'High Severity Violations', val: (severitySource?.High || 0).toLocaleString(), icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a', filterField: 'severity', filterValue: 'High' },
             { key: 'm-assets', label: 'Monitored Assets', val: hasActiveFilter && chartData ? chartData.topAgents.length : data?.topAgents?.length || 0, sub: 'Active agents', icon: 'device-desktop', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
-            { key: 'm-controls', label: 'Controls Violated', val: HIPAA_CONTROLS.filter(c => getControlEvents(c.req) > 0).length, sub: 'Unique HIPAA controls', icon: 'list-check', iconBg: '#3fb95018', iconColor: '#3fb950' },
-            { key: 'm-top-ctrl', label: 'Most Active Control', val: topControl ? topControl.req : '--', sub: topControl ? topControl.desc + ' · ' + topControl.ev + ' Events' : '', icon: 'award', iconBg: '#3fb95018', iconColor: '#3fb950', valColor: '#e8681a', valSize: 'text-base', filterField: 'control', filterValue: topControl?.req || '' },
+            { key: 'm-controls', label: 'Controls Violated', val: NIST_CONTROLS.filter(c => getControlEvents(c.id) > 0).length, sub: 'Unique NIST controls', icon: 'list-check', iconBg: '#3fb95018', iconColor: '#3fb950' },
+            { key: 'm-top-ctrl', label: 'Most Active Control', val: topControl ? topControl.id : '--', sub: topControl ? topControl.desc + ' · ' + topControl.ev + ' Events' : '', icon: 'award', iconBg: '#e8681a18', iconColor: '#e8681a', valColor: '#e8681a', valSize: 'text-base', filterField: 'control', filterValue: topControl?.id || '' },
           ]
           return cards.map(card => (
             <FilterableMetricCard
@@ -432,49 +482,53 @@ export default function HipaaTab() {
         })()}
       </div>
 
-      {/* Tri Row */}
       <div className="grid grid-cols-[1.1fr_0.85fr_1.05fr] gap-2.5 mb-2.5">
-        {/* Events by Requirement */}
         <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
-          <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Events by HIPAA Requirement (Top 5)</div>
-          {(data?.topControls || []).slice(0, 5).map(c => {
-            const count = c.count || 0
-            const maxC = Math.max(...(data?.topControls || []).map(x => x.count || 0), 1)
-            const pct = (count / maxC) * 100
+          <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Events by NIST Control (Top 5)</div>
+          {NIST_CONTROLS.map(c => {
+            const ev = getControlEvents(c.id)
+            const pct = (ev / maxControl) * 100
             return (
-              <div key={c.control || c.key} onClick={() => openModal('ctrl-' + (c.control || c.key))}
+              <div key={c.id} onClick={() => openModal('ctrl-' + c.id)}
                 className="flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] cursor-pointer text-[11px]">
-                <span className="w-[90px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0">{c.control || c.key}</span>
+                <span className="w-[90px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0">{c.id}</span>
                 <div className="flex-1 h-2 bg-[#d0d7de] dark:bg-[#30363d] rounded-full overflow-hidden">
                   <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
                 </div>
-                <span className="w-7 text-right text-[#1f2328] dark:text-[#f0f6fc] font-bold">{count}</span>
+                <span className="w-7 text-right text-[#1f2328] dark:text-[#f0f6fc] font-bold">{ev}</span>
               </div>
             )
           })}
           <div className="flex justify-between text-[9px] text-[#8b949e] mt-1.5 px-1">
-            <span>0</span><span>15</span><span>30</span><span>45</span><span>60</span>
+            <span>0</span><span>10</span><span>20</span><span>30</span><span>40</span>
           </div>
           <div className="text-center text-[10px] text-[#8b949e] mt-0.5">Events</div>
         </div>
 
-        {/* Severity Donut */}
         <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 flex flex-col shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2">Severity Distribution</div>
           <div className="grid grid-cols-2 gap-1 mb-2">
-            {SEV_ORDER.filter(s => (data?.severity?.[s] || 0) > 0).map(s => (
-              <span key={s} className="flex items-center gap-1.5 text-[11px] text-[#36454f] dark:text-[#c9d1d9] font-medium">
-                <span className="w-[10px] h-[10px] rounded flex-shrink-0" style={{ background: SEV_COLORS[s] }} />
-                {s} <span className="text-[#8b949e]">{data?.severity?.[s] || 0} ({Math.round(((data?.severity?.[s] || 0) / (totalEvents || 1)) * 100)}%)</span>
-              </span>
-            ))}
+            {SEV_ORDER.filter(s => sevDonut.find(x => x.name === s)?.value > 0).map(s => {
+              const v = sevDonut.find(x => x.name === s)?.value || 0
+              return (
+                <span key={s} onClick={() => setFilter('severity', s)}
+                  className={`flex items-center gap-1.5 text-[11px] cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] ${filters.severity?.includes(s) ? 'ring-1 ring-[#e8681a]/30 bg-[#e8681a]/5' : ''} ${filters.severity?.length && !filters.severity.includes(s) ? 'opacity-40' : ''}`}>
+                  <span className="w-[10px] h-[10px] rounded flex-shrink-0" style={{ background: SEV_COLORS[s] }} />
+                  {s} <span className="text-[#8b949e]">{v} ({Math.round((v / (totalEvents || 1)) * 100)}%)</span>
+                </span>
+              )
+            })}
           </div>
           <div className="flex-1 min-h-[120px] relative">
             {sevDonut.length > 0 && (
               <ResponsiveContainer width="100%" height={130}>
                 <PieChart>
                   <Pie data={sevDonut} cx="50%" cy="50%" innerRadius={40} outerRadius={58} dataKey="value" stroke={isDark ? '#161b22' : '#ffffff'} strokeWidth={3}>
-                    {sevDonut.map((e, i) => <Cell key={i} fill={e.color} />)}
+                    {sevDonut.map((e, i) => (
+                      <Cell key={i} fill={e.color} style={{ cursor: 'pointer' }}
+                        onClick={() => setFilter('severity', e.name)}
+                      />
+                    ))}
                   </Pie>
                   <Tooltip content={<CustomTip />} />
                 </PieChart>
@@ -484,29 +538,35 @@ export default function HipaaTab() {
           <div className="text-center mt-1.5 text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc]">{totalEvents.toLocaleString()} <span className="text-[10px] font-normal text-[#8b949e]">Total Events</span></div>
         </div>
 
-        {/* Trend */}
         <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2 flex items-center justify-between">
-            <span>HIPAA Events Trend</span>
+            <span>NIST 800-53 Events Trend</span>
             <span className="text-[10px] text-[#8b949e] bg-[#f0f2f4] dark:bg-[#2d3140] px-2 py-0.5 rounded font-medium normal-case">
               {startDate === 'now-24h' ? 'Last 24 Hours' : startDate === 'now-7d' ? 'Last 7 Days' : startDate === 'now-30d' ? 'Last 30 Days' : startDate === 'now-90d' ? 'Last 90 Days' : startDate || 'Last 7 Days'}
             </span>
           </div>
           <div className="h-[150px]">
-            {data?.timeline?.length > 0 && (
+            {data?.timeline?.length > 0 ? (
               <ResponsiveContainer width="100%" height={150}>
                 <AreaChart data={data.timeline}
                   onClick={(e) => {
                     const rt = e?.activePayload?.[0]?.payload?.rawTime
                     if (rt) setTimelineFilter(timelineFilter === rt ? null : rt)
                   }}>
-                  <defs><linearGradient id="hipaaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e8681a" stopOpacity={0.12} /><stop offset="95%" stopColor="#e8681a" stopOpacity={0} /></linearGradient></defs>
+                  <defs><linearGradient id="nistGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e8681a" stopOpacity={0.12} /><stop offset="95%" stopColor="#e8681a" stopOpacity={0} /></linearGradient></defs>
                   <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
                   <Tooltip content={<CustomTip />} />
-                  <Area type="monotone" dataKey="count" stroke="#e8681a" fill="url(#hipaaGrad)" strokeWidth={2.5} dot={{ r: 3, fill: '#e8681a', stroke: isDark ? '#161b22' : '#ffffff', strokeWidth: 2 }} />
+                  <Area type="monotone" dataKey="count" stroke="#e8681a" fill="url(#nistGrad)" strokeWidth={2.5} dot={{ r: 3, fill: '#e8681a', stroke: isDark ? '#161b22' : '#ffffff', strokeWidth: 2 }} />
                 </AreaChart>
               </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center">
+                <svg width="200" height="120" viewBox="0 0 200 120" className="opacity-40">
+                  <polyline points="10,90 30,75 50,78 70,60 90,50 110,40 130,45 150,30 170,35 190,20" fill="none" stroke="#e8681a" strokeWidth="2.5" />
+                  <rect x="10" y="90" width="180" height="40" fill="url(#nistGrad)" opacity="0.1" />
+                </svg>
+              </div>
             )}
           </div>
           <div className="flex justify-between text-[9px] text-[#8b949e] mt-1 px-0.5">
@@ -515,22 +575,20 @@ export default function HipaaTab() {
         </div>
       </div>
 
-      {/* Three Table Row */}
       <div className="grid grid-cols-3 gap-2.5 mb-2.5">
-        {/* Top Violated Controls */}
         <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Top Violated Controls</div>
           <table className="w-full text-[11px] border-collapse">
-            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">HIPAA Control</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Desc</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Events</th></tr></thead>
+            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Control</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Description</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Events</th></tr></thead>
             <tbody>
-              {(data?.topControls || []).slice(0, 8).map((c, i) => {
-                const count = c.count || 0
+              {NIST_CONTROLS.map((c, i) => {
+                const ev = getControlEvents(c.id)
                 return (
-                  <tr key={c.control || c.key || i} onClick={() => openModal('ctrl-' + (c.control || c.key))} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
+                  <tr key={c.id} onClick={() => openModal('ctrl-' + c.id)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-semibold">{c.control || c.key}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">HIPAA Control</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{count}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-semibold">{c.id}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">{c.desc}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{ev}</td>
                   </tr>
                 )
               })}
@@ -540,37 +598,37 @@ export default function HipaaTab() {
             onClick={() => openModal('all-controls')}>View all controls <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
         </div>
 
-        {/* Top Agents */}
         <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Top Agents</div>
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Agent</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Events</th></tr></thead>
             <tbody>
               {(hasActiveFilter && chartData ? chartData.topAgents : data?.topAgents || []).slice(0, 5).map((a, i) => {
-                const agentName = a.key || a.agent || 'Unknown'
+                const name = a.key || a.agent || a.name || 'Unknown'
+                const cnt = a.doc_count || a.events || 0
+                const pct = (cnt / maxAgent) * 100
                 return (
-                  <tr key={a.key || i} onClick={() => setFilter('agent', agentName)}
-                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${filters.agent?.includes(agentName) ? 'bg-[#58a6ff]/5 ring-1 ring-inset ring-[#58a6ff]/30' : ''}`}>
+                  <tr key={name} onClick={() => setFilter('agent', name)}
+                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${filters.agent?.includes(name) ? 'bg-[#58a6ff]/5 ring-1 ring-inset ring-[#58a6ff]/30' : ''}`}>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{agentName}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{name}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
                       <div className="flex items-center justify-end gap-1.5">
                         <div className="w-[70px] h-[6px] bg-[#d0d7de] dark:bg-[#30363d] rounded-full overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${((a.doc_count || 0) / maxAgent) * 100}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
+                          <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
                         </div>
-                        <span className="font-bold text-[#1f2328] dark:text-[#f0f6fc]">{a.doc_count || 0}</span>
+                        <span className="font-bold text-[#1f2328] dark:text-[#f0f6fc]">{cnt}</span>
                       </div>
                     </td>
-                    </tr>
-                  )
-                })}
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
           <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
             onClick={() => openModal('all-agents')}>View all agents <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
         </div>
 
-        {/* Top Rule IDs */}
         <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Top Rule IDs</div>
           <table className="w-full text-[11px] border-collapse">
@@ -579,7 +637,7 @@ export default function HipaaTab() {
               {(hasActiveFilter && chartData ? chartData.topRules : data?.topRules || []).slice(0, 5).map((r, i) => {
                 const ruleId = r.ruleId || r.key || r.id || ''
                 return (
-                  <tr key={r.ruleId || i} onClick={() => setFilter('rule', ruleId)}
+                  <tr key={ruleId || i} onClick={() => setFilter('rule', ruleId)}
                     className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${filters.rule?.includes(ruleId) ? 'bg-[#e8681a]/5 ring-1 ring-inset ring-[#e8681a]/30' : ''}`}>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-bold">{ruleId || '--'}</td>
@@ -595,7 +653,6 @@ export default function HipaaTab() {
         </div>
       </div>
 
-      {/* Event Logs */}
       <div className="mb-3">
         {data?.recentTotal > 500 && (
           <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-[#ddf4ff] dark:bg-[#0c2d6b] border border-[#54aeff66] dark:border-[#1f6feb66] text-[11px] text-[#0969da] dark:text-[#58a6ff]">
@@ -604,14 +661,14 @@ export default function HipaaTab() {
           </div>
         )}
         <div className="flex items-center justify-between mb-2.5">
-          <div className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">HIPAA Event Logs</div>
+          <div className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">NIST 800-53 Event Logs</div>
           <div className="flex items-center gap-1.5">
-            <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportExcel(filteredLogs, EXPORT_COLS, `hipaa-logs-${ts}.xlsx`) }}
+            <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportExcel(filteredLogs, EXPORT_COLS, `nist-logs-${ts}.xlsx`) }}
               className="text-[10px] px-2 py-1 rounded font-medium bg-[#e8eaed] dark:bg-[#2d3140] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Excel
             </button>
-            <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportPDFReport({ filename: `hipaa-report-${ts}.pdf`, title: 'HIPAA Event Report', dateRange: `${startDate || 'now-24h'} to ${endDate || 'now'}`, metrics: [{ label: 'Events (24h)', value: (data?.count24 || 0).toLocaleString() }, { label: 'Events (7d)', value: (data?.count7d || 0).toLocaleString() }, { label: 'Alert Sources', value: data?.topAgents?.length || 0 }, { label: 'Total Logs', value: filteredLogs.length }], severity: Object.entries(data?.severity || {}).map(([l, c]) => ({ level: l, count: c })), topRules: (data?.topRules || []).map(r => ({ key: r.key || r.ruleId || r.id || '--', count: r.doc_count || r.count || 0 })), topAgents: (data?.topAgents || []).map(a => ({ key: a.key || a.agent || a.name || '--', count: a.doc_count || a.events || 0 })), topArticles: (data?.topControls || []).map(c => ({ key: c.key || c.code || '--', count: c.doc_count || c.count || 0 })), timeline: (data?.timeline || []).map(t => ({ time: t.time, count: t.count })), logHeaders: EXPORT_COLS.map(c => c.header.toLowerCase()), logRows: prepareRows(filteredLogs, EXPORT_COLS) }) }}
+            <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportPDFReport({ filename: `nist-report-${ts}.pdf`, title: 'NIST 800-53 Event Report', dateRange: `${startDate || 'now-24h'} to ${endDate || 'now'}`, metrics: [{ label: 'Events (24h)', value: (data?.count24 || 0).toLocaleString() }, { label: 'Events (7d)', value: (data?.count7d || 0).toLocaleString() }, { label: 'Alert Sources', value: data?.topAgents?.length || 0 }, { label: 'Total Logs', value: filteredLogs.length }], severity: Object.entries(data?.severity || {}).map(([l, c]) => ({ level: l, count: c })), topRules: (data?.topRules || []).map(r => ({ key: r.key || r.ruleId || r.id || '--', count: r.doc_count || r.count || 0 })), topAgents: (data?.topAgents || []).map(a => ({ key: a.key || a.agent || a.name || '--', count: a.doc_count || a.events || 0 })), topArticles: (data?.topControls || []).map(c => ({ key: c.key || c.code || '--', count: c.doc_count || c.count || 0 })), timeline: (data?.timeline || []).map(t => ({ time: t.time, count: t.count })), logHeaders: EXPORT_COLS.map(c => c.header.toLowerCase()), logRows: prepareRows(filteredLogs, EXPORT_COLS) }) }}
               className="text-[10px] px-2 py-1 rounded font-medium bg-[#e8eaed] dark:bg-[#2d3140] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
               PDF Report
@@ -621,8 +678,8 @@ export default function HipaaTab() {
         <table className="w-full text-[10px] border-collapse table-fixed">
           <colgroup>
             <col style={{ width: '110px' }} /><col style={{ width: '100px' }} /><col style={{ width: '55px' }} />
-            <col style={{ width: '130px' }} /><col style={{ width: '145px' }} /><col style={{ width: '88px' }} />
-            <col style={{ width: '110px' }} /><col style={{ width: '145px' }} />
+            <col style={{ width: '130px' }} /><col style={{ width: '145px' }} /><col style={{ width: '90px' }} />
+            <col style={{ width: '100px' }} /><col style={{ width: '145px' }} />
           </colgroup>
           <thead>
             <tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide bg-[#f0f2f4] dark:bg-[#2d3140]">
@@ -801,11 +858,10 @@ export default function HipaaTab() {
         open={sidebar === 'controls'}
         onClose={() => setSidebar(null)}
         onSelectItem={(name) => setInclude('control', name)}
-        items={(data?.topControls || []).map(c => ({
-          key: c.control || c.key,
-          description: 'HIPAA Control',
-          doc_count: c.count || 0
-        }))}
+        items={NIST_CONTROLS.map(c => {
+          const ev = getControlEvents(c.id)
+          return { key: c.id, description: c.desc, doc_count: ev }
+        })}
         title="All Controls"
         icon="control"
         itemLabel="controls"

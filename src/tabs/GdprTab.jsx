@@ -1,1051 +1,896 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts'
 import { useApp } from '../context/AppContext'
-import * as gdprApi from '../services/gdprApi'
 import DateRangePicker from '../components/DateRangePicker'
+import DetailSidebar from '../components/DetailSidebar'
+import LogDetailModal from '../components/LogDetailModal'
+import useCompliance from '../hooks/useCompliance'
+import { exportExcel, exportPDFReport, prepareRows } from '../utils/exportLogs'
+import { PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import FilterableMetricCard from '../components/FilterableMetricCard'
+import InlineFilter from '../components/InlineFilter'
 
-const INNER_TABS = [
-  { key: 'overview', label: 'Overview', icon: 'chart' },
-  { key: 'controls', label: 'GDPR Controls', icon: 'wrench' }
+const SEV_COLORS = { Critical: '#f85149', High: '#e8681a', Medium: '#d29922', Low: '#3fb950' }
+const SEV_ORDER = ['Critical', 'High', 'Medium', 'Low']
+
+const EXPORT_COLS = [
+  { header: 'Time', accessor: 'time' }, { header: 'Agent', accessor: 'agent' },
+  { header: 'Rule', accessor: 'rule' }, { header: 'Severity', accessor: 'sev' },
+  { header: 'Description', accessor: 'desc' }, { header: 'Event', accessor: 'event' },
+  { header: 'Control', accessor: 'ctrl' },
+  { header: 'Groups', accessor: 'groups' },
 ]
 
-const SEV_COLORS = { critical: '#dc2626', high: '#ea580c', medium: '#d97706', low: '#16a34a' }
-const SEV_ORDER = ['critical', 'high', 'medium', 'low']
+const GDPR_ARTICLES = [
+  { art: 'II_5.1.f', desc: 'Integrity and Confidentiality' },
+  { art: 'IV_35.7.d', desc: 'Data Protection by Design & by Default' },
+  { art: 'II_5.2.c', desc: 'Accountability' },
+  { art: 'III_32.1.b', desc: 'Security of Processing' },
+  { art: 'VI_30.1', desc: 'Records of Processing Activities' }
+]
 
-function sC(v) { return v > 0 ? `+${v}` : v < 0 ? v : '0' }
 
-function AnimatedCounter({ val, suffix, className }) {
-  const [display, setDisplay] = useState(0)
-  const frameRef = useRef(null)
-  const startRef = useRef(0)
-  const dur = 600
-  useEffect(() => {
-    startRef.current = 0; setDisplay(0)
-    const step = (ts) => {
-      if (!startRef.current) startRef.current = ts
-      const progress = Math.min((ts - startRef.current) / dur, 1)
-      setDisplay(Math.round(progress * val))
-      if (progress < 1) frameRef.current = requestAnimationFrame(step)
-    }
-    frameRef.current = requestAnimationFrame(step)
-    return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current) }
-  }, [val])
-  return <span className={className}>{display}{suffix}</span>
-}
-
-function FilterDropdown({ value, onChange, options, placeholder, className }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-  const { setSidebarOpen } = useApp()
-  const selected = options.find(o => o.value === value)
-
-  useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  const handleOpen = () => {
-    const now = !open
-    setOpen(now)
-    if (now) setSidebarOpen(false)
-  }
-
-  return (
-    <div ref={ref} className={`relative ${className || ''}`}>
-      <button onClick={handleOpen}
-        className="flex items-center gap-1.5 bg-[#f0f2f4] dark:bg-[#161b22] text-[#1f2328] dark:text-[#f0f6fc] text-[11px] border border-[#d0d7de] dark:border-[#1d2432] rounded-md pl-3 pr-2 py-1.5 focus:outline-none focus:border-[#e8681a]/50 focus:shadow-[0_0_0_3px_rgba(232,104,26,0.1)] transition-all cursor-pointer whitespace-nowrap"
-      >
-        <span className={value ? 'font-medium' : 'text-[#3b4049] dark:text-[#e5e7eb]'}>{selected ? selected.label : placeholder}</span>
-        <svg className={`w-3 h-3 text-[#3b4049] dark:text-[#e5e7eb] transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-      </button>
-      {open && (
-        <motion.div initial={{ opacity: 0, y: -4, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.97 }} transition={{ duration: 0.12 }}
-          className="absolute top-full left-0 mt-1 z-[200] min-w-[140px] bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#30363d] rounded-lg shadow-lg dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)] py-1 overflow-hidden"
-        >
-          {options.map(opt => (
-            <button key={opt.value} onClick={() => { onChange(opt.value); setOpen(false) }}
-              className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors ${
-                value === opt.value
-                  ? 'bg-[#e8681a]/10 text-[#e8681a] font-semibold'
-                  : 'text-[#1f2328] dark:text-[#e5e7eb] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]'
-              }`}
-            >{opt.label}</button>
-          ))}
-        </motion.div>
-      )}
-    </div>
-  )
-}
-
-function TabIcon({ icon, className }) {
-  const cls = `w-3.5 h-3.5 ${className || ''}`
-  const map = {
-    chart: <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
-    monitor: <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>,
-    shield: <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>,
-    wrench: <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-  }
-  return map[icon] || null
-}
 
 const CustomTip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-white border border-[#e5e7eb] rounded-lg px-3 py-2 text-xs shadow-xl">
-      <p className="text-[#9ca3af] mb-1">{label}</p>
+    <div className="bg-white dark:bg-[#1a1d27] border border-[#e5e7eb] dark:border-[#2d3140] rounded-lg px-3 py-2 text-xs shadow-xl">
+      <p className="text-[#9ca3af] dark:text-[#6b7280] mb-1">{label}</p>
       {payload.map((p, i) => (
-        <p key={i} className="text-[#1a1c23] font-semibold">{p.name}: {p.value?.toLocaleString() || p.value}</p>
+        <p key={i} style={{ color: p.color }}>{p.name}: <span className="font-semibold text-[#1a1c23] dark:text-white">{p.value?.toLocaleString() || p.value}</span></p>
       ))}
     </div>
   )
 }
 
-const CARD = 'bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40'
-const SECTION_TITLE = 'text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5'
+
 
 export default function GdprTab() {
-  const { isDark } = useApp()
-  const [activeTab, setActiveTab] = useState('overview')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [stats, setStats] = useState(null)
-  const [severityBuckets, setSeverityBuckets] = useState([])
-  const [platforms, setPlatforms] = useState([])
-  const [articles, setArticles] = useState([])
-  const [agents, setAgents] = useState([])
-  const [events, setEvents] = useState([])
-  const [gdprAlerts, setGdprAlerts] = useState([])
-  const [trend, setTrend] = useState([])
-  const [articleBands, setArticleBands] = useState([])
-  const [controlStats, setControlStats] = useState(null)
-  const [hiddenSeries, setHiddenSeries] = useState(new Set())
-  const [hiddenDonut, setHiddenDonut] = useState(new Set())
-  const [selectedArticle, setSelectedArticle] = useState(null)
-  const [eventSort, setEventSort] = useState({ key: 'alertTime', dir: 'desc' })
-  const [eventFilters, setEventFilters] = useState({ q: '', severity: '', article: '' })
-  const [searchText, setSearchText] = useState('')
-  const searchTimer = useRef(null)
-  const [eventPage, setEventPage] = useState(1)
-  const [selectedEvent, setSelectedEvent] = useState(null)
-  const [eventDetailTab, setEventDetailTab] = useState('description')
-  const [globalFilters, setGlobalFilters] = useState([])
-  const [gdprStartDate, setGdprStartDate] = useState('now-1y')
-  const [gdprEndDate, setGdprEndDate] = useState('now')
-  const [totalCount, setTotalCount] = useState(0)
-  const [eventTotalCount, setEventTotalCount] = useState(0)
-  const [eventsLoading, setEventsLoading] = useState(false)
-  const [saCache, setSaCache] = useState({})
-  const saCacheRef = useRef({})
-  const [autoRefresh, setAutoRefresh] = useState(false)
-  const [jumpPage, setJumpPage] = useState('')
-  const [jumpMsg, setJumpMsg] = useState('')
-  const autoRef = useRef(null)
-  const searchReqId = useRef(0)
-  const startRef = useRef('now-1y')
-  const endRef = useRef('now')
-  useEffect(() => { startRef.current = gdprStartDate }, [gdprStartDate])
-  useEffect(() => { endRef.current = gdprEndDate }, [gdprEndDate])
-  const { setSidebarOpen, setTab } = useApp()
-
-  const toggleFilter = useCallback((field, value, type) => {
-    setGlobalFilters(prev => {
-      const id = `${field}-${value}-${type}`
-      if (prev.some(f => f.id === id)) return prev.filter(f => f.id !== id)
-      return [...prev, { id, field, value, type }]
-    })
+  const { isDark, startDate, endDate } = useApp()
+  const [modal, setModal] = useState(null)
+  const [sidebar, setSidebar] = useState(null)
+  const [filters, setFilters] = useState({})
+  const [excludes, setExcludes] = useState({})
+  const [logPage, setLogPage] = useState(1)
+  const [expandedRow, setExpandedRow] = useState({})
+  const [jsonView, setJsonView] = useState({})
+  const [timelineFilter, setTimelineFilter] = useState(null)
+  const containerRef = useRef(null)
+  const LOG_PAGE_SIZE = 10
+  const { data, loading, error, toLogEntry, toSev, refresh } = useCompliance('GDPR')
+  const toggleRow = useCallback((id) => {
+    setExpandedRow(prev => ({ ...prev, [id]: !prev[id] }))
   }, [])
-  const removeFilter = useCallback(id => setGlobalFilters(prev => prev.filter(f => f.id !== id)), [])
-  const hasFilter = useCallback((field, value, type) => globalFilters.some(f => f.field === field && f.value === value && f.type === type), [globalFilters])
-  const filterCount = globalFilters.length
-
-  useEffect(() => {
-    if (selectedEvent) setSidebarOpen(false)
-  }, [selectedEvent, setSidebarOpen])
-
-  const fetchAll = useCallback(async (sd, ed) => {
-    try {
-      setError(null)
-      const start = sd !== undefined ? sd : startRef.current
-      const end = ed !== undefined ? ed : endRef.current
-      const data = await gdprApi.fetchAllGdprData({ startDate: start, endDate: end })
-      setStats(data.stats)
-      setSeverityBuckets(data.severityBuckets)
-      setPlatforms(data.platforms)
-      setArticles(data.articles)
-      setAgents(data.agents || [])
-      setTrend(data.trend)
-      setArticleBands(data.articleBands)
-      setControlStats(data.controlStats)
-      setTotalCount(data.stats?.total || 0)
-    } catch (err) {
-      setError(err.message || 'Failed to load GDPR data')
-    } finally {
-      setLoading(false)
+  const flattenDoc = useCallback((obj, prefix) => {
+    prefix = prefix || ''
+    if (obj === null || obj === undefined) return [{ path: prefix || 'value', value: null }]
+    if (typeof obj !== 'object') return [{ path: prefix || 'value', value: obj }]
+    if (Array.isArray(obj)) {
+      if (!obj.length) return [{ path: prefix || 'value', value: '' }]
+      if (obj.every(v => v === null || v === undefined || typeof v !== 'object'))
+        return [{ path: prefix || 'value', value: obj.join(', ') }]
+      return [{ path: prefix || 'value', value: JSON.stringify(obj) }]
     }
-  }, [])
-
-  useEffect(() => { setLoading(true); fetchAll() }, [fetchAll])
-
-  useEffect(() => {
-    if (!autoRefresh) { if (autoRef.current) { clearInterval(autoRef.current); autoRef.current = null } return }
-    if (autoRef.current) clearInterval(autoRef.current)
-    autoRef.current = setInterval(() => { fetchAll() }, 30000)
-    return () => { if (autoRef.current) { clearInterval(autoRef.current); autoRef.current = null } }
-  }, [autoRefresh, fetchAll])
-
-  const loadEvents = useCallback(async () => {
-    if (activeTab !== 'events' && activeTab !== 'overview') return
-      setEventsLoading(true)
-      const myReqId = ++searchReqId.current
-      try {
-        const params = {
-          startDate: gdprStartDate, endDate: gdprEndDate,
-          limit: 20, offset: (eventPage - 1) * 20
-        }
-        if (eventPage > 500) params.search_after = saCacheRef.current[eventPage - 1]
-        const res = await gdprApi.fetchEvents(eventFilters, params)
-        if (myReqId !== searchReqId.current) return // stale response, discard
-        setGdprAlerts(res.results)
-        setEventTotalCount(res.total)
-        if (res.sort) {
-          saCacheRef.current = { ...saCacheRef.current, [eventPage]: res.sort }
-          setSaCache(saCacheRef.current)
-        }
-      } catch (e) {
-        if (myReqId === searchReqId.current) setError(e.message)
-      } finally {
-        if (myReqId === searchReqId.current) setEventsLoading(false)
-      }
-  }, [activeTab, eventFilters, eventPage, gdprStartDate, gdprEndDate])
-
-  useEffect(() => { loadEvents() }, [loadEvents])
-
-  // Debounce search text → eventFilters.q (300ms)
-  useEffect(() => {
-    if (searchTimer.current) clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(() => {
-      setEventFilters(prev => ({ ...prev, q: searchText }))
-    }, 300)
-    return () => { if (searchTimer.current) clearTimeout(searchTimer.current) }
-  }, [searchText])
-
-  const filteredEvents = useMemo(() => {
-    if (!globalFilters.length) return events
-    return events.filter(e => {
-      for (const f of globalFilters) {
-        let match = false
-        if (f.field === 'severity') match = e.severity === f.value
-        else if (f.field === 'os') match = e.os === f.value
-        else if (f.field === 'article') match = e.article === f.value
-        else if (f.field === 'agentName') match = e.agentName === f.value
-        else if (f.field === 'agentIP') match = e.agentIP === f.value
-        if (f.type === 'exclude' && match) return false
-        if (f.type === 'include' && !match) return false
-      }
-      return true
-    })
-  }, [events, globalFilters])
-
-  const filteredTrend = useMemo(() => {
-    if (!globalFilters.length) return trend
-    return trend.map(t => {
-      const pt = { date: t.date }
-      let total = 0
-      SEV_ORDER.forEach(s => {
-        const sevLabel = s.charAt(0).toUpperCase() + s.slice(1)
-        const hasInc = globalFilters.some(f => f.field === 'severity' && f.value === sevLabel && f.type === 'include')
-        const hasExc = globalFilters.some(f => f.field === 'severity' && f.value === sevLabel && f.type === 'exclude')
-        if (hasInc) { pt[sevLabel] = t[sevLabel] || 0; total += pt[sevLabel] }
-        else if (globalFilters.some(f => f.field === 'severity' && f.type === 'include')) { pt[sevLabel] = 0 }
-        else if (hasExc) { pt[sevLabel] = 0 }
-        else { pt[sevLabel] = t[sevLabel] || 0; total += pt[sevLabel] }
-      })
-      pt.total = total
-      return pt
-    })
-  }, [trend, globalFilters])
-
-  const filteredArticles = useMemo(() => {
-    if (!globalFilters.length) return articles
-    return articles.filter(a => {
-      for (const f of globalFilters) {
-        let match = false
-        if (f.field === 'severity') match = a.severity === f.value
-        else if (f.field === 'article') match = a.article === f.value
-        if (f.type === 'exclude' && match) return false
-        if (f.type === 'include' && !match) return false
-      }
-      return true
-    })
-  }, [articles, globalFilters])
-
-  function FilterWrapper({ children, field, value, className = '' }) {
-    const incActive = hasFilter(field, value, 'include')
-    const excActive = hasFilter(field, value, 'exclude')
-    return (
-      <div className={`relative group ${className}`}>
-        {children}
-        <div className="absolute -top-1.5 -right-1.5 hidden group-hover:flex gap-0.5 z-10">
-          <button onClick={e => { e.stopPropagation(); toggleFilter(field, value, 'include') }}
-            className={`w-5 h-5 flex items-center justify-center rounded text-xs font-bold transition-colors shadow-sm ${incActive ? 'bg-[#e8681a] text-white' : 'bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#1d2432] text-[#e8681a] hover:bg-[#e8681a] hover:text-white'}`}>+</button>
-          <button onClick={e => { e.stopPropagation(); toggleFilter(field, value, 'exclude') }}
-            className={`w-5 h-5 flex items-center justify-center rounded text-xs font-bold transition-colors shadow-sm ${excActive ? 'bg-[#f85149] text-white' : 'bg-white dark:bg-[#161b22] border border-[#d0d7de] dark:border-[#1d2432] text-[#f85149] hover:bg-[#f85149] hover:text-white'}`}>-</button>
-        </div>
-      </div>
-    )
-  }
-
-  const renderFilterBar = () => {
-    if (!globalFilters.length) return null
-    return (
-      <div className="flex flex-wrap items-center gap-1.5 mb-3 px-3 py-2 bg-[#f6f8fa] dark:bg-[#161b22] rounded-md border border-[#d0d7de] dark:border-[#30363d]">
-        <span className="text-[10px] font-semibold text-[#656d76] dark:text-[#8b949e] mr-0.5">Filters:</span>
-        {globalFilters.map(f => (
-          <span key={f.id} className={`inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-md text-[11px] font-medium border ${
-            f.type === 'include'
-              ? 'bg-[#ddf4e8] dark:bg-[#1b3a2d] text-[#1f2328] dark:text-[#f0f6fc] border-[#b8e4cb] dark:border-[#2e6e44]'
-              : 'bg-[#ffe9e9] dark:bg-[#3d1f1f] text-[#1f2328] dark:text-[#f0f6fc] border-[#f7c5c5] dark:border-[#6e3030]'
-          }`}>
-            <span className="leading-none">{f.value}</span>
-            <button onClick={() => removeFilter(f.id)}
-              className="ml-0.5 p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors leading-none"
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z" clipRule="evenodd"/></svg>
-            </button>
-          </span>
-        ))}
-        <button onClick={() => setGlobalFilters([])}
-          className="ml-auto text-[10px] text-[#656d76] dark:text-[#8b949e] hover:text-[#cf222e] dark:hover:text-[#f85149] font-medium transition-colors"
-        >Clear all</button>
-      </div>
-    )
-  }
-
-  const donutData = useMemo(() => {
-    if (globalFilters.length) {
-      const counts = { Critical: 0, High: 0, Medium: 0, Low: 0 }
-      const colors = { Critical: '#dc2626', High: '#ea580c', Medium: '#d97706', Low: '#16a34a' }
-      filteredEvents.forEach(e => { if (counts[e.severity] !== undefined) counts[e.severity]++ })
-      return Object.entries(counts).map(([name, value]) => ({ name, value, fill: colors[name] })).filter(d => d.value > 0)
-    }
-    return severityBuckets.map((b, i) => ({ ...b, value: b.count, fill: b.color }))
-  }, [severityBuckets, filteredEvents, globalFilters.length])
-
-  const topArticles = useMemo(() => [...articles].sort((a, b) => b.eventCount - a.eventCount).slice(0, 5), [articles])
-  const maxArticleEvents = useMemo(() => topArticles.length > 0 ? topArticles[0].eventCount : 1, [topArticles])
-  const topAgents = useMemo(() => [...agents].sort((a, b) => b.events - a.events).slice(0, 5), [agents])
-  const maxAgentEvents = useMemo(() => topAgents.length > 0 ? topAgents[0].events : 1, [topAgents])
-
-  useEffect(() => { setEventPage(1) }, [eventFilters.q, eventFilters.severity, eventFilters.article])
-
-  const toggleSeries = (name) => {
-    setHiddenSeries(prev => {
-      const next = new Set(prev)
-      if (next.has(name)) next.delete(name); else next.add(name)
-      return next
-    })
-  }
-
-  const toggleDonut = (label) => {
-    setHiddenDonut(prev => {
-      const next = new Set(prev)
-      if (next.has(label)) next.delete(label); else next.add(label)
-      return next
-    })
-  }
-
-  const handleEventFilter = (key, val) => setEventFilters(prev => ({ ...prev, [key]: val }))
-
-  const EVENT_PER_PAGE = 15
-
-  const filteredGdprAlerts = useMemo(() => {
-    let result = gdprAlerts
-    if (globalFilters.length) {
-      result = result.filter(v => {
-        for (const f of globalFilters) {
-          let match = false
-          if (f.field === 'severity') match = v.severity === f.value
-          else if (f.field === 'article') match = v.article === f.value
-          else if (f.field === 'agentName') match = v.agentName === f.value
-          else if (f.field === 'agentIP') match = v.agentIP === f.value
-          if (f.type === 'exclude' && match) return false
-          if (f.type === 'include' && !match) return false
-        }
-        return true
-      })
+    let result = []
+    for (const k of Object.keys(obj)) {
+      if (k.startsWith('_') && k !== '_frameworks') continue
+      const p = prefix ? prefix + '.' + k : k
+      result = result.concat(flattenDoc(obj[k], p))
     }
     return result
-  }, [gdprAlerts, eventFilters, globalFilters])
+  }, [])
 
-  const sortedGdprAlerts = useMemo(() => {
-    const rows = [...filteredGdprAlerts]
-    rows.sort((a, b) => {
-      let va = a[eventSort.key], vb = b[eventSort.key]
-      if (va === undefined || va === null) va = ''
-      if (vb === undefined || vb === null) vb = ''
-      if (typeof va === 'string') va = va.toLowerCase()
-      if (typeof vb === 'string') vb = vb.toLowerCase()
-      if (va < vb) return eventSort.dir === 'asc' ? -1 : 1
-      if (va > vb) return eventSort.dir === 'asc' ? 1 : -1
-      return 0
+  const setFilter = (key, value) => {
+    setFilters(prev => {
+      const arr = prev[key] || []
+      const next = { ...prev }
+      if (arr.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[key] = filtered
+        else delete next[key]
+      } else {
+        next[key] = [...arr, value]
+      }
+      return next
     })
-    return rows
-  }, [filteredGdprAlerts, eventSort])
+    setExcludes(prev => {
+      const next = { ...prev }
+      const arr = next[key]
+      if (arr?.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[key] = filtered
+        else delete next[key]
+      }
+      return next
+    })
+  }
 
-  const gdprAlertTotalPages = Math.max(1, Math.ceil(eventTotalCount / 20))
-  const pagedGdprAlerts = sortedGdprAlerts
+  const clearFilter = (key, value) => { setFilters(prev => { const next = { ...prev }; const arr = next[key]; if (arr) { const f = arr.filter(v => v !== value); if (f.length) next[key] = f; else delete next[key] } return next }); setExcludes(prev => { const next = { ...prev }; const arr = next[key]; if (arr) { const f = arr.filter(v => v !== value); if (f.length) next[key] = f; else delete next[key] } return next }) }
 
-  const totalVulns = stats?.total || 0
-  const totalCritical = stats?.critical || 0
-  const totalHigh = stats?.high || 0
-  const totalMedium = stats?.medium || 0
-  const totalLow = stats?.low || 0
+  const clearAllFilters = () => { setFilters({}); setExcludes({}); setTimelineFilter(null) }
 
-  if (loading) return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 text-xs text-[#3b4049] dark:text-[#e5e7eb]">Loading GDPR data...</motion.div>
-  if (error) return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 text-center">
-      <div className="text-xs text-[#f85149] mb-3">Error: {error}</div>
-      <button onClick={() => { setLoading(true); fetchAll() }} className="px-4 py-1.5 bg-[#e8681a] text-white text-[11px] font-semibold rounded-md hover:bg-[#ff7b2e] transition-colors">Retry</button>
-    </motion.div>
-  )
+  const setInclude = (field, value) => {
+    setFilters(prev => {
+      const arr = prev[field] || []
+      const next = { ...prev }
+      if (arr.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[field] = filtered
+        else delete next[field]
+      } else {
+        next[field] = [...arr, value]
+      }
+      return next
+    })
+    setExcludes(prev => {
+      const next = { ...prev }
+      const arr = next[field]
+      if (arr?.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[field] = filtered
+        else delete next[field]
+      }
+      return next
+    })
+  }
 
-  const renderStatCards = () => (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 mb-3">
-      {[
-        { key: 'm-events', label: 'Total GDPR Events', val: totalVulns, icon: 'shield', iconBg: '#a371f71a', iconColor: '#a371f7' },
-        { key: 'm-crit', label: 'Critical', val: totalCritical, icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b' },
-        { key: 'm-high', label: 'High', val: totalHigh, icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a' },
-        { key: 'm-med', label: 'Medium', val: totalMedium, icon: 'alert-circle', iconBg: '#d9770618', iconColor: '#d97706', valColor: '#d97706' },
-        { key: 'm-low', label: 'Low', val: totalLow, icon: 'alert-circle', iconBg: '#16a34a18', iconColor: '#16a34a', valColor: '#16a34a' }
-      ].map(card => (
-        <div key={card.key} className={CARD}>
-          <div className="float-right w-[34px] h-[34px] rounded-lg flex items-center justify-center text-lg" style={{ background: card.iconBg }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={card.iconColor} strokeWidth="2">
-              {card.icon === 'shield' && <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></>}
-              {card.icon === 'alert-triangle' && <><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>}
-              {card.icon === 'alert-circle' && <><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>}
-              {card.icon === 'monitor' && <><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></>}
-            </svg>
-          </div>
-          <div className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide font-semibold mb-1 clear-both">{card.label}</div>
-          <div className="text-2xl font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight" style={card.valColor ? { color: card.valColor } : undefined}>
-            <AnimatedCounter val={card.val} />
+  const setExclude = (field, value) => {
+    setExcludes(prev => {
+      const arr = prev[field] || []
+      const next = { ...prev }
+      if (arr.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[field] = filtered
+        else delete next[field]
+      } else {
+        next[field] = [...arr, value]
+      }
+      return next
+    })
+    setFilters(prev => {
+      const next = { ...prev }
+      const arr = next[field]
+      if (arr?.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[field] = filtered
+        else delete next[field]
+      }
+      return next
+    })
+  }
+
+  const activeFilters = Object.keys(filters)
+  const activeExcludes = Object.keys(excludes)
+
+  const logEntries = useMemo(() => {
+    return (data?.recent || []).map(r => ({ ...toLogEntry(r), raw: r }))
+  }, [data, toLogEntry])
+
+  const hasActiveFilter = activeFilters.length > 0 || activeExcludes.length > 0 || !!timelineFilter
+
+  const DAY_MS = 86400000
+  const filteredLogs = logEntries.filter(l => {
+    if (timelineFilter) {
+      const t = new Date(l.time).getTime()
+      if (t < timelineFilter || t >= timelineFilter + DAY_MS) return false
+    }
+    if (filters.severity?.length && !filters.severity.includes(l.sev)) return false
+    if (filters.agent?.length && !filters.agent.includes(l.agent)) return false
+    if (filters.rule?.length && !filters.rule.includes(l.rule)) return false
+    if (filters.article?.length && !filters.article.includes(l.art)) return false
+    if (filters.desc?.length && !filters.desc.includes(l.desc)) return false
+    if (filters.event?.length && !filters.event.includes(l.event)) return false
+    if (filters.groups?.length && !filters.groups.includes(l.groups)) return false
+    if (excludes.severity?.length && excludes.severity.includes(l.sev)) return false
+    if (excludes.agent?.length && excludes.agent.includes(l.agent)) return false
+    if (excludes.rule?.length && excludes.rule.includes(l.rule)) return false
+    if (excludes.article?.length && excludes.article.includes(l.art)) return false
+    if (excludes.desc?.length && excludes.desc.includes(l.desc)) return false
+    if (excludes.event?.length && excludes.event.includes(l.event)) return false
+    if (excludes.groups?.length && excludes.groups.includes(l.groups)) return false
+    return true
+  })
+
+  const totalLogPages = Math.ceil(filteredLogs.length / LOG_PAGE_SIZE)
+
+  const chartData = useMemo(() => {
+    if (!hasActiveFilter) return null
+    const logs = filteredLogs
+    const sev = {}
+    SEV_ORDER.forEach(s => sev[s] = 0)
+    logs.forEach(l => { if (l.sev) sev[l.sev] = (sev[l.sev] || 0) + 1 })
+    const ctrlMap = {}
+    logs.forEach(l => { if (l.art) ctrlMap[l.art] = (ctrlMap[l.art] || 0) + 1 })
+    const agMap = {}
+    logs.forEach(l => { if (l.agent) agMap[l.agent] = (agMap[l.agent] || 0) + 1 })
+    const ruleMap = {}
+    logs.forEach(l => { if (l.rule) ruleMap[l.rule] = (ruleMap[l.rule] || 0) + 1 })
+    return {
+      severity: sev,
+      controls: ctrlMap,
+      topAgents: Object.entries(agMap).map(([key, doc_count]) => ({ key, doc_count })).sort((a, b) => b.doc_count - a.doc_count).slice(0, 10),
+      topRules: Object.entries(ruleMap).map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count).slice(0, 10)
+    }
+  }, [filteredLogs, hasActiveFilter])
+
+  useEffect(() => { setLogPage(1) }, [activeFilters.join(), activeExcludes.join()])
+
+  const totalEvents = hasActiveFilter && chartData
+    ? Object.values(chartData.severity).reduce((a, b) => a + b, 0)
+    : data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
+
+  const maxAgent = hasActiveFilter && chartData
+    ? Math.max(...chartData.topAgents.map(a => a.doc_count || 0), 1)
+    : data ? Math.max(...data.topAgents.map(a => a.doc_count || 0), 1) : 1
+
+  const articleEvents = useMemo(() => {
+    const map = {}
+    if (hasActiveFilter && chartData) {
+      GDPR_ARTICLES.forEach(a => { map[a.art] = chartData.controls[a.art] || 0 })
+      return map
+    }
+    if (data?.topRules) {
+      data.topRules.forEach(r => {
+        const art = r.control || ''
+        if (art && GDPR_ARTICLES.some(a => a.art === art)) {
+          map[art] = (map[art] || 0) + (r.count || 0)
+        }
+      })
+    }
+    if (Object.keys(map).length === 0 && data?.recent) {
+      data.recent.forEach(r => {
+        const entry = toLogEntry(r)
+        if (entry.ctrl && GDPR_ARTICLES.some(a => a.art === entry.ctrl)) {
+          map[entry.ctrl] = (map[entry.ctrl] || 0) + 1
+        }
+      })
+    }
+    GDPR_ARTICLES.forEach(a => { if (!map[a.art]) map[a.art] = 0 })
+    return map
+  }, [data, toLogEntry, chartData, hasActiveFilter])
+
+  const maxArticle = Math.max(...Object.values(articleEvents), 1)
+
+  const severitySource = hasActiveFilter && chartData ? chartData.severity : data?.severity || {}
+  const sevDonut = SEV_ORDER.filter(s => (severitySource[s] || 0) > 0).map(s => ({
+    name: s, value: severitySource[s], color: SEV_COLORS[s]
+  }))
+
+  const FILTER_STYLES = {
+    severity: (v) => ({
+      bg: v === 'Critical' ? '#e0525218' : v === 'High' ? '#e8893a18' : v === 'Medium' ? '#d2992218' : '#3fb95018',
+      color: v === 'Critical' ? '#ff6b6b' : v === 'High' ? '#e8893a' : v === 'Medium' ? '#d29922' : '#3fb950'
+    }),
+    agent: () => ({ bg: '#58a6ff1a', color: '#58a6ff' }),
+    rule: () => ({ bg: '#e8681a18', color: '#e8681a' })
+  }
+
+  const SevBadge = ({ s }) => {
+    const BG = { Critical: '#450a0a', High: '#3d1a00', Medium: '#2d1f00', Low: '#052e16' }
+    const TXT = { Critical: '#fca5a5', High: '#fdba74', Medium: '#fde68a', Low: '#86efac' }
+    const LIGHT_BG = { Critical: '#fee2e2', High: '#ffedd5', Medium: '#fef9c3', Low: '#dcfce7' }
+    const LIGHT_TXT = { Critical: '#991b1b', High: '#9a3412', Medium: '#854d0e', Low: '#166534' }
+    const bg = isDark ? BG[s] : LIGHT_BG[s]
+    const tx = isDark ? TXT[s] : LIGHT_TXT[s]
+    return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: bg, color: tx }}>{s}</span>
+  }
+
+  const closeModal = () => setModal(null)
+  const openModal = (k) => {
+    if (k === 'm-assets' || k === 'all-agents') { setSidebar('agents'); return }
+    if (k === 'all-articles') { setSidebar('articles'); return }
+    if (k === 'all-rules') { setSidebar('rules'); return }
+    setModal(k)
+  }
+
+  const getArticleEvents = (art) => articleEvents[art] || 0
+
+  const modalContent = () => {
+    if (!modal) return null
+    const mKey = modal
+
+    if (mKey.startsWith('log-')) {
+      const idx = parseInt(mKey.replace('log-', ''))
+      const l = filteredLogs[idx]
+      if (!l) return null
+      return <LogDetailModal log={l} onClose={closeModal} label="GDPR Log" />
+    }
+
+    if (mKey.startsWith('art-')) {
+      const art = mKey.replace('art-', '')
+      const article = GDPR_ARTICLES.find(a => a.art === art)
+      if (!article) return null
+      const ev = getArticleEvents(art)
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeModal}>
+          <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-5 w-[500px] max-h-[72vh] overflow-y-auto shadow-lg" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc]">GDPR Article {art}</span>
+              <button onClick={closeModal} className="text-[#656d76] dark:text-[#8b949e] hover:text-[#1f2328] dark:hover:text-[#f0f6fc] text-lg leading-none">&times;</button>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5 mb-3">
+              <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Article</div><div className="text-sm font-bold text-[#e8681a]">{art}</div></div>
+              <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Events</div><div className="text-2xl font-bold text-[#f0f6fc]">{ev}</div></div>
+            </div>
+            <p className="text-xs text-[#36454f] dark:text-[#c9d1d9] leading-relaxed mb-3">{article.desc} &mdash; {ev} events detected in this period. Review flagged resources and assess whether any personal data breach notification obligations under Article 33 apply.</p>
+            <div className="p-3 rounded-lg text-xs leading-relaxed" style={{ background: '#e8893a18', border: '1px solid #e8893a44', color: '#fdba74' }}>
+              <strong>Recommendation:</strong> Investigate all {ev} events tied to {art}. If personal data was compromised, notify the DPA within 72 hours per Article 33(1).
+            </div>
           </div>
         </div>
-      ))}
-    </div>
-  )
+      )
+    }
 
-  const renderSeverityDonut = () => (
-    <div className={`${CARD} flex flex-col`}>
-      <div className={SECTION_TITLE}>Severity Distribution</div>
-      <div className="flex-1 min-h-0 flex items-center justify-center">
-        {donutData.length > 0 && (
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie data={donutData} cx="50%" cy="50%" innerRadius={55} outerRadius={90} dataKey="value" nameKey="label"
-                stroke={isDark ? '#0d1117' : '#ffffff'} strokeWidth={3}
-                onClick={(data) => toggleDonut(data.label)} style={{ cursor: 'pointer' }}
-                activeIndex={-1} isAnimationActive={false}
-              >
-                {donutData.map((entry, idx) => (
-                  <Cell key={idx} fill={entry.color} opacity={hiddenDonut.has(entry.label) ? 0.25 : 1} />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTip />} />
-            </PieChart>
-          </ResponsiveContainer>
-        )}
-      </div>
-      <div className="flex flex-wrap gap-1.5 justify-center mt-2 text-[10px]">
-        {donutData.map((b, i) => (
-          <button key={i} onClick={() => toggleDonut(b.label)}
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded font-medium transition-all ${
-              hiddenDonut.has(b.label) ? 'opacity-40 text-[#3b4049] dark:text-[#e5e7eb]' : 'text-[#1f2937] dark:text-white hover:bg-[#f0f2f4] dark:hover:bg-[#161b22]'
-            }`}
-          >
-            <span className="w-[7px] h-[7px] rounded-sm" style={{ backgroundColor: b.color }} />
-            {b.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
+    if (mKey.startsWith('rule-')) {
+      const rid = mKey.replace('rule-', '')
+      const topRule = (data?.topRules || []).find(r => (r.ruleId || r.key || r.id || '') === rid)
+      const desc = topRule?.description || 'Rule violation'
+      const count = topRule?.count || 0
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeModal}>
+          <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-5 w-[500px] max-h-[72vh] overflow-y-auto shadow-lg" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc]">Rule {rid}</span>
+              <button onClick={closeModal} className="text-[#656d76] dark:text-[#8b949e] hover:text-[#1f2328] dark:hover:text-[#f0f6fc] text-lg leading-none">&times;</button>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5 mb-3">
+              <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Rule ID</div><div className="text-xl font-bold text-[#e8681a]">{rid}</div></div>
+              <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Times Fired</div><div className="text-xl font-bold text-[#f0f6fc]">{count}</div></div>
+            </div>
+            <p className="text-xs text-[#36454f] dark:text-[#c9d1d9] leading-relaxed">{desc} Rule {rid} is among the top triggered rules for GDPR compliance. High frequency may indicate systemic issues requiring policy or configuration changes.</p>
+          </div>
+        </div>
+      )
+    }
 
-  const renderTrendChart = () => (
-    <div className={`${CARD} flex flex-col`}>
-      <div className={SECTION_TITLE}>GDPR Events Trend</div>
-      <div className="flex gap-3 mb-1.5 text-[11px]">
-        {['Critical', 'High', 'Medium'].map(ser => {
-          const colors = { Critical: '#dc2626', High: '#ea580c', Medium: '#d97706' }
-          return (
-            <button key={ser} onClick={() => toggleSeries(ser)}
-              className={`flex items-center gap-1.5 px-2 py-0.5 rounded font-medium transition-all ${
-                hiddenSeries.has(ser) ? 'opacity-40 text-[#3b4049] dark:text-[#e5e7eb]' : 'text-[#1f2937] dark:text-white hover:bg-[#f0f2f4] dark:hover:bg-[#161b22]'
-              }`}
-            >
-              <span className="w-[10px] h-[10px] rounded-sm" style={{ backgroundColor: colors[ser] }} />
-              {ser}
-            </button>
-          )
-        })}
-      </div>
-      <div className="flex-1 min-h-0">
-        {trend.length > 0 && (
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={filteredTrend} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="gdprTrendCrit" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#dc2626" stopOpacity={0.12} /><stop offset="95%" stopColor="#dc2626" stopOpacity={0} /></linearGradient>
-                <linearGradient id="gdprTrendHigh" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ea580c" stopOpacity={0.12} /><stop offset="95%" stopColor="#ea580c" stopOpacity={0} /></linearGradient>
-                <linearGradient id="gdprTrendMed" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#d97706" stopOpacity={0.12} /><stop offset="95%" stopColor="#d97706" stopOpacity={0} /></linearGradient>
-              </defs>
-              <XAxis dataKey="date" tick={{ fontSize: 9, fill: isDark ? '#e5e7eb' : '#8b949e' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 9, fill: isDark ? '#e5e7eb' : '#8b949e' }} axisLine={false} tickLine={false} />
-              <Tooltip content={<CustomTip />} />
-              {!hiddenSeries.has('Critical') && <Area type="monotone" dataKey="critical" stroke="#dc2626" fill="url(#gdprTrendCrit)" strokeWidth={2.5} dot={{ r: 2.5, fill: '#dc2626', stroke: isDark ? '#0d1117' : '#ffffff', strokeWidth: 2 }} name="Critical" />}
-              {!hiddenSeries.has('High') && <Area type="monotone" dataKey="high" stroke="#ea580c" fill="url(#gdprTrendHigh)" strokeWidth={2.5} dot={{ r: 2.5, fill: '#ea580c', stroke: isDark ? '#0d1117' : '#ffffff', strokeWidth: 2 }} name="High" />}
-              {!hiddenSeries.has('Medium') && <Area type="monotone" dataKey="medium" stroke="#d97706" fill="url(#gdprTrendMed)" strokeWidth={2.5} dot={{ r: 2.5, fill: '#d97706', stroke: isDark ? '#0d1117' : '#ffffff', strokeWidth: 2 }} name="Medium" />}
-            </AreaChart>
-          </ResponsiveContainer>
-        )}
-      </div>
-    </div>
-  )
+    if (mKey.startsWith('ag-')) {
+      const aname = mKey.replace('ag-', '')
+      const topAgent = (data?.topAgents || []).find(a => (a.key || a.agent || a.name || '') === aname)
+      const cnt = topAgent?.doc_count || 0
+      if (!cnt) return null
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeModal}>
+          <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-5 w-[500px] max-h-[72vh] overflow-y-auto shadow-lg" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc]">Agent: {aname}</span>
+              <button onClick={closeModal} className="text-[#656d76] dark:text-[#8b949e] hover:text-[#1f2328] dark:hover:text-[#f0f6fc] text-lg leading-none">&times;</button>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5 mb-3">
+              <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Agent</div><div className="text-sm font-bold text-[#e8681a]">{aname}</div></div>
+              <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Total Events</div><div className="text-2xl font-bold text-[#f0f6fc]">{cnt}</div></div>
+            </div>
+            <p className="text-xs text-[#36454f] dark:text-[#c9d1d9] leading-relaxed">This endpoint generated {cnt} GDPR-relevant events this period. Review event details to determine if any constitute personal data breaches requiring notification.</p>
+          </div>
+        </div>
+      )
+    }
 
-  const renderPlatformChart = () => (
-    <div className={`${CARD} flex flex-col`}>
-      <div className={SECTION_TITLE}>Agent Platform Breakdown</div>
-      <div className="flex-1 min-h-0">
-        {platforms.length > 0 && (
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={platforms} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1d2432" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
-              <Tooltip content={<CustomTip />} cursor={false} />
-              <Bar dataKey="count" radius={[3, 3, 0, 0]} barSize={20} cursor={false} isAnimationActive={false}>
-                {platforms.map((p, i) => <Cell key={i} fill={p.color} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </div>
-    </div>
-  )
+    const topArticle = GDPR_ARTICLES.map(a => ({ ...a, ev: getArticleEvents(a.art) })).sort((a, b) => b.ev - a.ev)[0]
+    const md = {
+      'm-events': { t: 'GDPR Events', b: `Total GDPR events: ${totalEvents.toLocaleString()} across ${data?.topAgents?.length || 0} active agents. Top article: ${topArticle?.art || 'N/A'} with ${topArticle?.ev || 0} events.` },
+      'm-crit': { t: 'Critical Violations', b: `Critical violations: ${data?.severity?.Critical || 0}. Immediate action required if any constitute personal data breaches under GDPR Article 33.` },
+      'm-high': { t: 'High Severity Violations', b: `High severity violations: ${data?.severity?.High || 0}. These require prompt investigation to determine if personal data was compromised.` },
+      'm-med': { t: 'Medium Severity Violations', b: `Medium severity violations: ${data?.severity?.Medium || 0}. Review and address according to incident response procedures.` },
+      'm-assets': { t: 'Monitored Assets', b: `${data?.topAgents?.length || 0} active agents generating GDPR compliance events.` },
+      'm-articles': { t: 'Articles Violated', b: `${GDPR_ARTICLES.filter(a => getArticleEvents(a.art) > 0).length} unique GDPR articles were violated this period: ${GDPR_ARTICLES.filter(a => getArticleEvents(a.art) > 0).map(a => a.art).join(', ')}. Each maps to specific obligations under the GDPR.` },
+      'm-top-art': { t: 'Most Active Article', b: topArticle ? `Article ${topArticle.art} (${topArticle.desc}) is the most frequently violated article with ${topArticle.ev} events.` : 'No article violation data available.' }
+    }
 
-  const renderTopArticles = () => (
-    <div className={`${CARD} flex flex-col`}>
-      <div className={SECTION_TITLE}>Top GDPR Articles</div>
-      <div className="flex-1 min-h-0 overflow-y-auto max-h-[220px]">
-      <table className="w-full text-[11px] border-collapse">
-        <thead>
-          <tr className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb] font-bold uppercase tracking-wide">
-            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">#</th>
-            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Article</th>
-            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Title</th>
-            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Events</th>
-            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Critical</th>
-          </tr>
-        </thead>
-        <tbody>
-          {topArticles.map((art, i) => {
-            const isSelected = selectedArticle === art.article
-            return (
-            <tr key={art.code} onClick={() => setSelectedArticle(prev => prev === art.article ? null : art.article)}
-              className={`cursor-pointer transition-colors ${
-                isSelected ? 'bg-[#e8681a]/10 dark:bg-[#e8681a]/10 border-l-2 border-[#e8681a]' : 'hover:bg-[#f0f2f4] dark:hover:bg-[#161b22]'
-              }`}>
-              <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#3b4049] dark:text-[#e5e7eb]">{i + 1}</td>
-              <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#e8681a]">{art.article}</td>
-              <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#1f2937] dark:text-[#e5e7eb] truncate max-w-[120px]">{art.title}</td>
-              <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-[60px] h-[6px] bg-[#d0d7de] dark:bg-[#1d2432] rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${(art.eventCount / maxArticleEvents) * 100}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
-                  </div>
-                  <span className="font-bold text-[#1f2328] dark:text-[#f0f6fc]"><AnimatedCounter val={art.eventCount} /></span>
-                </div>
-              </td>
-              <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#dc2626]/20 text-[#1f2328] dark:text-[#f0f6fc]"><AnimatedCounter val={art.criticalCount} /></span>
-              </td>
-            </tr>
-            )
-          })}
-        </tbody>
-      </table>
-      </div>
-      {topArticles.length > 0 && (
-      <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e] flex-shrink-0"
-        onClick={() => setActiveTab('overview')}>View all articles <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
-      )}
-    </div>
-  )
-
-  const renderOverview = () => (
-    <motion.div key="overview" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      {renderStatCards()}
-      <div className="grid grid-cols-[0.55fr_1.45fr] gap-2.5 mb-3 items-stretch">
-        {renderSeverityDonut()}
-        {renderTrendChart()}
-      </div>
-      <div className="grid grid-cols-3 gap-2.5 mb-3 items-stretch">
-        {renderTopAgents()}
-        {renderTopArticles()}
-        {renderPlatformChart()}
-      </div>
-      <div className="mb-3">{renderEvents()}</div>
-    </motion.div>
-  )
-
-  const renderTopAgents = () => (
-    <div className={`${CARD} flex flex-col`}>
-      <div className={SECTION_TITLE}>Top Agents by GDPR Events</div>
-      <div className="flex-1 min-h-0 overflow-y-auto max-h-[220px]">
-      <table className="w-full text-[11px] border-collapse">
-        <thead>
-          <tr className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb] font-bold uppercase tracking-wide">
-            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">#</th>
-            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Agent</th>
-            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">OS</th>
-            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Events</th>
-            <th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Critical</th>
-          </tr>
-        </thead>
-        <tbody>
-          {topAgents.map((a, i) => {
-            const totE = a.events
-            return (
-              <tr key={a.name}
-                className="hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
-                <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#3b4049] dark:text-[#e5e7eb]">{i + 1}</td>
-                <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{a.name}</td>
-                <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#1f2937] dark:text-[#e5e7eb]">{a.os}</td>
-                <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-[60px] h-[6px] bg-[#d0d7de] dark:bg-[#1d2432] rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${(totE / maxAgentEvents) * 100}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
-                    </div>
-                    <span className="font-bold text-[#1f2328] dark:text-[#f0f6fc]">{totE.toLocaleString()}</span>
-                  </div>
-                </td>
-                <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#dc2626]/20 text-[#1f2328] dark:text-[#f0f6fc]">{a.vulns.c}</span>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-      </div>
-    </div>
-  )
-
-  const renderEventDetailPanel = () => {
-    if (!selectedEvent) return null
-    const e = selectedEvent
-    const severityColor = e.severity === 'Critical' ? '#dc2626' : e.severity === 'High' ? '#ea580c' : '#2563eb'
-    const detailTabs = [
-      { key: 'description', label: 'Description' },
-      { key: 'agents', label: 'Agent Info' },
-      { key: 'articles', label: 'Articles' }
-    ]
+    const d = md[mKey]
+    if (!d) return null
     return (
-      <>
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => { setSelectedEvent(null); setEventDetailTab('description') }} />
-        <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-          className="fixed top-0 right-0 z-50 h-full w-[420px] max-w-[90vw] bg-white dark:bg-[#0d1117] border-l border-[#d0d7de] dark:border-[#1d2432] shadow-2xl p-5 overflow-y-auto"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <span className="font-mono text-sm font-bold text-[#e8681a]">Rule {e.ruleId}</span>
-            <button onClick={() => { setSelectedEvent(null); setEventDetailTab('description') }} className="text-[#3b4049] dark:text-[#e5e7eb] hover:text-[#1f2328] dark:hover:text-[#f0f6fc] transition-colors">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeModal}>
+        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-5 w-[500px] max-h-[72vh] overflow-y-auto shadow-lg" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc]">{d.t}</span>
+            <button onClick={closeModal} className="text-[#656d76] dark:text-[#8b949e] hover:text-[#1f2328] dark:hover:text-[#f0f6fc] text-lg leading-none">&times;</button>
           </div>
-          <div className="flex gap-0.5 mb-4 border-b border-[#d0d7de] dark:border-[#1d2432]">
-            {detailTabs.map(t => (
-              <button key={t.key} onClick={() => setEventDetailTab(t.key)}
-                className={`text-[10px] font-semibold px-3 py-1.5 rounded-t-md transition-colors ${
-                  eventDetailTab === t.key
-                    ? 'bg-[#f0f2f4] dark:bg-[#161b22] text-[#1f2328] dark:text-[#f0f6fc] border border-b-0 border-[#d0d7de] dark:border-[#1d2432] -mb-px'
-                    : 'text-[#3b4049] dark:text-[#e5e7eb] hover:text-[#1f2328] dark:hover:text-[#f0f6fc]'
-                }`}
-              >{t.label}</button>
-            ))}
-          </div>
-          {eventDetailTab === 'description' && (
-            <div className="space-y-4">
-              <div className="border border-[#d0d7de] dark:border-[#1d2432] rounded-lg p-4">
-                <div className="text-[10px] font-bold text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide mb-1.5">Severity</div>
-                <div className="text-xl font-bold" style={{ color: severityColor }}>{e.severity}</div>
-              </div>
-              <div>
-                <div className="text-[10px] font-bold text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide mb-1.5">Description</div>
-                <div className="text-[12px] text-[#1f2937] dark:text-[#e5e7eb] leading-relaxed">{e.description}</div>
-              </div>
-              <div className="border-t border-[#f0f2f4] dark:border-[#1d2432] pt-3">
-                <div className="text-[10px] font-bold text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide mb-1.5">Event Details</div>
-                <div className="text-[12px] text-[#1f2937] dark:text-[#e5e7eb] leading-relaxed">
-                  GDPR Article {e.article} triggered by rule {e.ruleId} on agent {e.agentName}. Severity: {e.severity}.
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3 border-t border-[#f0f2f4] dark:border-[#1d2432] pt-3">
-                <div>
-                  <div className="text-[9px] font-bold text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide mb-1">Agent</div>
-                  <div className="text-[11px] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{e.agentName}</div>
-                </div>
-                <div>
-                  <div className="text-[9px] font-bold text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide mb-1">IP</div>
-                  <div className="text-[11px] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{e.agentIP || 'N/A'}</div>
-                </div>
-                <div>
-                  <div className="text-[9px] font-bold text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide mb-1">OS</div>
-                  <div className="text-[11px] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{e.os}</div>
-                </div>
-                <div>
-                  <div className="text-[9px] font-bold text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide mb-1">Alert Time</div>
-                  <div className="text-[11px] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{e.alertTime}</div>
-                </div>
-                <div>
-                  <div className="text-[9px] font-bold text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide mb-1">Rule ID</div>
-                  <div className="text-[11px] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{e.ruleId}</div>
-                </div>
-                <div>
-                  <div className="text-[9px] font-bold text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide mb-1">Level</div>
-                  <div className="text-[11px] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{e.ruleLevel}</div>
-                </div>
-              </div>
-            </div>
-          )}
-          {eventDetailTab === 'agents' && (
-            <div className="space-y-3">
-              <div>
-                <div className="text-[10px] font-bold text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide mb-1.5">Agent Name</div>
-                <div className="text-[12px] text-[#1f2937] dark:text-[#e5e7eb]">{e.agentName}</div>
-              </div>
-              {e.agentIP && (
-                <div>
-                  <div className="text-[10px] font-bold text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide mb-1.5">IP Address</div>
-                  <div className="text-[12px] text-[#1f2937] dark:text-[#e5e7eb]">{e.agentIP}</div>
-                </div>
-              )}
-              <div>
-                <div className="text-[10px] font-bold text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide mb-1.5">Operating System</div>
-                <div className="text-[12px] text-[#1f2937] dark:text-[#e5e7eb]">{e.os}</div>
-              </div>
-            </div>
-          )}
-          {eventDetailTab === 'articles' && (
-            <div className="space-y-3">
-              <div>
-                <div className="text-[10px] font-bold text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide mb-1.5">GDPR Articles</div>
-                <div className="text-[12px] text-[#1f2937] dark:text-[#e5e7eb]">{e.article}</div>
-              </div>
-              {(e.gdprCodes || []).length > 0 && (
-                <div>
-                  <div className="text-[10px] font-bold text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide mb-1.5">All GDPR Codes</div>
-                  <div className="flex flex-wrap gap-1">
-                    {e.gdprCodes.map((code, i) => (
-                      <span key={i} className="px-2 py-1 rounded bg-[#e8681a]/10 text-[#e8681a] text-[10px] font-medium">{code}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {e.groups && e.groups.length > 0 && (
-                <div>
-                  <div className="text-[10px] font-bold text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide mb-1.5">Groups</div>
-                  <div className="flex flex-wrap gap-1">
-                    {e.groups.map((g, i) => (
-                      <span key={i} className="px-2 py-1 rounded bg-[#f0f2f4] dark:bg-[#161b22] text-[#1f2328] dark:text-[#e5e7eb] text-[10px] font-medium">{g}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </motion.div>
-      </>
+          <p className="text-xs text-[#36454f] dark:text-[#c9d1d9] leading-relaxed">{d.b}</p>
+        </div>
+      </div>
     )
   }
 
-  const renderEvents = () => (
-    <motion.div key="events" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      {renderFilterBar()}
-      <div className={`${CARD} mb-3`}>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="relative flex-1 min-w-[180px]">
-            <input type="text" placeholder="Search by agent, rule, article, IP..." value={searchText}
-              onChange={e => setSearchText(e.target.value)}
-              className="w-full bg-[#f0f2f4] dark:bg-[#161b22] text-[#1f2328] dark:text-[#f0f6fc] text-[11px] border border-[#d0d7de] dark:border-[#1d2432] rounded-md px-3 py-1.5 pl-8 focus:outline-none focus:border-[#e8681a]/50 transition-colors placeholder:text-[#3b4049] dark:text-[#e5e7eb]"
-            />
-            <svg className="absolute left-2.5 top-2 w-3.5 h-3.5 text-[#3b4049] dark:text-[#e5e7eb]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-          </div>
-          <FilterDropdown value={eventFilters.severity} onChange={v => handleEventFilter('severity', v)}
-            options={[
-              { value: '', label: 'All Severities' },
-              { value: 'Critical', label: 'Critical' },
-              { value: 'High', label: 'High' },
-              { value: 'Medium', label: 'Medium' },
-              { value: 'Low', label: 'Low' }
-            ]}
-            placeholder="All Severities" />
-          <FilterDropdown value={eventFilters.article} onChange={v => handleEventFilter('article', v)}
-            options={[
-              { value: '', label: 'All Articles' },
-              ...articles.slice(0, 20).map(a => ({ value: a.article, label: a.article }))
-            ]}
-            placeholder="All Articles" />
+  if (loading) return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 text-xs text-[#8b949e]">Loading GDPR data...</motion.div>
+  if (error) return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 text-xs text-[#f85149]">Error: {error}</motion.div>
+
+  return (
+    <motion.div ref={containerRef} data-export-container initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }} className="p-3">
+      {/* Page Header */}
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <div className="text-[11px] text-[#8b949e]">Home / <span className="text-[#e8681a] cursor-pointer" onClick={() => openModal('go-overview')}>Compliance Management</span> / GDPR</div>
+          <div className="text-xl font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">GDPR Compliance</div>
+        </div>
+        <div className="flex items-center gap-2 mt-1.5">
+          <DateRangePicker />
+          <button onClick={() => refresh()} className="p-1.5 rounded border border-transparent hover:bg-[#21262d] text-[#8b949e] hover:text-[#e8681a] transition-colors">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          </button>
         </div>
       </div>
-      <div className={`${CARD} overflow-x-auto`}>
-        <table className="w-full text-[11px] border-collapse">
+
+      {(activeFilters.length > 0 || activeExcludes.length > 0 || timelineFilter) && (
+        <div className="flex items-center gap-2 mb-2.5 px-1 flex-wrap">
+          <span className="text-xs text-[#8b949e]">Filters:</span>
+          {Object.entries(filters).flatMap(([key, vals]) =>
+            vals.map(val => {
+              const st = FILTER_STYLES[key]?.(val) || { bg: '#3fb95018', color: '#3fb950' }
+              return (
+                <span key={key + val} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: st.bg, color: st.color }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                  {key === 'severity' ? '' : key + ': '}{val}
+                  <button onClick={() => clearFilter(key, val)} className="hover:opacity-70">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </span>
+              )
+            })
+          )}
+          {Object.entries(excludes).flatMap(([key, vals]) =>
+            vals.map(val => (
+              <span key={'ex-' + key + val} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: '#f8514918', color: '#f85149' }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                Exclude {key === 'severity' ? '' : key + ': '}{val}
+                <button onClick={() => clearFilter(key, val)} className="hover:opacity-70">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </span>
+            ))
+          )}
+          {timelineFilter && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: '#e8681a18', color: '#e8681a' }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+              Time: {data?.timeline?.find(t => t.rawTime === timelineFilter)?.time || 'Selected'}
+              <button onClick={() => setTimelineFilter(null)} className="hover:opacity-70">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </span>
+          )}
+          {((activeFilters.length + activeExcludes.length) > 0 || timelineFilter) && (
+            <button onClick={clearAllFilters} className="text-[10px] px-2 py-0.5 rounded border border-[#e5e7eb] dark:border-[#2d3140] text-[#8b949e] hover:text-[#f85149] hover:border-[#f85149] transition-all">
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Metric Cards */}
+      <div className="grid grid-cols-6 gap-2.5 mb-3">
+        {(() => {
+          const topArticle = GDPR_ARTICLES.map(a => ({ ...a, ev: getArticleEvents(a.art) })).sort((a, b) => b.ev - a.ev)[0]
+          const cards = [
+            { key: 'm-events', label: 'GDPR Events', val: totalEvents.toLocaleString(), icon: 'certificate', iconBg: '#a371f71a', iconColor: '#a371f7' },
+            { key: 'm-crit', label: 'Critical Violations', val: (severitySource?.Critical || 0).toLocaleString(), icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b', filterField: 'severity', filterValue: 'Critical' },
+            { key: 'm-high', label: 'High Severity Violations', val: (severitySource?.High || 0).toLocaleString(), icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a', filterField: 'severity', filterValue: 'High' },
+            { key: 'm-assets', label: 'Monitored Assets', val: hasActiveFilter && chartData ? chartData.topAgents.length : data?.topAgents?.length || 0, sub: 'Active agents', icon: 'device-desktop', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
+            { key: 'm-articles', label: 'Articles Violated', val: GDPR_ARTICLES.length, sub: 'Unique GDPR articles', icon: 'list-check', iconBg: '#3fb95018', iconColor: '#3fb950' },
+            { key: 'm-top-art', label: 'Most Active Article', val: topArticle ? topArticle.art : '--', sub: topArticle ? topArticle.desc + ' · ' + topArticle.ev + ' Events' : '', icon: 'award', iconBg: '#e8681a18', iconColor: '#e8681a', valColor: '#e8681a', valSize: 'text-base', filterField: 'article', filterValue: topArticle?.art || '' },
+          ]
+          return cards.map(card => (
+            <FilterableMetricCard
+              key={card.key}
+              card={card}
+              isDark={isDark}
+              filterField={card.filterField}
+              filterValue={card.filterValue}
+              isIncluded={card.filterField && filters[card.filterField]?.includes(card.filterValue)}
+              isExcluded={card.filterField && excludes[card.filterField]?.includes(card.filterValue)}
+              onInclude={() => setInclude(card.filterField, card.filterValue)}
+              onExclude={() => setExclude(card.filterField, card.filterValue)}
+              onCustomClick={card.key === 'm-assets' ? () => setSidebar('agents') : !card.filterField ? () => openModal(card.key) : undefined}
+            />
+          ))
+        })()}
+      </div>
+
+      {/* Tri Row */}
+      <div className="grid grid-cols-[1.1fr_0.85fr_1.05fr] gap-2.5 mb-2.5">
+        {/* Events by GDPR Article */}
+        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
+          <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Events by GDPR Article (Top 5)</div>
+          {GDPR_ARTICLES.map(a => {
+            const ev = getArticleEvents(a.art)
+            const pct = (ev / maxArticle) * 100
+            return (
+              <div key={a.art} onClick={() => openModal('art-' + a.art)}
+                className="flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] cursor-pointer text-[11px]">
+                <span className="w-[90px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0">{a.art}</span>
+                <div className="flex-1 h-2 bg-[#d0d7de] dark:bg-[#30363d] rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
+                </div>
+                <span className="w-7 text-right text-[#1f2328] dark:text-[#f0f6fc] font-bold">{ev}</span>
+              </div>
+            )
+          })}
+          <div className="flex justify-between text-[9px] text-[#8b949e] mt-1.5 px-1">
+            <span>0</span><span>10</span><span>20</span><span>30</span><span>40</span>
+          </div>
+          <div className="text-center text-[10px] text-[#8b949e] mt-0.5">Events</div>
+        </div>
+
+        {/* Severity Donut */}
+        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 flex flex-col shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
+          <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2">Severity Distribution</div>
+          <div className="grid grid-cols-2 gap-1 mb-2">
+            {SEV_ORDER.filter(s => sevDonut.find(x => x.name === s)?.value > 0).map(s => {
+              const v = sevDonut.find(x => x.name === s)?.value || 0
+              return (
+                <span key={s} onClick={() => setFilter('severity', s)}
+                  className={`flex items-center gap-1.5 text-[11px] cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] ${filters.severity?.includes(s) ? 'ring-1 ring-[#e8681a]/30 bg-[#e8681a]/5' : ''} ${filters.severity?.length && !filters.severity.includes(s) ? 'opacity-40' : ''}`}>
+                  <span className="w-[10px] h-[10px] rounded flex-shrink-0" style={{ background: SEV_COLORS[s] }} />
+                  {s} <span className="text-[#8b949e]">{v} ({Math.round((v / (totalEvents || 1)) * 100)}%)</span>
+                </span>
+              )
+            })}
+          </div>
+          <div className="flex-1 min-h-[120px] relative">
+            {sevDonut.length > 0 && (
+              <ResponsiveContainer width="100%" height={130}>
+                <PieChart>
+                  <Pie data={sevDonut} cx="50%" cy="50%" innerRadius={40} outerRadius={58} dataKey="value" stroke={isDark ? '#161b22' : '#ffffff'} strokeWidth={3}>
+                    {sevDonut.map((e, i) => (
+                      <Cell key={i} fill={e.color} style={{ cursor: 'pointer' }}
+                        onClick={() => setFilter('severity', e.name)}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTip />} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+          <div className="text-center mt-1.5 text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc]">{totalEvents.toLocaleString()} <span className="text-[10px] font-normal text-[#8b949e]">Total Events</span></div>
+        </div>
+
+        {/* Trend */}
+        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
+          <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2 flex items-center justify-between">
+            <span>GDPR Events Trend</span>
+            <span className="text-[10px] text-[#8b949e] bg-[#f0f2f4] dark:bg-[#2d3140] px-2 py-0.5 rounded font-medium normal-case">
+              {startDate === 'now-24h' ? 'Last 24 Hours' : startDate === 'now-7d' ? 'Last 7 Days' : startDate === 'now-30d' ? 'Last 30 Days' : startDate === 'now-90d' ? 'Last 90 Days' : startDate || 'Last 7 Days'}
+            </span>
+          </div>
+          <div className="h-[150px]">
+            {data?.timeline?.length > 0 ? (
+              <ResponsiveContainer width="100%" height={150}>
+                <AreaChart data={data.timeline}
+                  onClick={(e) => {
+                    const rt = e?.activePayload?.[0]?.payload?.rawTime
+                    if (rt) setTimelineFilter(timelineFilter === rt ? null : rt)
+                  }}>
+                  <defs><linearGradient id="gdprGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e8681a" stopOpacity={0.12} /><stop offset="95%" stopColor="#e8681a" stopOpacity={0} /></linearGradient></defs>
+                  <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
+                  <Tooltip content={<CustomTip />} />
+                  <Area type="monotone" dataKey="count" stroke="#e8681a" fill="url(#gdprGrad)" strokeWidth={2.5} dot={{ r: 3, fill: '#e8681a', stroke: isDark ? '#161b22' : '#ffffff', strokeWidth: 2 }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center">
+                <svg width="200" height="120" viewBox="0 0 200 120" className="opacity-40">
+                  <polyline points="10,90 30,75 50,78 70,60 90,50 110,40 130,45 150,30 170,35 190,20" fill="none" stroke="#e8681a" strokeWidth="2.5" />
+                  <rect x="10" y="90" width="180" height="40" fill="url(#mockGrad)" opacity="0.1" />
+                </svg>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-between text-[9px] text-[#8b949e] mt-1 px-0.5">
+            {(data?.timeline || []).slice(0, 7).map((t, i) => <span key={i}>{t.time}</span>)}
+          </div>
+        </div>
+      </div>
+
+      {/* Three Table Row */}
+      <div className="grid grid-cols-3 gap-2.5 mb-2.5">
+        {/* Top Violated Articles */}
+        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
+          <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Top Violated Articles</div>
+          <table className="w-full text-[11px] border-collapse">
+            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Article</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Description</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Events</th></tr></thead>
+            <tbody>
+              {GDPR_ARTICLES.map((a, i) => {
+                const ev = getArticleEvents(a.art)
+                return (
+                  <tr key={a.art} onClick={() => openModal('art-' + a.art)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-semibold">{a.art}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">{a.desc}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{ev}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
+            onClick={() => openModal('all-articles')}>View all articles <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+        </div>
+
+        {/* Top Agents */}
+        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
+          <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Top Agents</div>
+          <table className="w-full text-[11px] border-collapse">
+            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Agent</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Events</th></tr></thead>
+            <tbody>
+              {(hasActiveFilter && chartData ? chartData.topAgents : data?.topAgents || []).slice(0, 5).map((a, i) => {
+                const name = a.key || a.agent || a.name || 'Unknown'
+                const cnt = a.doc_count || a.events || 0
+                const pct = (cnt / maxAgent) * 100
+                return (
+                  <tr key={name} onClick={() => setFilter('agent', name)}
+                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${filters.agent?.includes(name) ? 'bg-[#58a6ff]/5 ring-1 ring-inset ring-[#58a6ff]/30' : ''}`}>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{name}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <div className="w-[70px] h-[6px] bg-[#d0d7de] dark:bg-[#30363d] rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
+                        </div>
+                        <span className="font-bold text-[#1f2328] dark:text-[#f0f6fc]">{cnt}</span>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
+            onClick={() => openModal('all-agents')}>View all agents <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+        </div>
+
+        {/* Top Rule IDs */}
+        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
+          <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Top Rule IDs</div>
+          <table className="w-full text-[11px] border-collapse">
+            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Rule ID</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Description</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Fired</th></tr></thead>
+            <tbody>
+              {(hasActiveFilter && chartData ? chartData.topRules : data?.topRules || []).slice(0, 5).map((r, i) => {
+                const ruleId = r.ruleId || r.key || r.id || ''
+                return (
+                  <tr key={ruleId || i} onClick={() => setFilter('rule', ruleId)}
+                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${filters.rule?.includes(ruleId) ? 'bg-[#e8681a]/5 ring-1 ring-inset ring-[#e8681a]/30' : ''}`}>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-bold">{ruleId || '--'}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">{(r.description || 'Event').substring(0, 30)}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{r.count || 0}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
+            onClick={() => openModal('all-rules')}>View all rules <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+        </div>
+      </div>
+
+      {/* GDPR Event Logs */}
+      <div className="mb-3">
+        {data?.recentTotal > 500 && (
+          <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-[#ddf4ff] dark:bg-[#0c2d6b] border border-[#54aeff66] dark:border-[#1f6feb66] text-[11px] text-[#0969da] dark:text-[#58a6ff]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span><strong>{data.recentTotal.toLocaleString()}</strong> events found. Select a narrower time range for detailed log views.</span>
+          </div>
+        )}
+        <div className="flex items-center justify-between mb-2.5">
+          <div className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">GDPR Event Logs</div>
+          <div className="flex items-center gap-1.5">
+            <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportExcel(filteredLogs, EXPORT_COLS, `gdpr-logs-${ts}.xlsx`) }}
+              className="text-[10px] px-2 py-1 rounded font-medium bg-[#e8eaed] dark:bg-[#2d3140] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Excel
+            </button>
+            <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportPDFReport({ filename: `gdpr-report-${ts}.pdf`, title: 'GDPR Event Report', dateRange: `${startDate || 'now-24h'} to ${endDate || 'now'}`, metrics: [{ label: 'Events (24h)', value: (data?.count24 || 0).toLocaleString() }, { label: 'Events (7d)', value: (data?.count7d || 0).toLocaleString() }, { label: 'Alert Sources', value: data?.topAgents?.length || 0 }, { label: 'Total Logs', value: filteredLogs.length }], severity: Object.entries(data?.severity || {}).map(([l, c]) => ({ level: l, count: c })), topRules: (data?.topRules || []).map(r => ({ key: r.key || r.ruleId || r.id || '--', count: r.doc_count || r.count || 0 })), topAgents: (data?.topAgents || []).map(a => ({ key: a.key || a.agent || a.name || '--', count: a.doc_count || a.events || 0 })), topArticles: (data?.topControls || []).map(c => ({ key: c.key || c.code || '--', count: c.doc_count || c.count || 0 })), timeline: (data?.timeline || []).map(t => ({ time: t.time, count: t.count })), logHeaders: EXPORT_COLS.map(c => c.header.toLowerCase()), logRows: prepareRows(filteredLogs, EXPORT_COLS) }) }}
+              className="text-[10px] px-2 py-1 rounded font-medium bg-[#e8eaed] dark:bg-[#2d3140] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              PDF Report
+            </button>
+          </div>
+        </div>
+        <table className="w-full text-[10px] border-collapse table-fixed">
+          <colgroup>
+            <col style={{ width: '110px' }} /><col style={{ width: '100px' }} /><col style={{ width: '55px' }} />
+            <col style={{ width: '130px' }} /><col style={{ width: '145px' }} /><col style={{ width: '90px' }} />
+            <col style={{ width: '100px' }} /><col style={{ width: '145px' }} />
+          </colgroup>
           <thead>
-            <tr className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb] font-bold uppercase tracking-wide">
-              {[
-                { key: 'alertTime', label: 'Alert Time', sortable: true },
-                { key: 'agentName', label: 'Agent', sortable: true },
-                { key: 'ruleId', label: 'Rule', sortable: true },
-                { key: 'severity', label: 'Severity', sortable: true },
-                { key: 'article', label: 'Article', sortable: true },
-                { key: 'description', label: 'Description', sortable: false }
-              ].map(col => (
-                <th key={col.key} className={`text-left py-2 px-2 border-b border-[#d0d7de] dark:border-[#1d2432] ${col.sortable ? 'cursor-pointer hover:text-[#e8681a] select-none' : ''}`}
-                  onClick={() => { if (!col.sortable) return; setEventSort(prev => ({ key: col.key, dir: prev.key === col.key && prev.dir === 'asc' ? 'desc' : 'asc' })) }}
-                >
-                  <span className="inline-flex items-center gap-1">
-                    {col.label}
-                    {col.sortable && eventSort.key === col.key && (
-                      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        {eventSort.dir === 'asc' ? <polyline points="6 15 12 9 18 15" /> : <polyline points="6 9 12 15 18 9" />}
-                      </svg>
-                    )}
-                  </span>
-                </th>
-              ))}
+            <tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide bg-[#f0f2f4] dark:bg-[#2d3140]">
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Time</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Agent</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Rule</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Article</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Description</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Severity</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Event</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Groups</th>
             </tr>
           </thead>
           <tbody>
-            {pagedGdprAlerts.length === 0 && (
-              <tr><td colSpan={6} className="text-center py-8 text-[11px] text-[#3b4049] dark:text-[#e5e7eb]">
-                {eventsLoading ? 'Searching...' : 'No events match your filters.'}
-              </td></tr>
+            {filteredLogs.slice((logPage - 1) * LOG_PAGE_SIZE, logPage * LOG_PAGE_SIZE).map((l, i) => {
+              const idx = (logPage - 1) * LOG_PAGE_SIZE + i
+              const rowId = l.raw?._id || String(idx)
+              const isExp = expandedRow[rowId]
+              return (
+                <React.Fragment key={idx}>
+                  <tr onClick={() => toggleRow(rowId)}
+                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] ${isExp ? 'bg-[#f6f8fa] dark:bg-[#16181f]' : ''}`}>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">
+                      <span className="inline-flex items-center gap-1">
+                        <span className="text-[10px] w-3">{isExp ? '▾' : '▸'}</span>
+                        {l.time}
+                      </span>
+                    </td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <InlineFilter field="agent" value={l.agent}
+                        onInclude={() => setInclude('agent', l.agent)}
+                        onExclude={() => setExclude('agent', l.agent)}
+                        isIncluded={filters.agent?.includes(l.agent)}
+                        isExcluded={excludes.agent?.includes(l.agent)}
+                        className={`font-semibold text-left ${filters.agent?.includes(l.agent) ? 'text-[#58a6ff]' : excludes.agent?.includes(l.agent) ? 'text-[#f85149]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
+                        {l.agent}
+                      </InlineFilter>
+                    </td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <InlineFilter field="rule" value={l.rule}
+                        onInclude={() => setInclude('rule', l.rule)}
+                        onExclude={() => setExclude('rule', l.rule)}
+                        isIncluded={filters.rule?.includes(l.rule)}
+                        isExcluded={excludes.rule?.includes(l.rule)}
+                        className={`font-bold text-left ${filters.rule?.includes(l.rule) ? 'text-[#e8681a] underline' : excludes.rule?.includes(l.rule) ? 'text-[#f85149]' : 'text-[#e8681a]'}`}>
+                        {l.rule}
+                      </InlineFilter>
+                    </td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#e8681a]">{l.art}</td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <InlineFilter field="desc" value={l.desc}
+                        onInclude={() => setInclude('desc', l.desc)}
+                        onExclude={() => setExclude('desc', l.desc)}
+                        isIncluded={filters.desc?.includes(l.desc)}
+                        isExcluded={excludes.desc?.includes(l.desc)}
+                        className={`text-left ${filters.desc?.includes(l.desc) ? 'text-[#58a6ff]' : excludes.desc?.includes(l.desc) ? 'text-[#f85149]' : 'text-[#36454f] dark:text-[#c9d1d9]'}`}>
+                        {l.desc}
+                      </InlineFilter>
+                    </td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <InlineFilter field="severity" value={l.sev}
+                        onInclude={() => setInclude('severity', l.sev)}
+                        onExclude={() => setExclude('severity', l.sev)}
+                        isIncluded={filters.severity?.includes(l.sev)}
+                        isExcluded={excludes.severity?.includes(l.sev)}>
+                        <SevBadge s={l.sev} />
+                      </InlineFilter>
+                    </td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <InlineFilter field="event" value={l.event}
+                        onInclude={() => setInclude('event', l.event)}
+                        onExclude={() => setExclude('event', l.event)}
+                        isIncluded={filters.event?.includes(l.event)}
+                        isExcluded={excludes.event?.includes(l.event)}
+                        className={`text-left font-medium ${filters.event?.includes(l.event) ? 'text-[#58a6ff]' : excludes.event?.includes(l.event) ? 'text-[#f85149]' : 'text-[#e8681a]'}`}>
+                        {l.event}
+                      </InlineFilter>
+                    </td>
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <InlineFilter field="groups" value={l.groups}
+                        onInclude={() => setInclude('groups', l.groups)}
+                        onExclude={() => setExclude('groups', l.groups)}
+                        isIncluded={filters.groups?.includes(l.groups)}
+                        isExcluded={excludes.groups?.includes(l.groups)}
+                        className={`text-left font-medium ${filters.groups?.includes(l.groups) ? 'text-[#58a6ff]' : excludes.groups?.includes(l.groups) ? 'text-[#f85149]' : 'text-[#e8681a] text-[9px]'}`}>
+                        {l.groups}
+                      </InlineFilter>
+                    </td>
+                  </tr>
+                  {isExp && l.raw && (
+                    <tr>
+                      <td colSpan={8} className="p-0 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} transition={{ duration: 0.15 }}>
+                          <div className="bg-[#f6f8fa] dark:bg-[#0d1117] border-t border-[#e5e7eb] dark:border-[#2d3140]">
+                            <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#e5e7eb] dark:border-[#2d3140]">
+                              <div className="flex items-center gap-2">
+                                <button onClick={(e) => { e.stopPropagation(); setJsonView(prev => ({ ...prev, [rowId]: false })) }}
+                                  className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${!jsonView[rowId] ? 'bg-[#e8681a] text-white' : 'text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#21262d]'}`}>Table</button>
+                                <button onClick={(e) => { e.stopPropagation(); setJsonView(prev => ({ ...prev, [rowId]: true })) }}
+                                  className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${jsonView[rowId] ? 'bg-[#e8681a] text-white' : 'text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#21262d]'}`}>JSON</button>
+                              </div>
+                              <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(JSON.stringify(l.raw, null, 2)) }}
+                                className="text-[10px] px-2 py-0.5 rounded font-medium bg-[#e8eaed] dark:bg-[#2d3140] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                                Copy
+                              </button>
+                            </div>
+                            <div className="max-h-56 overflow-y-auto">
+                              {jsonView[rowId] ? (
+                                <pre className="text-xs text-[#c9d1d9] bg-[#0d1117] p-3 overflow-x-auto whitespace-pre-wrap break-all font-mono leading-relaxed m-0">{JSON.stringify(l.raw, null, 2)}</pre>
+                              ) : (
+                                <table className="w-full text-[11px]">
+                                  <tbody>
+                                    {flattenDoc(l.raw).map((fld, fi) => (
+                                      <tr key={fi} className="border-b border-[#e5e7eb]/30 dark:border-[#2d3140]/30 hover:bg-[#f0f2f4] dark:hover:bg-[#161b22]">
+                                        <td className="px-3 py-1 font-medium text-[#1f2328] dark:text-[#f0f6fc] whitespace-nowrap w-1/3 align-top text-[10px]">{fld.path}</td>
+                                        <td className="px-3 py-1 text-[#36454f] dark:text-[#c9d1d9] break-all text-[11px]">{String(fld.value ?? '')}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          </div>
+                        </motion.div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              )
+            })}
+            {filteredLogs.length === 0 && (
+              <tr><td colSpan={8} className="text-center py-4 text-xs text-[#8b949e]">No matching logs found</td></tr>
             )}
-            {pagedGdprAlerts.map((v, i) => (
-              <tr key={v.id || i} onClick={() => setSelectedEvent(v)}
-                className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors"
-              >
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] whitespace-nowrap">{v.alertTime}</td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{v.agentName}</td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#e8681a] font-bold">{v.ruleId}</td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${
-                    v.severity === 'Critical' ? 'bg-[#dc2626]/20 text-[#1f2328] dark:text-[#f0f6fc]' :
-                    v.severity === 'High' ? 'bg-[#ea580c]/20 text-[#1f2328] dark:text-[#f0f6fc]' :
-                    v.severity === 'Medium' ? 'bg-[#d97706]/20 text-[#1f2328] dark:text-[#f0f6fc]' :
-                    'bg-[#16a34a]/20 text-[#1f2328] dark:text-[#f0f6fc]'
-                  }`}>{v.severity}</span>
-                </td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
-                  <div className="flex flex-wrap gap-0.5">
-                    {v.allArticles && v.allArticles.length > 1 ? v.allArticles.slice(0, 2).map((a, i) => (
-                      <span key={i} className="text-[10px] text-[#e8681a] font-medium">{a}{i < Math.min(v.allArticles.length, 2) - 1 ? ', ' : ''}</span>
-                    )) : <span className="text-[#e8681a] font-medium text-[11px]">{v.article}</span>}
-                    {v.allArticles && v.allArticles.length > 2 && <span className="text-[9px] text-[#3b4049] dark:text-[#e5e7eb]">+{v.allArticles.length - 2}</span>}
-                  </div>
-                </td>
-                <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#1f2937] dark:text-[#e5e7eb] overflow-hidden text-ellipsis whitespace-nowrap max-w-[200px]">{v.description}</td>
-              </tr>
-            ))}
           </tbody>
         </table>
-      </div>
-      {gdprAlertTotalPages > 1 && (
-        <div className="flex items-center justify-center gap-1.5 mt-3 flex-wrap">
-          <button onClick={() => setEventPage(p => Math.max(1, p - 1))} disabled={eventPage === 1}
-            className="px-2.5 py-1.5 text-[11px] font-medium rounded-md border border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >Previous</button>
-          <div className="flex gap-1 items-center">
-            {(() => {
-              const total = gdprAlertTotalPages
-              const curr = eventPage
-              const maxVis = 500
-              const pages = []
-              if (total <= maxVis) {
-                const showAll = total <= 7
-                if (showAll) { for (let i = 1; i <= total; i++) pages.push(i) }
-                else {
-                  pages.push(1)
-                  let s = Math.max(2, curr - 2), e = Math.min(total - 1, curr + 2)
-                  if (s > 2) pages.push('...')
-                  for (let i = s; i <= e; i++) pages.push(i)
-                  if (e < total - 1) pages.push('...')
-                  pages.push(total)
-                }
-              } else {
-                pages.push(1)
-                if (curr <= maxVis) {
-                  let s = Math.max(2, curr - 2), e = Math.min(maxVis, curr + 2)
-                  if (s > 2) pages.push('...')
-                  for (let i = s; i <= e; i++) pages.push(i)
-                  if (e < maxVis) pages.push('...')
-                  pages.push({ label: '500+', disabled: true })
-                } else {
-                  if (curr > maxVis + 3) pages.push('...')
-                  for (let i = Math.max(maxVis + 1, curr - 2); i <= Math.min(total, curr + 2); i++) pages.push(i)
-                  if (curr + 2 < total) pages.push('...')
-                }
-                if (curr > maxVis) pages.push({ label: '500+', disabled: true })
-              }
-              return pages.map((p, i) =>
-                p === '...' ? (
-                  <span key={'e' + i} className="px-1 text-[10px] text-[#3b4049] dark:text-[#e5e7eb] select-none">•••</span>
-                ) : p.disabled ? (
-                  <span key="gt" className="px-2 py-1 text-[10px] text-[#e8681a] font-semibold italic select-none">beyond 500</span>
-                ) : (
-                  <button key={p} onClick={() => setEventPage(p)}
-                    className={`min-w-[26px] h-7 px-1 text-[11px] font-medium rounded-md transition-colors ${
-                      curr === p
-                        ? 'bg-[#e8681a] text-white shadow-sm'
-                        : 'text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22]'
-                    }`}
-                  >{p}</button>
-                )
-              )
-            })()}
-          </div>
-          <button onClick={() => setEventPage(p => {
-            const next = p + 1
-            if (next <= 500) return next
-            if (p < 500) return 501
-            return Math.min(gdprAlertTotalPages, next)
-          })} disabled={eventPage === gdprAlertTotalPages}
-            className="px-2.5 py-1.5 text-[11px] font-medium rounded-md border border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >Next</button>
-          <div className="flex items-center gap-1 ml-1">
-            <input type="text" value={jumpPage} onChange={e => setJumpPage(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && jumpPage) { const p = parseInt(jumpPage); if (p > 0 && p <= gdprAlertTotalPages) { if (p > 500 && !saCache[p - 1]) { setJumpMsg('Navigate from page 500'); setJumpPage(''); return }; setEventPage(p); setJumpPage(''); setJumpMsg('') } } }}
-              placeholder="Pg"
-              className="w-12 h-7 px-1 text-[10px] text-center border border-[#d0d7de] dark:border-[#1d2432] rounded-md bg-transparent text-[#1f2328] dark:text-[#f0f6fc] focus:outline-none focus:border-[#e8681a]/50 placeholder:text-[#3b4049] dark:placeholder:text-[#e5e7eb]"
-            />
-            <button onClick={() => { if (jumpPage) { const p = parseInt(jumpPage); if (p > 0 && p <= gdprAlertTotalPages) { if (p > 500 && !saCache[p - 1]) { setJumpMsg('Navigate from page 500'); setJumpPage(''); return }; setEventPage(p); setJumpPage(''); setJumpMsg('') } } }}
-              className="px-2 h-7 text-[10px] font-medium rounded-md border border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors"
-            >Go</button>
-            <button onClick={() => { if (gdprAlertTotalPages > 500 && !saCache[gdprAlertTotalPages - 1]) { setJumpMsg('Navigate from page 500'); return }; setEventPage(gdprAlertTotalPages) }}
-              className="px-2 h-7 text-[10px] font-medium rounded-md border border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors"
-            >Last</button>
-            {jumpMsg && <span className="text-[10px] text-[#e8681a] font-medium animate-pulse">{jumpMsg}</span>}
-          </div>
-        </div>
-      )}
-      {renderEventDetailPanel()}
-    </motion.div>
-  )
-
-  const renderControls = () => (
-    <motion.div key="controls" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      {renderFilterBar()}
-      <div className="grid grid-cols-3 gap-2.5 mb-3">
-        <div className={CARD}>
-          <div className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide font-semibold mb-1">Total Agents</div>
-          <div className="text-2xl font-bold text-[#1f2328] dark:text-[#f0f6fc]"><AnimatedCounter val={controlStats?.totalAssets || 0} /></div>
-        </div>
-        <div className={CARD}>
-          <div className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide font-semibold mb-1">Fully Compliant</div>
-          <div className="text-2xl font-bold text-[#3fb950]"><AnimatedCounter val={controlStats?.fullyCompliant || 0} /></div>
-        </div>
-        <div className={CARD}>
-          <div className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb] uppercase tracking-wide font-semibold mb-1">Non-Compliant</div>
-          <div className="text-2xl font-bold text-[#f85149]"><AnimatedCounter val={controlStats?.nonCompliant || 0} /></div>
-        </div>
-      </div>
-      <div className={CARD}>
-        <div className={SECTION_TITLE}>Article Compliance Status</div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-[11px] border-collapse">
-            <thead>
-              <tr className="text-[10px] text-[#3b4049] dark:text-[#e5e7eb] font-bold uppercase tracking-wide">
-                <th className="text-left py-2 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Article</th>
-                <th className="text-left py-2 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Title</th>
-                <th className="text-right py-2 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Events</th>
-                <th className="text-right py-2 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Critical</th>
-                <th className="text-right py-2 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Agents</th>
-              </tr>
-            </thead>
-            <tbody>
-              {articles.slice(0, 20).map((art, i) => (
-                <tr key={art.code} className="hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#e8681a]">{art.article}</td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#1f2937] dark:text-[#e5e7eb]">{art.title}</td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{art.eventCount}</td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-right">
-                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#dc2626]/20 text-[#1f2328] dark:text-[#f0f6fc]">{art.criticalCount}</span>
-                  </td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-right text-[#1f2328] dark:text-[#f0f6fc]">{art.agents}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </motion.div>
-  )
-
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }} className="p-2 sm:p-3 max-w-[1600px] mx-auto">
-      {/* Inner Tab Navigation */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
-        <div className="flex gap-0.5 bg-[#f0f2f4] dark:bg-[#161b22] rounded-lg p-0.5 overflow-x-auto">
-          {INNER_TABS.map(tab => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-md transition-all whitespace-nowrap ${
-                activeTab === tab.key
-                  ? 'bg-white dark:bg-[#0d1117] text-[#1f2328] dark:text-[#f0f6fc] shadow-sm border border-[#d0d7de] dark:border-[#1d2432]'
-                  : 'text-[#3b4049] dark:text-[#e5e7eb] hover:text-[#1f2328] dark:hover:text-[#f0f6fc]'
-              }`}
-            >
-              <TabIcon icon={tab.icon} className={activeTab === tab.key ? 'text-[#e8681a]' : ''} />
-              {tab.label}
+        <div className="flex items-center justify-between mt-2.5 flex-wrap gap-2">
+          <div className="flex items-center gap-1 text-[11px] text-[#8b949e]">
+            <span className="mr-1">{(logPage - 1) * LOG_PAGE_SIZE + 1}-{Math.min(logPage * LOG_PAGE_SIZE, filteredLogs.length)} of {filteredLogs.length}</span>
+            <button onClick={() => setLogPage(p => Math.max(1, p - 1))} disabled={logPage === 1}
+              className="bg-transparent border border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
             </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <DateRangePicker
-            startDate={gdprStartDate}
-            onStartChange={(v) => { startRef.current = v; setGdprStartDate(v) }}
-            endDate={gdprEndDate}
-            onEndChange={(v) => { endRef.current = v; setGdprEndDate(v) }}
-            onSearch={() => { setLoading(true); fetchAll(startRef.current, endRef.current) }}
-          />
-          <button onClick={() => { setLoading(true); fetchAll() }}
-            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-md border border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors"
-            title="Refresh all data"
-          >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-            </svg>
-            Refresh
-          </button>
-          <button onClick={() => setAutoRefresh(p => !p)}
-            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-md border transition-colors ${
-              autoRefresh
-                ? 'bg-[#e8681a]/10 border-[#e8681a]/40 text-[#e8681a]'
-                : 'border-[#d0d7de] dark:border-[#1d2432] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#f0f2f4] dark:hover:bg-[#161b22]'
-            }`}
-            title={autoRefresh ? 'Auto-refresh every 30s — click to stop' : 'Enable auto-refresh every 30s'}
-          >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-            </svg>
-            {autoRefresh && <span className="w-1.5 h-1.5 rounded-full bg-[#e8681a] animate-pulse" />}
-          </button>
+            {Array.from({ length: Math.min(totalLogPages, 3) }, (_, i) => i + 1).map(p => (
+              <button key={p} onClick={() => setLogPage(p)}
+                className={`bg-transparent border px-2 py-0.5 rounded text-[11px] min-w-[28px] transition-all ${
+                  p === logPage ? 'bg-[#e8681a] text-white border-[#e8681a]' : 'border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a]'
+                }`}>{p}</button>
+            ))}
+            {totalLogPages > 3 && <span className="px-0.5 text-[#8b949e]">...</span>}
+            {totalLogPages > 3 && (
+              <button onClick={() => setLogPage(totalLogPages)}
+                className="bg-transparent border border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] transition-all">{totalLogPages}</button>
+            )}
+            <button onClick={() => setLogPage(p => Math.min(totalLogPages, p + 1))} disabled={logPage === totalLogPages}
+              className="bg-transparent border border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Active Tab Content */}
-      {activeTab === 'overview' && renderOverview()}
-      {activeTab === 'controls' && renderControls()}
+      <div className="text-center text-[10px] text-[#8b949e] py-3 border-t border-[#e5e7eb] dark:border-[#2d3140]">&copy; 2025 UniShield 360. All rights reserved.</div>
+
+      <DetailSidebar
+        open={sidebar === 'agents'}
+        onClose={() => setSidebar(null)}
+        onSelectItem={(name) => setInclude('agent', name)}
+        items={hasActiveFilter && chartData ? chartData.topAgents : data?.topAgents || []}
+        title="All Agents"
+        icon="agent"
+        itemLabel="agents"
+        accentColor="#58a6ff"
+      />
+      <DetailSidebar
+        open={sidebar === 'articles'}
+        onClose={() => setSidebar(null)}
+        onSelectItem={(name) => setInclude('article', name)}
+        items={GDPR_ARTICLES.map(a => ({ key: a.art, description: a.desc, doc_count: getArticleEvents(a.art) }))}
+        title="All GDPR Articles"
+        icon="article"
+        itemLabel="articles"
+        accentColor="#e8681a"
+        labelKey="key"
+      />
+      <DetailSidebar
+        open={sidebar === 'rules'}
+        onClose={() => setSidebar(null)}
+        onSelectItem={(name) => setInclude('rule', name)}
+        items={hasActiveFilter && chartData ? chartData.topRules : data?.topRules || []}
+        title="All Rule IDs"
+        icon="rule"
+        itemLabel="rules"
+        accentColor="#d29922"
+      />
+      {modalContent()}
     </motion.div>
   )
 }
