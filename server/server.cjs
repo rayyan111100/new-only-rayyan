@@ -359,12 +359,39 @@ app.get('/api/compliance', async (req, res) => {
   const cacheKey = `compliance:${framework || '__all__'}:${sd}:${ed}`;
 
   const cached = complianceCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < COMPLIANCE_CACHE_TTL) {
+  if (!req.query._t && cached && Date.now() - cached.ts < COMPLIANCE_CACHE_TTL) {
     return res.json(cached.data);
   }
 
   const fwField = framework ? FRAMEWORK_FIELDS[framework] : null;
   const fwQ = fwField ? '_exists_:' + fwField : null;
+  const off = parseInt(req.query.offset) || 0;
+
+  // Offset > 0 means paginated log fetch — skip aggregates, return only logs
+  if (off > 0) {
+    const PAGE = Math.min(parseInt(req.query.limit) || 500, 500);
+    try {
+      if (!fwField) {
+        const results = [];
+        const overviewQ = (() => { const f = FRAMEWORK_NAMES.map(x => '_exists_:' + FRAMEWORK_FIELDS[x]); const b = []; for (let i = 0; i < f.length; i += 3) b.push(f.slice(i, i + 3).join(' OR ')); return b; })();
+        for (const q of overviewQ) {
+          const resp = await api.get('/search', { params: { index: idx, q, limit: PAGE, offset: off, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [] } }));
+          results.push(...(resp.data?.results || []));
+        }
+        const seen = new Set();
+        const merged = [];
+        for (const doc of results) {
+          const id = doc._id || doc['@timestamp'] + (doc.agent?.name || '');
+          if (!seen.has(id)) { seen.add(id); merged.push(doc); }
+        }
+        merged.sort((a, b) => (b['@timestamp'] || '').localeCompare(a['@timestamp'] || ''));
+        return res.json({ recent: merged.slice(0, PAGE).map(d => ({ ...d, _frameworks: classifyDocFrameworks(d) })), recentTotal: 0 });
+      }
+      const resp = await api.get('/search', { params: { index: idx, q: fwQ, limit: PAGE, offset: off, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } }));
+      const docs = (resp.data?.results || []).map(d => ({ ...d, _frameworks: classifyDocFrameworks(d) }));
+      return res.json({ recent: docs, recentTotal: resp.data?.total?.value || docs.length });
+    } catch (err) { return res.status(500).json({ error: err.message }); }
+  }
   // Wazuh OR query limit ~4 fields; split into batches of 3
   const overviewQ = !fwField ? (() => {
     const fields = FRAMEWORK_NAMES.map(f => '_exists_:' + FRAMEWORK_FIELDS[f]);
@@ -386,6 +413,18 @@ app.get('/api/compliance', async (req, res) => {
       }
       return Object.entries(map).map(([key, doc_count]) => ({ key, doc_count })).sort((a, b) => b.doc_count - a.doc_count);
     }
+    // Wazuh search caps at 500 results per call; paginate sequentially for higher limits
+    async function searchAll(q, limit, sd, ed) {
+      const PAGE = 500;
+      const maxPages = Math.min(Math.ceil(limit / PAGE), 10); // max 10 pages = 5000
+      const all = [];
+      for (let i = 0; i < maxPages; i++) {
+        const resp = await api.get('/search', { params: { index: idx, q, limit: PAGE, offset: i * PAGE, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [] } }));
+        all.push(...(resp.data?.results || []));
+        if ((resp.data?.results || []).length < PAGE) break; // no more results
+      }
+      return { data: { results: all.slice(0, limit), total: { value: all.length } } };
+    }
 
     const [byLevel, topRules, topAgents, timeline, categories, recent, topControls] = !fwField
       ? await Promise.all([
@@ -402,17 +441,17 @@ app.get('/api/compliance', async (req, res) => {
             return { data: { buckets: Object.entries(map).map(([key, doc_count]) => ({ key, doc_count })).sort((a, b) => a.key - b.key) } };
           }),
           Promise.all(overviewQ.map(q => aggOne(q, 'rule.category'))).then(mergeBuckets).then(buckets => ({ data: { buckets } })),
-          Promise.all(overviewQ.map(q => api.get('/search', { params: { index: idx, q, limit: 1000, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } })))).then(responses => {
+          Promise.all(overviewQ.map(q => api.get('/search', { params: { index: idx, q, limit: 500, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [] } })))).then(responses => {
             const seen = new Set();
             const merged = [];
             for (const r of responses) {
-              for (const doc of (r.data.results || [])) {
+              for (const doc of (r.data?.results || [])) {
                 const id = doc._id || doc['@timestamp'] + (doc.agent?.name || '');
                 if (!seen.has(id)) { seen.add(id); merged.push(doc); }
               }
             }
             merged.sort((a, b) => (b['@timestamp'] || '').localeCompare(a['@timestamp'] || ''));
-            return { data: { results: merged.slice(0, 1000), total: { value: merged.length } } };
+            return { data: { results: merged.slice(0, 500), total: { value: merged.length } } };
           }),
           Promise.all(overviewQ.map(q => aggOne(q, frameworkField || 'rule.gdpr'))).then(mergeBuckets).then(buckets => ({ data: { buckets } })),
         ])
@@ -422,7 +461,7 @@ app.get('/api/compliance', async (req, res) => {
           aggOne(fwQ, 'agent.name', 10),
           api.get('/aggregate', { params: { index: idx, q: fwQ, field: '@timestamp', type: 'date_histogram', interval: '1h', start_date: sd, end_date: ed, limit: 48 } }).catch(() => ({ data: { buckets: [] } })),
           aggOne(fwQ, 'rule.category'),
-          api.get('/search', { params: { index: idx, q: fwQ, limit: 1000, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } })),
+          api.get('/search', { params: { index: idx, q: fwQ, limit: 500, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } })),
           frameworkField ? aggOne(fwQ, frameworkField) : Promise.resolve({ data: { buckets: [] } }),
         ]);
 
@@ -467,7 +506,7 @@ app.get('/api/compliance', async (req, res) => {
     }));
     const filteredRecent = framework ? recentDocs.filter(d => d._frameworks.includes(framework)) : recentDocs;
 
-    const recentActualTotal = recent.data?.total?.value || rawRecent.length;
+    const recentActualTotal = typeof recent.data?.total === 'number' ? recent.data.total : (recent.data?.total?.value || rawRecent.length);
 
     const body = {
       count24: count24v,
