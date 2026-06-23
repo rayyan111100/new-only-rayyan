@@ -66,22 +66,24 @@ export default function MitreAttackTab() {
   const [evFilterTac, setEvFilterTac] = useState(null)
   const [evFilterAgent, setEvFilterAgent] = useState(null)
   const [mitreKnowledge, setMitreKnowledge] = useState({ groups: [], software: [], mitigations: [], tactics: [], techniques: [] })
+  const [fwSearch, setFwSearch] = useState('')
+  const [fwHideEmpty, setFwHideEmpty] = useState(false)
 
   const timeParams = useCallback(() => {
     const sd = parseDateStr(startDate).toISOString()
     const ed = parseDateStr(endDate).toISOString()
-    return { start_date: sd, end_date: ed }
+    return { start_date: sd, end_date: ed, q: '_exists_:rule.mitre.id AND manager.name:root' }
   }, [startDate, endDate])
 
   const fetchDashboard = useCallback(async () => {
     try {
       const tp = timeParams()
-      const agg = await api('aggregate', { index: 'unishield360-alerts-4.x-*', field: 'rule.mitre.tactic', type: 'terms', start_date: tp.start_date, end_date: tp.end_date, limit: 20 })
-      const aggTech = await api('aggregate', { index: 'unishield360-alerts-4.x-*', field: 'rule.mitre.technique', type: 'terms', start_date: tp.start_date, end_date: tp.end_date, limit: 20 })
-      const count24 = await api('count', { index: 'unishield360-alerts-4.x-*', start_date: tp.start_date, end_date: tp.end_date })
-      const byLevel = await api('aggregate', { index: 'unishield360-alerts-4.x-*', field: 'rule.level', type: 'terms', start_date: tp.start_date, end_date: tp.end_date, limit: 20 })
-      const timeline = await api('aggregate', { index: 'unishield360-alerts-4.x-*', field: '@timestamp', type: 'date_histogram', interval: '1h', start_date: tp.start_date, end_date: tp.end_date, limit: 48 })
-      const byAgent = await api('aggregate', { index: 'unishield360-alerts-4.x-*', field: 'agent.name', type: 'terms', start_date: tp.start_date, end_date: tp.end_date, limit: 10 })
+      const agg = await api('aggregate', { index: 'unishield360-alerts-4.x-*', field: 'rule.mitre.tactic', type: 'terms', start_date: tp.start_date, end_date: tp.end_date, limit: 20, q: tp.q })
+      const aggTech = await api('aggregate', { index: 'unishield360-alerts-4.x-*', field: 'rule.mitre.technique', type: 'terms', start_date: tp.start_date, end_date: tp.end_date, limit: 50, q: tp.q })
+      const count24 = await api('count', { index: 'unishield360-alerts-4.x-*', start_date: tp.start_date, end_date: tp.end_date, q: tp.q })
+      const byLevel = await api('aggregate', { index: 'unishield360-alerts-4.x-*', field: 'rule.level', type: 'terms', start_date: tp.start_date, end_date: tp.end_date, limit: 20, q: tp.q })
+      const timeline = await api('aggregate', { index: 'unishield360-alerts-4.x-*', field: '@timestamp', type: 'date_histogram', interval: '1h', start_date: tp.start_date, end_date: tp.end_date, limit: 48, q: tp.q })
+      const byAgent = await api('aggregate', { index: 'unishield360-alerts-4.x-*', field: 'agent.name', type: 'terms', start_date: tp.start_date, end_date: tp.end_date, limit: 10, q: tp.q })
 
       const tacticsBuckets = agg.buckets || []
       const techBuckets = aggTech.buckets || []
@@ -101,7 +103,7 @@ export default function MitreAttackTab() {
       setDashboardData({
         total: count24.count || 0,
         tactics: tacticNames.slice(0, 10),
-        techniques: techNames.slice(0, 10),
+        techniques: techNames.slice(0, 50),
         severity: sevData,
         timeline: timelineBuckets.map(b => ({ time: new Date(b.key).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), alerts: b.doc_count || 0 })),
         agents: agentBuckets.map(b => ({ name: b.key, count: b.doc_count }))
@@ -116,7 +118,7 @@ export default function MitreAttackTab() {
   const fetchEvents = useCallback(async () => {
     try {
       const tp = timeParams()
-      const res = await api('search', { index: 'unishield360-alerts-4.x-*', start_date: tp.start_date, end_date: tp.end_date, q: '*', limit: 100, sort: '@timestamp', order: 'desc' })
+      const res = await api('search', { index: 'unishield360-alerts-4.x-*', start_date: tp.start_date, end_date: tp.end_date, q: tp.q, limit: 100, sort: '@timestamp', order: 'desc' })
       const results = res.results || []
       setEvEvents(results.map(d => ({
         ts: d['@timestamp'] || d.timestamp || '--',
@@ -177,7 +179,7 @@ export default function MitreAttackTab() {
       const tp = timeParams()
       if (sec === 'tactics' || sec === 'techniques') {
         const field = sec === 'tactics' ? 'rule.mitre.tactic' : 'rule.mitre.technique'
-        const agg = await api('aggregate', { index: 'unishield360-alerts-4.x-*', field, type: 'terms', start_date: tp.start_date, end_date: tp.end_date, limit: 50 })
+        const agg = await api('aggregate', { index: 'unishield360-alerts-4.x-*', field, type: 'terms', start_date: tp.start_date, end_date: tp.end_date, limit: 50, q: tp.q })
         const buckets = agg.buckets || []
 
         if (sec === 'tactics') {
@@ -389,6 +391,17 @@ export default function MitreAttackTab() {
 
       {view === 'dashboard' && (
         <div className="space-y-3">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <span className="text-[10px] text-[#8b949e] font-medium">Filters:</span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#58a6ff1a] text-[#58a6ff]">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              manager.name: root
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#a371f71a] text-[#a371f7]">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+              rule.mitre.id: exists
+            </span>
+          </div>
           <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-sm">
             <div className="flex items-center gap-2 mb-2">
               <h3 className="text-xs font-bold text-[#1a1c23] dark:text-[#e4e6eb]">Alerts evolution over time</h3>
@@ -639,37 +652,72 @@ export default function MitreAttackTab() {
       )}
 
       {view === 'framework' && (
-        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-sm overflow-x-auto">
-          <div className="flex items-center justify-between mb-3">
-            <div><h3 className="text-sm font-bold text-[#1a1c23] dark:text-[#e4e6eb]">MITRE ATT&CK Framework</h3><p className="text-[10px] text-[#8b949e]">Tactics × Techniques coverage matrix</p></div>
-            <div className="flex items-center gap-3 text-[10px] text-[#8b949e]">
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-[#f6f8fa] dark:bg-[#0d1117] border border-[#e5e7eb] dark:border-[#2d3140]" />None</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded" style={{ background: 'color-mix(in srgb, #EF843C 10%, #f6f8fa)' }} />Low</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded" style={{ background: 'color-mix(in srgb, #EF843C 25%, #f6f8fa)' }} />Med</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded" style={{ background: 'color-mix(in srgb, #EF843C 40%, #f6f8fa)' }} />High</span>
+        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl shadow-sm">
+          <div className="flex gap-0">
+            {/* Tactics Sidebar */}
+            <div className="w-[180px] shrink-0 border-r border-[#e5e7eb] dark:border-[#2d3140] p-3">
+              <h3 className="text-[13px] font-bold text-[#1f2328] dark:text-[#f0f6fc] mb-2">Tactics</h3>
+              <div className="space-y-0.5 max-h-[calc(100vh-420px)] overflow-y-auto">
+                {(dashboardData?.tactics || []).map(t => (
+                  <button key={t.name} onClick={() => setEvFilterTac(evFilterTac === t.name ? null : t.name)}
+                    className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-[11px] transition-all text-left
+                      ${evFilterTac === t.name
+                        ? 'bg-[#e8681a]/10 text-[#e8681a] font-bold ring-1 ring-inset ring-[#e8681a]/30'
+                        : 'text-[#36454f] dark:text-[#c9d1d9] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] font-medium'}`}>
+                    <span className="truncate">{t.name}</span>
+                    <span className={`shrink-0 ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded ${evFilterTac === t.name ? 'bg-[#e8681a]/15 text-[#e8681a]' : 'bg-[#f0f2f4] dark:bg-[#21262d] text-[#8b949e]'}`}>{t.count}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="flex gap-1.5 min-w-max">
-            {(mitreKnowledge.tactics || []).sort((a, b) => a.order - b.order).map(tac => {
-              const relTechs = (mitreKnowledge.techniques || []).filter(t => t.tactic === tac.name)
-              const cells = relTechs.length ? relTechs.slice(0, 5) : []
-              const heatClass = (sub) => sub >= 6 ? 'bg-[#EF843C]/30 border-[#EF843C]/60' : sub >= 3 ? 'bg-[#EF843C]/15 border-[#EF843C]/40' : sub > 0 ? 'bg-[#EF843C]/8 border-[#EF843C]/25' : ''
-              return (
-                <div key={tac.id || tac.name} className="w-36 shrink-0">
-                  <div className="bg-[#f6f8fa] dark:bg-[#0d1117] border border-[#e5e7eb] dark:border-[#2d3140] rounded-t-lg px-2 py-1.5 text-center">
-                    <div className="text-[10px] font-bold text-[#1a1c23] dark:text-[#e4e6eb]">{tac.name}</div>
-                    <div className="text-[8px] text-[#8b949e]">{tac.techniqueCount || 0} techniques</div>
-                  </div>
-                  {cells.length > 0 ? cells.map(t => (
-                    <div key={t.id || t.name} onClick={() => { setView('intelligence'); setIntelSection('techniques'); setTimeout(() => { setSearch(t.name.split(' ')[0]) }, 100) }}
-                      className={`border border-[#e5e7eb] dark:border-[#2d3140] border-t-0 px-2 py-1 text-[10px] text-[#1a1c23] dark:text-[#e4e6eb] cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${heatClass(t.subCount || 0)}`}>
-                      {t.name}
-                      {(t.subCount || 0) > 0 && <span className="ml-1 text-[8px] text-[#8b949e] font-bold">{t.subCount}</span>}
-                    </div>
-                  )) : <div className="border border-[#e5e7eb] dark:border-[#2d3140] border-t-0 px-2 py-4 text-center text-[8px] text-[#8b949e]">No techniques</div>}
-                </div>
-              )
-            })}
+
+            {/* Techniques Area */}
+            <div className="flex-1 p-3 min-w-0">
+              {/* Header Row */}
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[13px] font-bold text-[#1f2328] dark:text-[#f0f6fc]">Techniques</h3>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <span className="text-[10px] text-[#8b949e]">Hide techniques with no alerts</span>
+                  <button onClick={() => setFwHideEmpty(prev => !prev)}
+                    className={`relative w-8 h-4 rounded-full transition-colors ${fwHideEmpty ? 'bg-[#e8681a]' : 'bg-[#d0d7de] dark:bg-[#30363d]'}`}>
+                    <span className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${fwHideEmpty ? 'translate-x-4' : ''}`} />
+                  </button>
+                </label>
+              </div>
+
+              {/* Search */}
+              <div className="mb-3">
+                <input type="search" placeholder="Filter techniques of selected tactic/s" value={fwSearch}
+                  onChange={e => setFwSearch(e.target.value)}
+                  className="w-full px-3 py-1.5 text-[11px] bg-[#f0f2f4] dark:bg-[#21262d] border border-[#d0d7de] dark:border-[#30363d] rounded-lg outline-none focus:border-[#e8681a] dark:focus:border-[#e8681a] placeholder-[#8b949e] text-[#1f2328] dark:text-[#f0f6fc] transition-colors" />
+              </div>
+
+              {/* Techniques Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5 max-h-[calc(100vh-480px)] overflow-y-auto pr-1">
+                {(dashboardData?.techniques || [])
+                  .map(t => {
+                    const meta = (mitreKnowledge.techniques || []).find(mt => mt.name === t.name)
+                    return { ...t, tactic: meta?.tactic || '', techId: meta?.id || '' }
+                  })
+                  .filter(t => fwHideEmpty ? t.count > 0 : true)
+                  .filter(t => !evFilterTac || t.tactic === evFilterTac)
+                  .filter(t => !fwSearch || t.name.toLowerCase().includes(fwSearch.toLowerCase()) || t.techId.toLowerCase().includes(fwSearch.toLowerCase()))
+                  .slice(0, 100)
+                  .map((t, i) => {
+                    const displayName = t.techId ? `${t.techId} - ${t.name}` : t.name
+                    const gradient = t.count > 500 ? 'rgba(232,104,26,0.15)' : t.count > 100 ? 'rgba(232,104,26,0.08)' : 'transparent'
+                    return (
+                      <div key={t.name + i}
+                        onClick={() => { setView('events'); setEvFilterTac(t.tactic || evFilterTac); setEvFilterSev(null) }}
+                        className="flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-[#e5e7eb] dark:border-[#2d3140] cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-all text-[11px] min-h-[32px]"
+                        style={{ background: gradient }}>
+                        <span className="truncate text-[#1f2328] dark:text-[#f0f6fc] font-medium">{displayName}</span>
+                        <span className="shrink-0 ml-2 text-[10px] font-bold text-[#8b949e] bg-[#f0f2f4] dark:bg-[#21262d] px-1.5 py-0.5 rounded">{t.count}</span>
+                      </div>
+                    )
+                  })}
+              </div>
+            </div>
           </div>
         </div>
       )}
