@@ -1,0 +1,1 @@
+⚠ UniShield360 API auth not supported (501) — running in no-auth mode

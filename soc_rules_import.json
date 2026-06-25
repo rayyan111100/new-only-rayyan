@@ -1,0 +1,35 @@
+{
+  "groups": [
+    {
+      "id": "group_custom_1",
+      "name": "Custom Rules",
+      "description": "",
+      "order": 0,
+      "createdAt": "2026-05-26T06:00:00.000Z",
+      "updatedAt": "2026-05-26T06:00:00.000Z"
+    }
+  ],
+  "rules": [
+    {
+      "id": "rule_systemd_1",
+      "groupId": "group_custom_1",
+      "name": "Systemd Service Failure → Gopal",
+      "description": "Matches systemd service failures, overrides desc & level",
+      "enabled": true,
+      "priority": 100,
+      "overwrite": true,
+      "conditionLogic": "AND",
+      "conditions": [
+        { "id": "c_1", "field": "rule.description", "operator": "contains", "value": "Service exited", "negate": false },
+        { "id": "c_2", "field": "decoder.name", "operator": "equals", "value": "systemd", "negate": false },
+        { "id": "c_3", "field": "full_log", "operator": "contains", "value": "FAILURE", "negate": false }
+      ],
+      "ignoreIps": [],
+      "actions": [
+        { "type": "alert", "params": { "severity": "high", "level": 13, "message": "gopalby changes hu hai" } }
+      ],
+      "createdAt": "2026-05-26T06:00:00.000Z",
+      "updatedAt": "2026-05-26T06:00:00.000Z"
+    }
+  ]
+}

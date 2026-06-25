@@ -1,0 +1,8 @@
+<script>
+fetch('/rules_seed.json').then(r=>r.json()).then(d=>{
+  localStorage.setItem('soc_rules',JSON.stringify(d));
+  console.log('? Loaded',d.rules.length,'rules in',d.groups.length,'groups');
+  console.table(d.groups);
+  console.table(d.rules.map(r=>({name:r.name,group:r.groupId,enabled:r.enabled,priority:r.priority,overwrite:r.overwrite,conditions:r.conditions.length,actions:r.actions[0].type})));
+});
+</script>
