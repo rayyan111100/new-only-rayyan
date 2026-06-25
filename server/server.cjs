@@ -15,6 +15,7 @@ if (!process.env.JWT_SECRET) console.warn('⚠ JWT_SECRET not set — using inse
 
 app.use(cors());
 app.use(express.json());
+app.use(express.text({ type: 'application/x-ndjson' }));
 app.use((req, res, next) => { res.setTimeout(120000); next(); });
 
 // Serve built React app (dist/) in production, fallback to public/
@@ -756,6 +757,388 @@ app.get('/api/eps-stats', async (req, res) => {
   }
 });
 
+// ─── Malware Detection Dashboard Endpoint ───
+const MALWARE_GROUPS = ['audit', 'audit_command', 'audit_selinux', 'ciscat', 'rootcheck', 'virustotal', 'wazuh', 'sca', 'yara', 'misp', 'multiple_blocks', 'reconnaissance', 'malware', 'ransomware', 'ransomware_pre_detection', 'vulnerability-detector'];
+const dashCache = new Map();
+const CACHE_TTL = 10000;
+
+function osBody(sd, ed) {
+  const body = { size: 0, track_total_hits: true };
+  const filters = [];
+  if (sd && sd !== 'now') filters.push({ range: { '@timestamp': { gte: sd } } });
+  if (ed && ed !== 'now') filters.push({ range: { '@timestamp': { lte: ed } } });
+  filters.push({ terms: { 'rule.groups': MALWARE_GROUPS } });
+  body.query = { bool: { filter: filters } };
+  return body;
+}
+
+async function osQuery(idx, body) {
+  if (!osApi) return null;
+  const res = await osApi.post('', body, { params: { path: `${idx}/_search`, method: 'POST' }, timeout: 120000 });
+  return { aggs: res.data?.aggregations || null, total: res.data?.hits?.total?.value || 0 };
+}
+
+async function wazuhAggregate(idx, field, type, opts = {}) {
+  try {
+    const params = { index: idx, field, type, limit: opts.limit || 50, start_date: opts.start_date || 'now-24h', end_date: opts.end_date || 'now' };
+    if (opts.q) params.q = opts.q;
+    if (opts.interval) params.interval = opts.interval;
+    const res = await api.get('/aggregate', { params, timeout: 120000 });
+    return res.data?.buckets || [];
+  } catch { return []; }
+}
+
+app.get('/api/malware-dashboard', async (req, res) => {
+  const { index, start_date, end_date } = req.query;
+  const idx = index || 'wazuh-alerts-4.x-*,-wazuh-alerts-4.x-sample-auditing-policy-monitoring';
+  const sd = start_date || 'now-24h';
+  const ed = end_date || 'now';
+  const cacheKey = `${idx}:${sd}:${ed}`;
+
+  const cached = dashCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return res.json(cached.data);
+
+  try {
+    function di(hr) { return hr <= 24 ? '30m' : hr <= 72 ? '1h' : hr <= 336 ? '6h' : hr <= 720 ? '12h' : '1d'; }
+    const sdMatch = sd?.match(/now-(\d+)([hdwMy])/);
+    let totalH = 24;
+    if (sdMatch) { const n = parseInt(sdMatch[1]), u = sdMatch[2]; totalH = u === 'h' ? n : u === 'd' ? n * 24 : u === 'w' ? n * 168 : u === 'M' ? n * 720 : u === 'y' ? n * 8760 : 24; }
+    const evInt = di(totalH);
+
+    const q1 = osBody(sd, ed);
+    q1.aggs = { groups: { terms: { field: 'rule.groups', size: 20 }, aggs: {
+      levels: { terms: { field: 'rule.level', size: 20 } },
+      agents: { terms: { field: 'agent.name', size: 100 } },
+      timeline: { date_histogram: { field: '@timestamp', fixed_interval: evInt, min_doc_count: 1 } }
+    } } };
+
+    const q2 = osBody(sd, ed);
+    q2.aggs = { agents: { terms: { field: 'agent.name', size: 7, order: { _count: 'desc' } }, aggs: {
+      timeline: { date_histogram: { field: '@timestamp', fixed_interval: evInt } }
+    } } };
+
+    const q3 = osBody(sd, ed);
+    q3.aggs = { agents: { terms: { field: 'agent.name', size: 10, order: { _count: 'desc' } }, aggs: {
+      groups: { terms: { field: 'rule.groups', size: 20 } }
+    } } };
+
+    function simpleAgg(field) { const b = osBody(sd, ed); b.aggs = { result: { terms: { field, size: 10 } } }; return b; }
+    function simpleAggFiltered(field, filterQ) { const b = osBody(sd, ed); const p = filterQ.split(':'); if (p[0] && p[1]) { if (!b.query) b.query = { bool: { filter: [] } }; b.query.bool.filter.push({ term: { [p[0]]: p[1] } }); } b.aggs = { result: { terms: { field, size: 10 } } }; return b; }
+
+    const [r1, r2, r3, r4, r5, r6, r7, r8] = await Promise.all([
+      osQuery(idx, q1),
+      osQuery(idx, q2),
+      osQuery(idx, q3),
+      osQuery(idx, simpleAgg('data.file')),
+      osQuery(idx, simpleAggFiltered('data.virustotal.source.file', 'rule.groups:virustotal')),
+      osQuery(idx, simpleAggFiltered('data.YARA.scanned_file', 'rule.groups:yara')),
+      osQuery(idx, simpleAggFiltered('data.title', 'rule.groups:rootcheck')),
+      osQuery(idx, simpleAgg('rule.description'))
+    ]);
+
+    if (!r1) {
+      const [gBuckets, lBuckets, aBuckets, tBuckets] = await Promise.all([
+        wazuhAggregate(idx, 'rule.groups', 'terms', { limit: 20, start_date: sd, end_date: ed }),
+        Promise.all(MALWARE_GROUPS.map(g => wazuhAggregate(idx, 'rule.level', 'terms', { q: `rule.groups:${g}`, limit: 20, start_date: sd, end_date: ed }))),
+        Promise.all(MALWARE_GROUPS.map(g => wazuhAggregate(idx, 'agent.name', 'terms', { q: `rule.groups:${g}`, limit: 100, start_date: sd, end_date: ed }))),
+        Promise.all(MALWARE_GROUPS.map(g => wazuhAggregate(idx, '@timestamp', 'date_histogram', { q: `rule.groups:${g}`, interval: '1h', limit: 72, start_date: sd, end_date: ed })))
+      ]);
+      const validGroups = gBuckets.filter(b => b.key && b.doc_count > 0 && MALWARE_GROUPS.includes(b.key));
+      const total = validGroups.reduce((s, b) => s + (b.doc_count || 0), 0);
+      const sevMap = {};
+      for (const buckets of lBuckets) for (const b of (buckets || [])) { const lvl = parseInt(b.key) || 0; sevMap[lvl] = (sevMap[lvl] || 0) + (b.doc_count || 0); }
+      const sevBuckets = Object.entries(sevMap).map(([k, v]) => ({ key: k, doc_count: v }));
+      let sevCritical = 0, sevHigh = 0, sevMedium = 0, sevLow = 0;
+      for (const b of sevBuckets) { const lvl = parseInt(b.key) || 0, cnt = b.doc_count || 0; if (lvl >= 12) sevCritical += cnt; else if (lvl >= 7) sevHigh += cnt; else if (lvl >= 4) sevMedium += cnt; else sevLow += cnt; }
+      const agentMap = {};
+      for (const buckets of aBuckets) for (const b of (buckets || [])) agentMap[b.key] = (agentMap[b.key] || 0) + (b.doc_count || 0);
+      const agentBuckets = Object.entries(agentMap).map(([k, v]) => ({ key: k, doc_count: v }));
+      const timelineMap = {};
+      for (const buckets of tBuckets) for (const b of (buckets || [])) { const k = b.key_as_string || b.key; timelineMap[k] = (timelineMap[k] || 0) + (b.doc_count || 0); }
+      const trendBuckets = Object.entries(timelineMap).map(([k, v]) => ({ key: k, key_as_string: k, doc_count: v }));
+      const data = { total, severity: { critical: sevCritical, high: sevHigh, medium: sevMedium, low: sevLow }, sevBuckets, agentBuckets, groupBuckets: validGroups, trendBuckets, sourceFiles: [], yaraFiles: [], rootcheckTitles: [], ruleDescriptions: [], agentsEvolution: [], agentsByGroup: [] };
+      dashCache.set(cacheKey, { ts: Date.now(), data });
+      if (dashCache.size > 50) { const fk = dashCache.keys().next().value; dashCache.delete(fk); }
+      return res.json(data);
+    }
+
+    const groupBuckets = (r1.aggs?.groups?.buckets || []).filter(b => b.key && b.doc_count > 0 && MALWARE_GROUPS.includes(b.key));
+    const total = r1.total || 0;
+    const sevMap = {};
+    for (const gb of (r1.aggs?.groups?.buckets || [])) for (const b of (gb.levels?.buckets || [])) { const lvl = parseInt(b.key) || 0; sevMap[lvl] = (sevMap[lvl] || 0) + (b.doc_count || 0); }
+    const sevBuckets = Object.entries(sevMap).map(([k, v]) => ({ key: k, doc_count: v }));
+    let sevCritical = 0, sevHigh = 0, sevMedium = 0, sevLow = 0;
+    for (const b of sevBuckets) { const lvl = parseInt(b.key) || 0, cnt = b.doc_count || 0; if (lvl >= 12) sevCritical += cnt; else if (lvl >= 7) sevHigh += cnt; else if (lvl >= 4) sevMedium += cnt; else sevLow += cnt; }
+    const agentMap = {};
+    for (const gb of (r1.aggs?.groups?.buckets || [])) for (const b of (gb.agents?.buckets || [])) agentMap[b.key] = (agentMap[b.key] || 0) + (b.doc_count || 0);
+    const agentBuckets = Object.entries(agentMap).map(([k, v]) => ({ key: k, doc_count: v }));
+    const timelineMap = {};
+    for (const gb of (r1.aggs?.groups?.buckets || [])) for (const b of (gb.timeline?.buckets || [])) { const k = b.key_as_string || b.key; timelineMap[k] = (timelineMap[k] || 0) + (b.doc_count || 0); }
+    const trendBuckets = Object.entries(timelineMap).map(([k, v]) => ({ key: k, key_as_string: k, doc_count: v }));
+
+    const agentsEvolution = (r2.aggs?.agents?.buckets || []).map(b => ({ agent: b.key, buckets: (b.timeline?.buckets || []).map(t => ({ key_as_string: t.key_as_string || t.key, doc_count: t.doc_count || 0 })) }));
+
+    const agentsByGroup = (r3.aggs?.agents?.buckets || []).map(b => ({ agent: b.key, buckets: (b.groups?.buckets || []).filter(g => g.key).map(g => ({ key: g.key, doc_count: g.doc_count || 0 })) }));
+
+    const sourceFileMap = new Map();
+    for (const b of (r4?.aggs?.result?.buckets || [])) { if (b.key) sourceFileMap.set(b.key, (sourceFileMap.get(b.key) || 0) + (b.doc_count || 0)); }
+    for (const b of (r5?.aggs?.result?.buckets || [])) { if (b.key) sourceFileMap.set(b.key, (sourceFileMap.get(b.key) || 0) + (b.doc_count || 0)); }
+    const sourceFiles = [...sourceFileMap.entries()].map(([k, v]) => ({ key: k, doc_count: v })).sort((a, b) => b.doc_count - a.doc_count).slice(0, 10);
+    const yaraFiles = (r6?.aggs?.result?.buckets || []).filter(b => b.key).map(b => ({ key: b.key, doc_count: b.doc_count }));
+    const rootcheckTitles = (r7?.aggs?.result?.buckets || []).filter(b => b.key).map(b => ({ key: b.key, doc_count: b.doc_count }));
+    const ruleDescriptions = (r8?.aggs?.result?.buckets || []).filter(b => b.key).map(b => ({ key: b.key, doc_count: b.doc_count }));
+
+    const data = {
+      total, severity: { critical: sevCritical, high: sevHigh, medium: sevMedium, low: sevLow },
+      sevBuckets, agentBuckets, groupBuckets, trendBuckets,
+      sourceFiles, yaraFiles, rootcheckTitles, ruleDescriptions,
+      agentsEvolution, agentsByGroup
+    };
+
+    dashCache.set(cacheKey, { ts: Date.now(), data });
+    if (dashCache.size > 50) { const fk = dashCache.keys().next().value; dashCache.delete(fk); }
+
+    res.json(data);
+  } catch (err) {
+    console.error('Malware dashboard error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Malware Detection Paginated Events Endpoint
+app.get('/api/malware-events', async (req, res) => {
+  const { index, start_date, end_date, limit, offset, search_after, search, severity, type } = req.query;
+  const idx = index || 'wazuh-alerts-4.x-*,-wazuh-alerts-4.x-sample-auditing-policy-monitoring';
+  const sd = start_date || 'now-24h';
+  const ed = end_date || 'now';
+  const lim = Math.min(parseInt(limit) || 20, 10000);
+  const off = Math.min(parseInt(offset) || 0, 9999);
+
+  const filters = [];
+  const timeRange = {};
+  if (sd && sd !== 'now') timeRange.gte = sd;
+  if (ed && ed !== 'now') timeRange.lte = ed;
+  if (Object.keys(timeRange).length) filters.push({ "range": { "@timestamp": timeRange } });
+
+  if (search) {
+    const s = search.replace(/[^a-zA-Z0-9_.\- ]/g, '');
+    const wc = '*' + s.toLowerCase() + '*';
+    filters.push({ "bool": { "should": [
+      { "wildcard": { "agent.name": { "value": wc, "case_insensitive": true } } },
+      { "wildcard": { "rule.id": { "value": wc, "case_insensitive": true } } },
+      { "wildcard": { "agent.ip": { "value": wc, "case_insensitive": true } } },
+      { "wildcard": { "rule.description": { "value": wc, "case_insensitive": true } } },
+      { "wildcard": { "rule.groups": { "value": wc, "case_insensitive": true } } }
+    ] } });
+  }
+
+  if (severity) {
+    const sevRanges = { 'Critical': { gte: 12 }, 'High': { gte: 7, lte: 11 }, 'Medium': { gte: 4, lte: 6 }, 'Low': { gte: 1, lte: 3 } };
+    const range = sevRanges[severity];
+    if (range) filters.push({ "range": { "rule.level": range } });
+  }
+
+  if (type) {
+    const g = MALWARE_GROUPS.find(t => t === type)
+    if (g) filters.push({ "term": { "rule.groups": g } });
+  }
+
+  if (filters.length === 0) {
+    filters.push({ "bool": { "should": MALWARE_GROUPS.map(g => ({ "term": { "rule.groups": g } })) } });
+  }
+
+  const body = {
+    size: lim,
+    track_total_hits: true,
+    query: { "bool": { "must": filters } },
+    sort: [{ "@timestamp": { "order": "desc" } }, { "_id": { "order": "desc" } }]
+  };
+
+  let sa = null;
+  if (search_after) { try { sa = JSON.parse(search_after); } catch {} }
+  if (sa && Array.isArray(sa)) {
+    body.search_after = sa;
+  } else if (off > 0) {
+    body.from = off;
+  }
+
+  async function queryWazuhApi() {
+    const results = [];
+    let total = 0;
+    for (const g of MALWARE_GROUPS) {
+      const fb = await api.get('/search', {
+        params: { index: idx, q: `rule.groups:${g}`, limit: lim, offset: 0, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed }
+      });
+      const docs = (fb.data.results || []).filter(d => !results.some(r => r._id === d._id));
+      results.push(...docs);
+      total += fb.data.total || 0;
+    }
+    results.sort((a, b) => ((b['@timestamp'] || '') > (a['@timestamp'] || '') ? 1 : -1));
+    return { results: results.slice(0, lim), total };
+  }
+
+  try {
+    if (!osApi) { const r = await queryWazuhApi(); return res.json(r); }
+    const osRes = await osApi.post('', body, {
+      params: { path: idx + '/_search', method: 'POST' }
+    });
+    const hits = osRes.data?.hits || {};
+    const results = (hits.hits || []).map(h => ({ ...h._source, _id: h._id }));
+    const lastSort = hits.hits?.length > 0 ? hits.hits[hits.hits.length - 1].sort : null;
+    res.json({ results, total: hits.total?.value || 0, sort: lastSort });
+  } catch (err) {
+    console.error('Malware OS proxy search failed, falling back:', err.message);
+    try { const r = await queryWazuhApi(); res.json(r); }
+    catch (e2) { res.status(500).json({ error: e2.message }); }
+  }
+});
+
+// ─── FIM Dashboard Endpoint ───
+const FIM_GROUPS = ['syscheck', 'syscheck_file', 'syscheck_registry', 'syscheck_entry_added', 'syscheck_entry_deleted', 'syscheck_entry_modified'];
+const fimDashCache = new Map();
+
+app.get('/api/fim-dashboard', async (req, res) => {
+  const { index, start_date, end_date } = req.query;
+  const idx = index || 'wazuh-alerts-4.x-*';
+  const sd = start_date || 'now-24h';
+  const ed = end_date || 'now';
+  const cacheKey = 'fim:' + idx + ':' + sd + ':' + ed;
+  const cached = fimDashCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return res.json(cached.data);
+  try {
+    function bd() { const b = { size: 0, track_total_hits: true }; const f = []; if (sd !== 'now') f.push({ range: { '@timestamp': { gte: sd } } }); if (ed !== 'now') f.push({ range: { '@timestamp': { lte: ed } } }); f.push({ terms: { 'rule.groups': FIM_GROUPS } }); b.query = { bool: { filter: f } }; return b; }
+    async function osQ(body) { if (!osApi) return null; const r = await osApi.post('', body, { params: { path: idx + '/_search', method: 'POST' }, timeout: 120000 }); return { aggs: r.data?.aggregations || null, total: r.data?.hits?.total?.value || 0 }; }
+
+    const sm = sd?.match(/now-(\d+)([hdwMy])/);
+    let th = 24;
+    if (sm) { const n = +sm[1], u = sm[2]; th = u === 'h' ? n : u === 'd' ? n * 24 : u === 'w' ? n * 168 : u === 'M' ? n * 720 : n * 8760; }
+    const evInt = th <= 24 ? '30m' : th <= 72 ? '1h' : th <= 336 ? '6h' : th <= 720 ? '12h' : '1d';
+
+    const q1 = bd(); q1.aggs = { groups: { terms: { field: 'rule.groups', size: 20 }, aggs: {
+      levels: { terms: { field: 'rule.level', size: 20 } },
+      agents: { terms: { field: 'agent.name', size: 100 } },
+      timeline: { date_histogram: { field: '@timestamp', fixed_interval: evInt } }
+    } } };
+
+    const q2 = bd(); q2.aggs = { agents: { terms: { field: 'agent.name', size: 10, order: { _count: 'desc' } }, aggs: {
+      events: { terms: { field: 'syscheck.event', size: 10 } }
+    } } };
+
+    function sa(field) { const b = bd(); b.aggs = { result: { terms: { field, size: 10 } } }; return b; }
+    function saFiltered(field, filterQ) { const b = bd(); const p = filterQ.split(':'); if (p[0] && p[1]) b.query.bool.filter.push({ term: { [p[0]]: p[1] } }); b.aggs = { result: { terms: { field, size: 10 } } }; return b; }
+
+    const [r1, r2, r3, r4, r5] = await Promise.all([
+      osQ(q1), osQ(q2),
+      osQ(sa('syscheck.path')),
+      osQ(saFiltered('syscheck.path', 'rule.groups:syscheck_registry')),
+      osQ(sa('rule.description'))
+    ]);
+
+    if (!r1) return res.json({ total:0, severity:{}, sevBuckets:[], agentBuckets:[], groupBuckets:[], trendBuckets:[], filePaths:[], registryPaths:[], ruleDescriptions:[], agentsEvolution:[], agentsByEvent:[] });
+
+    const groupBuckets = (r1.aggs?.groups?.buckets || []).filter(b => b.key && b.doc_count > 0);
+    const total = r1.total || 0;
+    const sevMap = {};
+    for (const gb of (r1.aggs?.groups?.buckets || [])) for (const b of (gb.levels?.buckets || [])) { const lvl = parseInt(b.key) || 0; sevMap[lvl] = (sevMap[lvl] || 0) + (b.doc_count || 0); }
+    const sevBuckets = Object.entries(sevMap).map(([k, v]) => ({ key: k, doc_count: v }));
+    let sevCritical = 0, sevHigh = 0, sevMedium = 0, sevLow = 0;
+    for (const b of sevBuckets) { const lvl = parseInt(b.key) || 0, cnt = b.doc_count || 0; if (lvl >= 12) sevCritical += cnt; else if (lvl >= 7) sevHigh += cnt; else if (lvl >= 4) sevMedium += cnt; else sevLow += cnt; }
+    const agentMap = {};
+    for (const gb of (r1.aggs?.groups?.buckets || [])) for (const b of (gb.agents?.buckets || [])) agentMap[b.key] = (agentMap[b.key] || 0) + (b.doc_count || 0);
+    const agentBuckets = Object.entries(agentMap).map(([k, v]) => ({ key: k, doc_count: v }));
+    const timelineMap = {};
+    for (const gb of (r1.aggs?.groups?.buckets || [])) for (const b of (gb.timeline?.buckets || [])) { const k = b.key_as_string || b.key; timelineMap[k] = (timelineMap[k] || 0) + (b.doc_count || 0); }
+    const trendBuckets = Object.entries(timelineMap).map(([k, v]) => ({ key: k, key_as_string: k, doc_count: v }));
+
+    const agentsByEvent = (r2.aggs?.agents?.buckets || []).map(b => {
+      const row = { agent: b.key };
+      for (const e of (b.events?.buckets || [])) row[e.key] = (row[e.key] || 0) + (e.doc_count || 0);
+      return row;
+    });
+
+    const filePaths = (r3?.aggs?.result?.buckets || []).filter(b => b.key).map(b => ({ key: b.key, doc_count: b.doc_count }));
+    const registryPaths = (r4?.aggs?.result?.buckets || []).filter(b => b.key).map(b => ({ key: b.key, doc_count: b.doc_count }));
+    const ruleDescriptions = (r5?.aggs?.result?.buckets || []).filter(b => b.key).map(b => ({ key: b.key, doc_count: b.doc_count }));
+
+    const data = { total, severity: { critical: sevCritical, high: sevHigh, medium: sevMedium, low: sevLow }, sevBuckets, agentBuckets, groupBuckets, trendBuckets, filePaths, registryPaths, ruleDescriptions, agentsByEvent };
+    fimDashCache.set(cacheKey, { ts: Date.now(), data });
+    if (fimDashCache.size > 50) { const fk = fimDashCache.keys().next().value; fimDashCache.delete(fk); }
+    res.json(data);
+  } catch (err) {
+    console.error('FIM dashboard error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── FIM Paginated Events Endpoint ───
+app.get('/api/fim-events', async (req, res) => {
+  const { index, start_date, end_date, limit, offset, search_after, search, severity, type } = req.query;
+  const idx = index || 'wazuh-alerts-4.x-*';
+  const sd = start_date || 'now-24h';
+  const ed = end_date || 'now';
+  const lim = Math.min(parseInt(limit) || 20, 10000);
+  const off = Math.min(parseInt(offset) || 0, 9999);
+
+  const filters = [];
+  const timeRange = {};
+  if (sd && sd !== 'now') timeRange.gte = sd;
+  if (ed && ed !== 'now') timeRange.lte = ed;
+  if (Object.keys(timeRange).length) filters.push({ "range": { "@timestamp": timeRange } });
+
+  if (search) {
+    const s = search.replace(/[^a-zA-Z0-9_.\- ]/g, '');
+    const wc = '*' + s.toLowerCase() + '*';
+    filters.push({ "bool": { "should": [
+      { "wildcard": { "agent.name": { "value": wc, "case_insensitive": true } } },
+      { "wildcard": { "rule.id": { "value": wc, "case_insensitive": true } } },
+      { "wildcard": { "syscheck.path": { "value": wc, "case_insensitive": true } } },
+      { "wildcard": { "rule.description": { "value": wc, "case_insensitive": true } } },
+      { "wildcard": { "syscheck.event": { "value": wc, "case_insensitive": true } } }
+    ] } });
+  }
+
+  if (severity) {
+    const sevRanges = { 'Critical': { gte: 12 }, 'High': { gte: 7, lte: 11 }, 'Medium': { gte: 4, lte: 6 }, 'Low': { gte: 1, lte: 3 } };
+    const range = sevRanges[severity];
+    if (range) filters.push({ "range": { "rule.level": range } });
+  }
+
+  if (type) {
+    const g = FIM_GROUPS.find(t => t === type)
+    if (g) filters.push({ "term": { "rule.groups": g } });
+  }
+
+  if (filters.length === 0) {
+    filters.push({ "bool": { "should": FIM_GROUPS.map(g => ({ "term": { "rule.groups": g } })) } });
+  }
+
+  const body = {
+    size: lim,
+    track_total_hits: true,
+    query: { "bool": { "must": filters } },
+    sort: [{ "@timestamp": { "order": "desc" } }, { "_id": { "order": "desc" } }]
+  };
+
+  let sa = null;
+  if (search_after) { try { sa = JSON.parse(search_after); } catch {} }
+  if (sa && Array.isArray(sa)) { body.search_after = sa; }
+  else if (off > 0) { body.from = off; }
+
+  try {
+    if (!osApi) { return res.json({ results: [], total: 0 }); }
+    const osRes = await osApi.post('', body, {
+      params: { path: idx + '/_search', method: 'POST' }
+    });
+    const hits = osRes.data?.hits || {};
+    const results = (hits.hits || []).map(h => ({ ...h._source, _id: h._id }));
+    const lastSort = hits.hits?.length > 0 ? hits.hits[hits.hits.length - 1].sort : null;
+    res.json({ results, total: hits.total?.value || 0, sort: lastSort });
+  } catch (err) {
+    console.error('FIM OS proxy search failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Auth ───
 const auth = require('./auth.cjs');
 
@@ -801,6 +1184,93 @@ app.get('/api/settings', auth.authMiddleware, (req, res) => {
     user: req.user
   })
 })
+
+// ─── Grafana OpenSearch Proxy ───
+app.all('/grafana-proxy/*', async (req, res) => {
+  const tPath = req.path.replace('/grafana-proxy/', '') || '/';
+  try {
+    // Handle root endpoint — return cluster info
+    if (tPath === '/' || tPath === '') {
+      return res.json({ cluster_name: 'wazuh-cluster', status: 'yellow', version: { number: '2.19.0', distribution: 'opensearch' } });
+    }
+    // Handle cluster health
+    if (tPath === '_cluster/health') {
+      const h = await api.get('/health', { timeout: 10000 });
+      return res.json({ cluster_name: 'wazuh-cluster', status: h.data.cluster_status || 'yellow', number_of_nodes: h.data.nodes || 1, number_of_data_nodes: h.data.nodes || 1, active_shards_percent_as_number: 93.8, timed_out: false });
+    }
+    // Handle _mapping requests — return fields from Wazuh API
+    if (tPath.includes('_mapping')) {
+      const parts = tPath.split('/');
+      const hasIndex = parts[0] && parts[0] !== '_mapping' && !parts[0].startsWith('_');
+      const idx = hasIndex ? parts[0] : 'wazuh-alerts-4.x-2026.06.22';
+      const fields = await api.get('/fields', { params: { index: idx }, timeout: 30000 });
+      const props = {};
+      (fields.data?.fields || []).forEach(f => { props[f.name] = { type: f.type }; });
+      const escapedIdx = idx.replace(/\./g, '\\.');
+      if (tPath.includes('field/')) {
+        const fieldName = parts[parts.length - 1];
+        const result = {};
+        if (fieldName === '*') {
+          result[escapedIdx] = { mappings: { properties: props } };
+        } else {
+          const fProps = {};
+          Object.entries(props).filter(([k]) => k === fieldName || k.startsWith(fieldName + '.')).forEach(([k, v]) => { fProps[k] = v; });
+          result[escapedIdx] = { mappings: { properties: fProps } };
+        }
+        return res.json(result);
+      }
+      return res.json({ [escapedIdx]: { mappings: { properties: props } } });
+    }
+    // Handle _field_caps — return field capabilities from Wazuh API
+    if (tPath.includes('_field_caps')) {
+      const parts = tPath.split('/');
+      const idx = (parts[0] && parts[0] !== '_field_caps' && !parts[0].startsWith('_')) ? parts[0] : 'wazuh-alerts-4.x-2026.06.22';
+      const fields = await api.get('/fields', { params: { index: idx }, timeout: 30000 });
+      const fcaps = {};
+      (fields.data?.fields || []).forEach(f => {
+        const type = f.type || 'keyword';
+        fcaps[f.name] = { [type]: { type, searchable: true, aggregatable: true, metadata_field: false } };
+      });
+      return res.json({ indices: [idx], fields: fcaps });
+    }
+    // Handle _msearch — convert NDJSON to individual _search calls
+    if (tPath.includes('_msearch')) {
+      if (!osApi) return res.json({ responses: [{ status: 200, hits: { total: { value: 0 } }, aggregations: {} }] });
+      const raw = (typeof req.body === 'string') ? req.body : '';
+      const lines = raw.trim().split('\n').filter(Boolean);
+      const responses = [];
+      for (let i = 0; i < lines.length; i += 2) {
+        const bodyLine = lines[i + 1];
+        if (!bodyLine) { responses.push({ status: 200, hits: { total: { value: 0 } }, aggregations: {}, timed_out: false, _shards: { total: 0, successful: 0, failed: 0 } }); continue; }
+        let body = {};
+        try { body = JSON.parse(bodyLine); } catch (e) { responses.push({ status: 200, error: { reason: 'Invalid JSON: ' + e.message } }); continue; }
+        try { const osRes = await osApi.post('', body, { params: { path: 'wazuh-alerts-4.x-2026.06.22/_search', method: 'POST' }, timeout: 60000 }); responses.push(osRes.data); }
+        catch (e) { responses.push({ status: 200, hits: { total: { value: 0 } }, aggregations: {} }); }
+      }
+      return res.json({ responses });
+    }
+    // Handle _search — forward to Dashboards proxy
+    if (tPath.includes('_search')) {
+      if (!osApi) throw new Error('No OpenSearch proxy available');
+      const parts = tPath.split('/');
+      const idx = (parts[0] && parts[0] !== '_search' && !parts[0].startsWith('_')) ? parts[0] : null;
+      const searchPath = idx ? `${idx}/_search` : '_search';
+      const body = (req.method === 'POST' || req.method === 'PUT') ? (req.body || {}) : {};
+      const osRes = await osApi.post('', body, { params: { path: searchPath, method: req.method }, timeout: 60000 });
+      return res.json(osRes.data);
+    }
+    // Fallback: forward to Dashboards proxy
+    if (!osApi) throw new Error('No OpenSearch proxy available');
+    const params = { path: tPath, method: req.method };
+    const body = (req.method === 'POST' || req.method === 'PUT') ? req.body : {};
+    const osRes = await osApi.post('', body, { params, timeout: 60000 });
+    res.json(osRes.data);
+  } catch (err) {
+    const status = err.response?.status || 502;
+    console.error('Grafana proxy error:', req.method, tPath, status, err.message);
+    res.status(status).json({ error: err.message });
+  }
+});
 
 // SPA fallback: serve index.html for any non-API route
 app.get('*', (req, res) => {

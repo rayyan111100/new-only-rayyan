@@ -41,3 +41,35 @@ You are an expert full-stack engineer building a **professional Enterprise SOC D
 - **Real-time**: WebSocket in `server/realtime.cjs` + `src/hooks/useRealtime.js`
 - **Auth**: JWT tokens via `server/auth.cjs` + `src/context/AuthContext.jsx`
 - **DB**: SQLite via `server/db.cjs`
+
+## BACKEND DATA STRUCTURES
+
+### Wazuh Alert (base)
+```
+predecoder: { hostname: string, program_name: string, timestamp: string }
+agent:      { name: string, id: string }
+manager:    { name: string }
+rule:       { level: number, description: string, groups: string[], id: string, gdpr: string[], gpg13: string[], firedtimes: number, mail: boolean }
+decoder:    { name: string }
+input:      { type: string }
+full_log:   string
+@timestamp: string
+location:   string
+id:         string
+timestamp:  string
+```
+
+### FIM syscheck fields
+```
+syscheck.path, syscheck.event (added/deleted/modified), syscheck.uname_after,
+syscheck.audit.user.name, syscheck.inode, syscheck.gid, syscheck.gname,
+syscheck.hard_links, syscheck.uid, syscheck.uname, syscheck.perm_after,
+syscheck.perm_before, syscheck.md5/sha1/sha256_before, syscheck.md5/sha1/sha256_after
+```
+
+### Known Rule Groups
+FIM: syscheck, syscheck_file, syscheck_registry, syscheck_entry_added/deleted/modified
+Malware: misp, multiple_blocks, reconnaissance, rootcheck, virustotal, yara
+
+### MCP Server
+URL: http://192.168.1.77:9996 — Exposes: /info, /health, /rules, /decoders, /config, /integrations, /alerts/schema, /alerts/search, /agents
