@@ -31,7 +31,7 @@ function transform(d) {
     })),
     categories: (d.categories || []).slice(0, 8),
     topControls: d.topControls || [],
-    recent: (d.recent || []).slice(0, 10000),
+    recent: (d.recent || []).slice(0, 1000),
     recentTotal: d.recentTotal || 0
   }
 }
@@ -50,11 +50,11 @@ function toLogEntry(r) {
   }
 }
 
-export default function useCompliance(framework) {
+export default function useCompliance(framework, filterQ) {
   const { startDate: rawStart, endDate: rawEnd } = useApp()
   const startDate = rawStart || 'now-24h'
   const endDate = rawEnd || 'now'
-  const cacheKey = framework || '__all__'
+  const cacheKey = (framework || '__all__') + '|' + (filterQ || '')
   const timeKey = `${startDate}|${endDate}`
 
   const [state, setState] = useState(() => {
@@ -65,54 +65,9 @@ export default function useCompliance(framework) {
       error: null,
     }
   })
-  const [logs, setLogs] = useState([])
-  const [totalLogCount, setTotalLogCount] = useState(0)
-  const [loadingMore, setLoadingMore] = useState(false)
 
   const mountedRef = useRef(true)
   const cacheKeyRef = useRef(cacheKey)
-  const loadingMoreRef = useRef(false)
-
-  // Reset logs when initial data changes
-  useEffect(() => {
-    if (state.data?.recent) {
-      setLogs(state.data.recent)
-      setTotalLogCount(state.data.recentTotal || state.data.recent.length)
-    }
-  }, [state.data?.recent, state.data?.recentTotal])
-
-  const loadMore = useCallback(async () => {
-    if (loadingMoreRef.current) return
-    loadingMoreRef.current = true
-    setLoadingMore(true)
-    try {
-      const sd = parseDateStr(startDate)
-      const ed = parseDateStr(endDate)
-      const offset = logs.length
-      const params = {
-        index: 'unishield360-alerts-4.x-*',
-        start_date: sd.toISOString(),
-        end_date: ed.toISOString(),
-        offset,
-        limit: 500,
-      }
-      if (framework) params.framework = framework
-      const d = await api('compliance', params)
-      const newDocs = (d.recent || []).map(r => ({
-        ...r,
-        _frameworks: r._frameworks || []
-      }))
-      if (mountedRef.current) {
-        setLogs(prev => [...prev, ...newDocs])
-        setTotalLogCount(d.recentTotal || logs.length + newDocs.length)
-      }
-    } catch (e) {
-      console.error('loadMore error:', e)
-    } finally {
-      loadingMoreRef.current = false
-      if (mountedRef.current) setLoadingMore(false)
-    }
-  }, [framework, startDate, endDate, logs.length])
 
   const fetchData = useCallback(async (silent) => {
     const key = cacheKeyRef.current
@@ -129,7 +84,7 @@ export default function useCompliance(framework) {
         end_date: ed.toISOString(),
       }
       if (framework) params.framework = framework
-      if (!silent) params._t = Date.now() // Bypass backend cache on manual refresh
+      if (filterQ) params.q = filterQ
       const d = await api('compliance', params)
       const t = transform(d)
       cache.set(key, { data: { d: t, time: Date.now(), timeKey } })
@@ -180,7 +135,7 @@ export default function useCompliance(framework) {
     return () => { mountedRef.current = false }
   }, [])
 
-  const refresh = useCallback(() => { setLogs([]); fetchData(false) }, [fetchData])
+  const refresh = useCallback(() => fetchData(false), [fetchData])
 
-  return useMemo(() => ({ ...state, refresh, toLogEntry, toSev, logs, totalLogCount, loadMore, loadingMore }), [state, refresh, logs, totalLogCount, loadMore, loadingMore])
+  return useMemo(() => ({ ...state, refresh, toLogEntry, toSev }), [state, refresh])
 }

@@ -6,7 +6,7 @@ const path = require('path');
 const axios = require('axios');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 const API = process.env.UNISHIELD360_API_URL;
 const WUSER = process.env.UNISHIELD360_USER;
 const WPASS = process.env.UNISHIELD360_PASSWORD;
@@ -47,6 +47,7 @@ async function authenticate() {
     token = null;
     const status = err.response?.status;
     if (status === 501) {
+      console.warn('⚠ UniShield360 API auth not supported (501) — running in no-auth mode');
       authBackoffUntil = Date.now() + 86400000;
     } else {
       console.error('✖ Auth failed:', err.response?.data?.message || err.message);
@@ -57,7 +58,7 @@ async function authenticate() {
 const api = axios.create({ baseURL: API, timeout: 120000 });
 
 // Direct OpenSearch connection via OpenSearch Dashboards proxy (bypasses 10k max_result_window)
-const OS_URL = process.env.UNISHIELD360_API_URL ? 'https://192.168.1.77:8443' : null;
+const OS_URL = process.env.UNISHIELD360_API_URL ? 'https://100.110.74.122:8443' : null;
 const osApi = OS_URL ? axios.create({
   baseURL: OS_URL + '/api/console/proxy',
   timeout: 120000,
@@ -352,52 +353,27 @@ function classifyDocFrameworks(doc) {
 }
 
 app.get('/api/compliance', async (req, res) => {
-  const { index, start_date, end_date, framework } = req.query;
+  const { index, start_date, end_date, framework, q: filterQ } = req.query;
   const idx = index || 'unishield360-alerts-4.x-*';
   const sd = start_date || 'now-24h';
   const ed = end_date || 'now';
-  const cacheKey = `compliance:${framework || '__all__'}:${sd}:${ed}`;
+  const fq = (filterQ || '').trim();
+  const cacheKey = `compliance:${framework || '__all__'}:${sd}:${ed}:${fq}`;
 
   const cached = complianceCache.get(cacheKey);
-  if (!req.query._t && cached && Date.now() - cached.ts < COMPLIANCE_CACHE_TTL) {
+  if (cached && Date.now() - cached.ts < COMPLIANCE_CACHE_TTL) {
     return res.json(cached.data);
   }
 
   const fwField = framework ? FRAMEWORK_FIELDS[framework] : null;
   const fwQ = fwField ? '_exists_:' + fwField : null;
-  const off = parseInt(req.query.offset) || 0;
-
-  // Offset > 0 means paginated log fetch — skip aggregates, return only logs
-  if (off > 0) {
-    const PAGE = Math.min(parseInt(req.query.limit) || 500, 500);
-    try {
-      if (!fwField) {
-        const results = [];
-        const overviewQ = (() => { const f = FRAMEWORK_NAMES.map(x => '_exists_:' + FRAMEWORK_FIELDS[x]); const b = []; for (let i = 0; i < f.length; i += 3) b.push(f.slice(i, i + 3).join(' OR ')); return b; })();
-        for (const q of overviewQ) {
-          const resp = await api.get('/search', { params: { index: idx, q, limit: PAGE, offset: off, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [] } }));
-          results.push(...(resp.data?.results || []));
-        }
-        const seen = new Set();
-        const merged = [];
-        for (const doc of results) {
-          const id = doc._id || doc['@timestamp'] + (doc.agent?.name || '');
-          if (!seen.has(id)) { seen.add(id); merged.push(doc); }
-        }
-        merged.sort((a, b) => (b['@timestamp'] || '').localeCompare(a['@timestamp'] || ''));
-        return res.json({ recent: merged.slice(0, PAGE).map(d => ({ ...d, _frameworks: classifyDocFrameworks(d) })), recentTotal: 0 });
-      }
-      const resp = await api.get('/search', { params: { index: idx, q: fwQ, limit: PAGE, offset: off, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } }));
-      const docs = (resp.data?.results || []).map(d => ({ ...d, _frameworks: classifyDocFrameworks(d) }));
-      return res.json({ recent: docs, recentTotal: resp.data?.total?.value || docs.length });
-    } catch (err) { return res.status(500).json({ error: err.message }); }
-  }
+  const combinedQ = [fwQ, fq].filter(Boolean).join(' AND ');
   // Wazuh OR query limit ~4 fields; split into batches of 3
   const overviewQ = !fwField ? (() => {
     const fields = FRAMEWORK_NAMES.map(f => '_exists_:' + FRAMEWORK_FIELDS[f]);
     const batches = [];
     for (let i = 0; i < fields.length; i += 3) batches.push(fields.slice(i, i + 3).join(' OR '));
-    return batches;
+    return fq ? batches.map(b => '(' + b + ') AND (' + fq + ')') : batches;
   })() : null;
   const frameworkField = fwField;
   try {
@@ -412,18 +388,6 @@ app.get('/api/compliance', async (req, res) => {
         }
       }
       return Object.entries(map).map(([key, doc_count]) => ({ key, doc_count })).sort((a, b) => b.doc_count - a.doc_count);
-    }
-    // Wazuh search caps at 500 results per call; paginate sequentially for higher limits
-    async function searchAll(q, limit, sd, ed) {
-      const PAGE = 500;
-      const maxPages = Math.min(Math.ceil(limit / PAGE), 10); // max 10 pages = 5000
-      const all = [];
-      for (let i = 0; i < maxPages; i++) {
-        const resp = await api.get('/search', { params: { index: idx, q, limit: PAGE, offset: i * PAGE, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [] } }));
-        all.push(...(resp.data?.results || []));
-        if ((resp.data?.results || []).length < PAGE) break; // no more results
-      }
-      return { data: { results: all.slice(0, limit), total: { value: all.length } } };
     }
 
     const [byLevel, topRules, topAgents, timeline, categories, recent, topControls] = !fwField
@@ -441,39 +405,47 @@ app.get('/api/compliance', async (req, res) => {
             return { data: { buckets: Object.entries(map).map(([key, doc_count]) => ({ key, doc_count })).sort((a, b) => a.key - b.key) } };
           }),
           Promise.all(overviewQ.map(q => aggOne(q, 'rule.category'))).then(mergeBuckets).then(buckets => ({ data: { buckets } })),
-          Promise.all(overviewQ.map(q => api.get('/search', { params: { index: idx, q, limit: 500, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [] } })))).then(responses => {
+          Promise.all(overviewQ.map(q => api.get('/search', { params: { index: idx, q, limit: 1000, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } })))).then(responses => {
             const seen = new Set();
             const merged = [];
             for (const r of responses) {
-              for (const doc of (r.data?.results || [])) {
+              for (const doc of (r.data.results || [])) {
                 const id = doc._id || doc['@timestamp'] + (doc.agent?.name || '');
                 if (!seen.has(id)) { seen.add(id); merged.push(doc); }
               }
             }
             merged.sort((a, b) => (b['@timestamp'] || '').localeCompare(a['@timestamp'] || ''));
-            return { data: { results: merged.slice(0, 500), total: { value: merged.length } } };
+            return { data: { results: merged.slice(0, 1000), total: { value: merged.length } } };
           }),
           Promise.all(overviewQ.map(q => aggOne(q, frameworkField || 'rule.gdpr'))).then(mergeBuckets).then(buckets => ({ data: { buckets } })),
         ])
       : await Promise.all([
-          aggOne(fwQ, 'rule.level'),
-          aggOne(fwQ, 'rule.id'),
-          aggOne(fwQ, 'agent.name', 10),
-          api.get('/aggregate', { params: { index: idx, q: fwQ, field: '@timestamp', type: 'date_histogram', interval: '1h', start_date: sd, end_date: ed, limit: 48 } }).catch(() => ({ data: { buckets: [] } })),
-          aggOne(fwQ, 'rule.category'),
-          api.get('/search', { params: { index: idx, q: fwQ, limit: 500, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } })),
-          frameworkField ? aggOne(fwQ, frameworkField) : Promise.resolve({ data: { buckets: [] } }),
+          aggOne(combinedQ, 'rule.level'),
+          aggOne(combinedQ, 'rule.id'),
+          aggOne(combinedQ, 'agent.name', 10),
+          api.get('/aggregate', { params: { index: idx, q: combinedQ, field: '@timestamp', type: 'date_histogram', interval: '1h', start_date: sd, end_date: ed, limit: 48 } }).catch(() => ({ data: { buckets: [] } })),
+          aggOne(combinedQ, 'rule.category'),
+          api.get('/search', { params: { index: idx, q: combinedQ, limit: 1000, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } })),
+          frameworkField ? aggOne(combinedQ, frameworkField) : Promise.resolve({ data: { buckets: [] } }),
         ]);
 
     let count24v = 0, count7dv = 0;
     if (!fwField) {
-      const c24results = await Promise.all(FRAMEWORK_NAMES.map(fw => api.get('/count', { params: { index: idx, q: '_exists_:' + FRAMEWORK_FIELDS[fw], start_date: sd, end_date: ed } }).catch(() => ({ data: { count: 0 } }))));
+      const c24results = await Promise.all(FRAMEWORK_NAMES.map(fw => {
+        let q = '_exists_:' + FRAMEWORK_FIELDS[fw];
+        if (fq) q = '(' + q + ') AND (' + fq + ')';
+        return api.get('/count', { params: { index: idx, q, start_date: sd, end_date: ed } }).catch(() => ({ data: { count: 0 } }));
+      }));
       for (const r of c24results) count24v += r.data?.count || 0;
-      const c7dresults = await Promise.all(FRAMEWORK_NAMES.map(fw => api.get('/count', { params: { index: idx, q: '_exists_:' + FRAMEWORK_FIELDS[fw], start_date: 'now-7d', end_date: 'now' } }).catch(() => ({ data: { count: 0 } }))));
+      const c7dresults = await Promise.all(FRAMEWORK_NAMES.map(fw => {
+        let q = '_exists_:' + FRAMEWORK_FIELDS[fw];
+        if (fq) q = '(' + q + ') AND (' + fq + ')';
+        return api.get('/count', { params: { index: idx, q, start_date: 'now-7d', end_date: 'now' } }).catch(() => ({ data: { count: 0 } }));
+      }));
       for (const r of c7dresults) count7dv += r.data?.count || 0;
     } else {
-      count24v = (await api.get('/count', { params: { index: idx, q: fwQ, start_date: sd, end_date: ed } }).catch(() => ({ data: { count: 0 } }))).data?.count || 0;
-      count7dv = (await api.get('/count', { params: { index: idx, q: fwQ, start_date: 'now-7d', end_date: 'now' } }).catch(() => ({ data: { count: 0 } }))).data?.count || 0;
+      count24v = (await api.get('/count', { params: { index: idx, q: combinedQ, start_date: sd, end_date: ed } }).catch(() => ({ data: { count: 0 } }))).data?.count || 0;
+      count7dv = (await api.get('/count', { params: { index: idx, q: combinedQ, start_date: 'now-7d', end_date: 'now' } }).catch(() => ({ data: { count: 0 } }))).data?.count || 0;
     }
 
     const severityMap = {};
@@ -494,7 +466,8 @@ app.get('/api/compliance', async (req, res) => {
 
     const frameworkCounts = !framework ? await Promise.all(
       FRAMEWORK_NAMES.map(fw => {
-        const q = '_exists_:' + FRAMEWORK_FIELDS[fw];
+        let q = '_exists_:' + FRAMEWORK_FIELDS[fw];
+        if (fq) q = '(' + q + ') AND (' + fq + ')';
         return api.get('/count', { params: { index: idx, q, start_date: sd, end_date: ed } }).catch(() => ({ data: { count: 0 } }));
       })
     ) : [];
@@ -506,7 +479,7 @@ app.get('/api/compliance', async (req, res) => {
     }));
     const filteredRecent = framework ? recentDocs.filter(d => d._frameworks.includes(framework)) : recentDocs;
 
-    const recentActualTotal = typeof recent.data?.total === 'number' ? recent.data.total : (recent.data?.total?.value || rawRecent.length);
+    const recentActualTotal = recent.data?.total?.value || rawRecent.length;
 
     const body = {
       count24: count24v,
@@ -668,6 +641,121 @@ app.get('/api/gdpr-events', async (req, res) => {
   }
 });
 
+// ─── EPS & Ingestion Stats Endpoint ───
+app.get('/api/eps-stats', async (req, res) => {
+  const { index, q, start_date, end_date } = req.query;
+  const idx = index || 'unishield360-alerts-4.x-*';
+  const sd = start_date || 'now-24h';
+  const ed = end_date || 'now';
+  const filterQ = q || '';
+  try {
+    const [
+      indexStats, eps60Res, eps5mRes, eps1hRes,
+      agentAgg, recentAgg, eventRateRes, indicesRes
+    ] = await Promise.all([
+      api.get('/index-stats', { params: { index: idx } }).catch(() => ({ data: { docs_count: 0, size_bytes: 0 } })),
+      api.get('/count', { params: { index: idx, q: filterQ, start_date: 'now-60s', end_date: 'now' } }).catch(() => ({ data: { count: 0 } })),
+      api.get('/count', { params: { index: idx, q: filterQ, start_date: 'now-5m', end_date: 'now' } }).catch(() => ({ data: { count: 0 } })),
+      api.get('/count', { params: { index: idx, q: filterQ, start_date: 'now-1h', end_date: 'now' } }).catch(() => ({ data: { count: 0 } })),
+      api.get('/aggregate', { params: { index: idx, q: filterQ, field: 'agent.name', type: 'terms', limit: 20, start_date: sd, end_date: ed } }).catch(() => ({ data: { buckets: [] } })),
+      api.get('/search', { params: { index: idx, q: filterQ, limit: 100, sort: '@timestamp', order: 'desc', start_date: 'now-5m', end_date: 'now' } }).catch(() => ({ data: { results: [] } })),
+      api.get('/aggregate', { params: { index: idx, q: filterQ, field: '@timestamp', type: 'date_histogram', interval: '1h', limit: 48, start_date: sd, end_date: ed } }).catch(() => ({ data: { buckets: [] } })),
+      api.get('/indices', { params: { index: 'wazuh-alerts-4.x-*' } }).catch(() => ({ data: { patterns: [] } })),
+    ]);
+
+    const docsCount = indexStats.data?.docs_count || 0;
+    const sizeBytes = indexStats.data?.size_bytes || 0;
+
+    const eps60 = ((eps60Res.data?.count || 0) / 60);
+    const eps5m = ((eps5mRes.data?.count || 0) / 300);
+    const eps1h = ((eps1hRes.data?.count || 0) / 3600);
+    const avgDocSize = docsCount > 0 ? sizeBytes / docsCount : 0;
+
+    const agentBuckets = agentAgg.data?.buckets || [];
+    const recentAgents = new Set(
+      (recentAgg.data?.results || []).map(d => d.agent?.name).filter(Boolean)
+    );
+
+    const agentLastEventPromises = agentBuckets.slice(0, 20).map(b =>
+      api.get('/search', {
+        params: {
+          index: idx, q: (filterQ ? `(${filterQ}) AND ` : '') + `agent.name:"${b.key}"`,
+          limit: 1, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed,
+        }
+      }).catch(() => ({ data: { results: [] } }))
+    );
+    const agentLastEventResults = await Promise.all(agentLastEventPromises);
+
+    const perAsset = agentBuckets.map((b, i) => {
+      const count = b.doc_count || 0;
+      const lastEvent = agentLastEventResults[i]?.data?.results?.[0]?.['@timestamp'] || null;
+      return {
+        agent: b.key,
+        doc_count: count,
+        eps: +(count / 86400).toFixed(2),
+        estimated_size_bytes: Math.round(avgDocSize * count),
+        last_event: lastEvent,
+        status: recentAgents.has(b.key) ? 'active' : 'stopped',
+      };
+    });
+
+    const logStop = perAsset.filter(a => a.status === 'stopped' && a.doc_count > 0);
+
+    const eventRate = (eventRateRes.data?.buckets || []).map(b => ({
+      time: b.key_as_string || b.key,
+      count: b.doc_count || 0,
+    }));
+
+    const alertIndices = (indicesRes.data?.patterns || [])
+      .find(p => p.pattern === 'wazuh-*')?.indices || [];
+    const dailySizes = alertIndices
+      .filter(i => i.name && i.name.match(/wazuh-alerts-4\.x-\d{4}\.\d{2}\.\d{2}/))
+      .map(i => {
+        const match = i.name.match(/(\d{4})\.(\d{2})\.(\d{2})/);
+        return {
+          date: match ? `${match[1]}-${match[2]}-${match[3]}` : i.name,
+          size_bytes: parseInt(i.store_size) || 0,
+          docs_count: i.docs_count || 0,
+        };
+      })
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-30);
+
+    const epsTrend = eventRate.map(b => ({
+      time: b.time,
+      eps: +(b.count / 3600).toFixed(2),
+    }));
+
+    // Min/Max ingest rate (KB/s) from daily sizes
+    const daySizes = dailySizes.filter(d => d.size_bytes > 0)
+    const rates = daySizes.map(d => d.size_bytes / 86400 / 1024)
+    const minRate = rates.length > 0 ? Math.min(...rates) : 0
+    const maxRate = rates.length > 0 ? Math.max(...rates) : 0
+
+    res.json({
+      success: true,
+      eps: { '60s': +eps60.toFixed(2), '5m': +eps5m.toFixed(2), '1h': +eps1h.toFixed(2) },
+      ingestion: {
+        total_docs: docsCount,
+        total_size_bytes: sizeBytes,
+        total_size_mb: +(sizeBytes / 1048576).toFixed(1),
+        total_size_gb: +(sizeBytes / 1073741824).toFixed(2),
+        avg_doc_size_bytes: Math.round(avgDocSize),
+        daily_sizes: dailySizes,
+        min_rate: +(minRate).toFixed(2),
+        max_rate: +(maxRate).toFixed(2),
+      },
+      per_asset: perAsset,
+      event_rate: eventRate,
+      eps_trend: epsTrend,
+      log_stop: logStop,
+    });
+  } catch (err) {
+    console.error('EPS stats error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Auth ───
 const auth = require('./auth.cjs');
 
@@ -732,8 +820,8 @@ function startServer(port) {
   const server = app.listen(port)
     .on('error', (err) => {
       if (err.code === 'EADDRINUSE') {
-        console.error(`✖ Port ${port} is already in use. Trying port ${port + 1}...`);
-        startServer(port + 1);
+        console.error(`✖ Port ${port} is already in use. Trying port ${parseInt(port, 10) + 1}...`);
+        startServer(parseInt(port, 10) + 1);
       } else {
         console.error('✖ Server error:', err.message);
       }

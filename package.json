@@ -29,8 +29,11 @@
     "jsonwebtoken": "^9.0.3",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
+    "plotly.js": "^3.6.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
+    "react-grid-layout": "^2.2.3",
+    "react-plotly.js": "^4.0.0",
     "recharts": "^2.0.0",
     "ws": "^8.21.0",
     "xlsx": "^0.18.5"

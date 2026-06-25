@@ -57,7 +57,32 @@ export default function TscTab() {
   const [timelineFilter, setTimelineFilter] = useState(null)
   const containerRef = useRef(null)
   const LOG_PAGE_SIZE = 10
-  const { data, loading, error, toLogEntry, toSev, refresh, logs, totalLogCount, loadMore, loadingMore } = useCompliance('TSC (SOC 2)')
+  const filterQ = useMemo(() => {
+    const parts = []
+    const sevRanges = { Critical: 'rule.level:[12 TO 15]', High: 'rule.level:[7 TO 11]', Medium: 'rule.level:[4 TO 6]', Low: 'rule.level:[1 TO 3]' }
+    if (filters.severity?.length) {
+      const rangeParts = filters.severity.map(s => sevRanges[s]).filter(Boolean)
+      if (rangeParts.length) parts.push('(' + rangeParts.join(' OR ') + ')')
+    }
+    if (excludes.severity?.length) {
+      const rangeParts = excludes.severity.map(s => sevRanges[s]).filter(Boolean)
+      if (rangeParts.length) parts.push('NOT (' + rangeParts.join(' OR ') + ')')
+    }
+    for (const key of Object.keys(filters)) {
+      if (key === 'severity') continue
+      for (const val of (filters[key] || [])) {
+        parts.push(key + ':"' + val.replace(/"/g, '\\"') + '"')
+      }
+    }
+    for (const key of Object.keys(excludes)) {
+      if (key === 'severity') continue
+      for (const val of (excludes[key] || [])) {
+        parts.push('NOT ' + key + ':"' + val.replace(/"/g, '\\"') + '"')
+      }
+    }
+    return parts.length ? parts.join(' AND ') : ''
+  }, [filters, excludes])
+  const { data, loading, error, toLogEntry, toSev, refresh } = useCompliance('TSC (SOC 2)', filterQ)
   const toggleRow = useCallback((id) => {
     setExpandedRow(prev => ({ ...prev, [id]: !prev[id] }))
   }, [])
@@ -163,8 +188,8 @@ export default function TscTab() {
   const activeExcludes = Object.keys(excludes)
 
   const logEntries = useMemo(() => {
-    return (logs || []).map(r => ({ ...toLogEntry(r), raw: r }))
-  }, [logs, toLogEntry])
+    return (data?.recent || []).map(r => ({ ...toLogEntry(r), raw: r }))
+  }, [data, toLogEntry])
 
   const hasActiveFilter = activeFilters.length > 0 || activeExcludes.length > 0 || !!timelineFilter
 
@@ -238,8 +263,8 @@ export default function TscTab() {
         }
       })
     }
-    if (Object.keys(map).length === 0 && logs) {
-      logs.forEach(r => {
+    if (Object.keys(map).length === 0 && data?.recent) {
+      data.recent.forEach(r => {
         const entry = toLogEntry(r)
         if (entry.ctrl && TSC_CONTROLS.some(c => c.ctrl === entry.ctrl)) {
           map[entry.ctrl] = (map[entry.ctrl] || 0) + 1
@@ -668,10 +693,10 @@ export default function TscTab() {
 
       {/* SOC 2 Event Logs */}
       <div className="mb-3">
-        {totalLogCount > 500 && (
+        {data?.recentTotal > 500 && (
           <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-[#ddf4ff] dark:bg-[#0c2d6b] border border-[#54aeff66] dark:border-[#1f6feb66] text-[11px] text-[#0969da] dark:text-[#58a6ff]">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            <span><strong>{totalLogCount.toLocaleString()}</strong> events found. Select a narrower time range for detailed log views.</span>
+            <span><strong>{data.recentTotal.toLocaleString()}</strong> events found. Select a narrower time range for detailed log views.</span>
           </div>
         )}
         <div className="flex items-center justify-between mb-2.5">
@@ -854,27 +879,9 @@ export default function TscTab() {
             </button>
           </div>
         </div>
-        {logPage === totalLogPages && totalLogCount > logs.length && logs.length < 10000 && (
-          <div className="flex justify-center mt-3">
-            <button onClick={loadMore} disabled={loadingMore}
-              className="px-4 py-1.5 text-[11px] font-medium rounded-lg border border-[#e5e7eb] dark:border-[#2d3140] text-[#e8681a] hover:bg-[#e8681a]/5 dark:hover:bg-[#e8681a]/10 transition-all disabled:opacity-40 flex items-center gap-1.5">
-              {loadingMore ? (
-                <><svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" strokeDasharray="31.4 31.4"/><line x1="12" y1="2" x2="12" y2="6"/></svg> Loading...</>
-              ) : (
-                <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="12 5 19 12 12 19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Load 500 more ({Math.min(totalLogCount - logs.length, 10000 - logs.length)} remaining)</>
-              )}
-            </button>
-          </div>
-        )}
       </div>
 
-      <div className="text-center text-[10px] text-[#8b949e] py-3 border-t border-[#e5e7eb] dark:border-[#2d3140]">&copy; 2025 UniShield 360. All rights reserved.
-        {logs.length >= 10000 && (
-          <div className="flex items-center gap-2 mt-3 px-3 py-2 rounded-lg bg-[#ddf4ff] dark:bg-[#0c2d6b] border border-[#54aeff66] dark:border-[#1f6feb66] text-[11px] text-[#0969da] dark:text-[#58a6ff]">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            <span>Maximum 10,000 logs loaded. Select a narrower time range for more detailed log views.</span>
-          </div>
-        )}</div>
+      <div className="text-center text-[10px] text-[#8b949e] py-3 border-t border-[#e5e7eb] dark:border-[#2d3140]">&copy; 2025 UniShield 360. All rights reserved.</div>
 
       <DetailSidebar
         open={sidebar === 'agents'}

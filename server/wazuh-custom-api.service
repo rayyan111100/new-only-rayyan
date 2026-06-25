@@ -1,0 +1,17 @@
+[Unit]
+Description=Wazuh Custom SOC API Server v3.1
+After=network.target opensearch.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/wazuh
+ExecStart=/usr/bin/python3 /home/wazuh/wazuh_api_server.py
+ExecStopPost=/usr/local/bin/wazuh-api-failed.sh
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/wazuh/api_server.log
+StandardError=append:/home/wazuh/api_server.log
+
+[Install]
+WantedBy=multi-user.target

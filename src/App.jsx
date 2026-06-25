@@ -43,12 +43,14 @@ import GdprTab from './tabs/GdprTab'
 import MitreAttackTab from './tabs/MitreAttackTab'
 import NistTab from './tabs/NistTab'
 import CspmTab from './tabs/CspmTab'
+import CustomDashboardTab from './tabs/CustomDashboardTab'
 import LoginModal from './components/LoginModal'
 import ErrorBoundary from './components/ErrorBoundary'
 
 const TABS = {
   discover: DiscoverTab,
   dashboard: DashboardTab,
+  customdashboard: CustomDashboardTab,
   securityhub: SecurityHub,
   search: SearchTab,
   analytics: AnalyticsTab,

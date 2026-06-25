@@ -1,3 +1,6 @@
-⚠ JWT_SECRET not set — using insecure default. Set JWT_SECRET in .env for production.
-⚠ JWT_SECRET not set — using default. Set JWT_SECRET in .env for production security.
-✖ Port 3000 is already in use. Trying port 30001...
+✖ Auth failed: timeout of 10000ms exceeded
+✖ Auth failed: timeout of 10000ms exceeded
+✖ Auth failed: timeout of 10000ms exceeded
+✖ Auth failed: timeout of 10000ms exceeded
+✖ Realtime poll error (1): connect ETIMEDOUT 100.110.74.122:9999
+✖ Auth failed: timeout of 10000ms exceeded

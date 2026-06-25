@@ -1,0 +1,543 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║     UniShield360 — Custom Dashboard Builder: Complete Guide           ║
+║     Wazuh-Style SIEM Dashboard Inspired by FortiSIEM                  ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+══════════════════════════════════════════════════════════════════════════
+                    1. WHAT IS A CUSTOM DASHBOARD?
+══════════════════════════════════════════════════════════════════════════
+
+  A custom dashboard is a personalized view of security data that allows
+  SOC analysts to monitor, analyze, and respond to security events in
+  real-time. Instead of using fixed pre-built pages, you can:
+
+  ✅ Create your own dashboards from scratch
+  ✅ Add widgets (charts, tables, metrics) that show only what matters
+  ✅ Drag & drop widgets into any layout
+  ✅ Apply global filters (time range, severity, agents)
+  ✅ Save, export, import, and share dashboards with your team
+  ✅ Use pre-built templates to get started quickly
+
+══════════════════════════════════════════════════════════════════════════
+                    2. DASHBOARD ARCHITECTURE
+══════════════════════════════════════════════════════════════════════════
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                   UNISHIELD360 DASHBOARD LAYOUT                     │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │                                                                     │
+  │  ┌───────────────────────────────────────────────────────────────┐  │
+  │  │  BREADCRUMB: Home > Dashboards > Dashboard Name              │  │
+  │  └───────────────────────────────────────────────────────────────┘  │
+  │                                                                     │
+  │  ┌───────────────────────────────────────────────────────────────┐  │
+  │  │  TOOLBAR: [New] [Save] [Clone] [Export] [Import]             │  │
+  │  │           [Widget] [Templates] [From Saved] [Fullscreen]     │  │
+  │  └───────────────────────────────────────────────────────────────┘  │
+  │                                                                     │
+  │  ┌───────────────────────────────────────────────────────────────┐  │
+  │  │  CONTROLS: [Last 24h ▼] [Refresh]  Stats: 9 panels           │  │
+  │  └───────────────────────────────────────────────────────────────┘  │
+  │                                                                     │
+  │  ┌───────────────────────────────────────────────────────────────┐  │
+  │  │  WIDGET GRID (react-grid-layout)                               │  │
+  │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐        │  │
+  │  │  │ Metric   │ │ Metric   │ │ Metric   │ │ Metric   │        │  │
+  │  │  │ 1,924    │ │ 1,924    │ │ 1,924    │ │ 1,924    │        │  │
+  │  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘        │  │
+  │  │  ┌──────────────────────┐ ┌─────────────────┐                 │  │
+  │  │  │ Alert Timeline (Area)│ │ Top Rules (Bar) │                 │  │
+  │  │  └──────────────────────┘ └─────────────────┘                 │  │
+  │  │  ┌──────────────────────┐ ┌─────────────────┐                 │  │
+  │  │  │ Severity (Pie)       │ │ Recent Alerts   │                 │  │
+  │  │  │                      │ │ (Table)         │                 │  │
+  │  │  └──────────────────────┘ └─────────────────┘                 │  │
+  │  └───────────────────────────────────────────────────────────────┘  │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  Components:
+  ┌─────────────────────────┬──────────────────────────────────────────┐
+  │ Component               │ Description                              │
+  ├─────────────────────────┼──────────────────────────────────────────┤
+  │ Breadcrumb              │ Navigation trail showing current location│
+  │ DashboardToolbar        │ New/Save/Clone/Export/Import buttons     │
+  │ DashboardGrid           │ react-grid-layout with drag & drop       │
+  │ DashboardPanel          │ Individual widget container with chart   │
+  │ TimeRangeSelector       │ Compact dropdown for time range          │
+  │ WidgetLibraryModal      │ 3-step wizard to add new widgets        │
+  │ TemplateLibraryModal    │ Pre-built SOC dashboard templates        │
+  │ GlobalFilters           │ Field/value filter chips                 │
+  └─────────────────────────┴──────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+                  3. STEP-BY-STEP: CREATE A DASHBOARD
+══════════════════════════════════════════════════════════════════════════
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  STEP 1: NAVIGATE TO CUSTOM DASHBOARD                              │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │                                                                     │
+  │  Sidebar → Dashboard → Custom Dashboard                             │
+  │                                                                     │
+  │  If no dashboard is selected, you'll see:                           │
+  │  "Select or create a dashboard" with options:                       │
+  │  • "New" button to create from scratch                              │
+  │  • "Templates" button to use a pre-built template                   │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  STEP 2: CREATE A NEW DASHBOARD                                    │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │                                                                     │
+  │  Click "New" button in the toolbar                                  │
+  │                                                                     │
+  │  → Dashboard is created with name "New Dashboard"                   │
+  │  → Dashboard appears in the selector                                │
+  │  → It starts empty with 0 panels                                    │
+  │  → You can rename it by clicking the name in the breadcrumb         │
+  │                                                                     │
+  │  OR click "Templates" to use a pre-built template:                  │
+  │                                                                     │
+  │   ┌──────────────────────────────────────────────────────────────┐  │
+  │   │  TEMPLATE LIBRARY                                            │  │
+  │   ├──────────────────────────────────────────────────────────────┤  │
+  │   │                                                              │  │
+  │   │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │  │
+  │   │  │ SOC Overview │ │ Executive    │ │ Auth          │        │  │
+  │   │  │ 8 panels     │ │ 4 panels     │ │ 5 panels      │        │  │
+  │   │  └──────────────┘ └──────────────┘ └──────────────┘        │  │
+  │   │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │  │
+  │   │  │ Threat Hunt  │ │ MITRE        │ │ Vulnerability│        │  │
+  │   │  │ 4 panels     │ │ 4 panels     │ │ 6 panels     │        │  │
+  │   │  └──────────────┘ └──────────────┘ └──────────────┘        │  │
+  │   │  ┌──────────────┐ ┌──────────────┐                         │  │
+  │   │  │ Windows Audit│ │ Firewall     │                         │  │
+  │   │  │ 5 panels     │ │ 5 panels     │                         │  │
+  │   │  └──────────────┘ └──────────────┘                         │  │
+  │   │                                                              │  │
+  │   │  Categories: [All] [SOC] [Executive] [Security] [Platform]  │  │
+  │   │                                                              │  │
+  │   │  Preview mode shows all panels in a template before using    │  │
+  │   │                                                              │  │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  STEP 3: ADD WIDGETS TO YOUR DASHBOARD                             │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │                                                                     │
+  │  You have 3 ways to add widgets:                                    │
+  │                                                                     │
+  │  1. "+ Widget" button — Opens the Widget Library (3-step wizard)   │
+  │  2. "From Saved" button — Adds previously saved visualizations     │
+  │  3. "Templates" button — Adds entire template with multiple panels │
+  │                                                                     │
+  │  ┌──────────────────────────────────────────────────────────────┐   │
+  │  │  WIDGET LIBRARY (3-Step Wizard)                              │   │
+  │  ├──────────────────────────────────────────────────────────────┤   │
+  │  │                                                              │   │
+  │  │  STEP 1: Choose Widget Type                                  │   │
+  │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐               │   │
+  │  │  │ 📊 Bar     │ │ 📈 Line    │ │ 📉 Area    │               │   │
+  │  │  │ Chart      │ │ Chart      │ │ Chart      │               │   │
+  │  │  └────────────┘ └────────────┘ └────────────┘               │   │
+  │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐               │   │
+  │  │  │ 🥧 Pie     │ │ 🔢 Metric  │ │ 📋 Table   │               │   │
+  │  │  │ Chart      │ │ Card       │ │            │               │   │
+  │  │  └────────────┘ └────────────┘ └────────────┘               │   │
+  │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐               │   │
+  │  │  │ 🗺️ Heatmap │ │ 🎯 Gauge   │ │ ⏱️ Timeline │               │   │
+  │  │  └────────────┘ └────────────┘ └────────────┘               │   │
+  │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐               │   │
+  │  │  │ 🌍 Geo Map │ │ 📝 Markdown│ │ ☁️ TagCloud │               │   │
+  │  │  └────────────┘ └────────────┘ └────────────┘               │   │
+  │  │                                                              │   │
+  │  │  STEP 2: Choose Data Source                                  │   │
+  │  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐         │   │
+  │  │  │ 🔴 Security  │ │ 🖥️ Agents    │ │ 🎯 MITRE    │         │   │
+  │  │  │ Alerts       │ │              │ │             │         │   │
+  │  │  └──────────────┘ └──────────────┘ └──────────────┘         │   │
+  │  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐         │   │
+  │  │  │ 🔑 Auth      │ │ 🪟 Windows   │ │ 🐧 Linux     │         │   │
+  │  │  │ Logs         │ │ Events       │ │ Events       │         │   │
+  │  │  └──────────────┘ └──────────────┘ └──────────────┘         │   │
+  │  │                                                              │   │
+  │  │  STEP 3: Confirm & Add                                       │   │
+  │  │  → Widget appears on dashboard                               │   │
+  │  │  → Fetches live data from API automatically                  │   │
+  │  │  → Can be dragged and resized                                │   │
+  │  │                                                              │   │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  STEP 4: ARRANGE WIDGETS (DRAG & DROP)                            │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │                                                                     │
+  │  All widgets are placed in a react-grid-layout that supports:       │
+  │                                                                     │
+  │  • DRAG: Click and hold the top bar to move widgets anywhere        │
+  │  • RESIZE: Drag the bottom-right corner handle to resize            │
+  │  • SNAP: Widgets automatically snap to grid positions               │
+  │  • COMPACT: Vertical space is automatically optimized               │
+  │  • REORDER: Drop a widget on top of another to swap positions       │
+  │                                                                     │
+  │  ┌───────────────────────────────────────────────────────────────┐  │
+  │  │  Grid is 12 columns wide                                      │  │
+  │  │  Row height: 120px                                            │  │
+  │  │  Minimum widget size: 2 columns × 2 rows                      │  │
+  │  │  Maximum widget size: 12 columns × unlimited rows              │  │
+  │  └───────────────────────────────────────────────────────────────┘  │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  STEP 5: APPLY TIME RANGE & FILTERS                               │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │                                                                     │
+  │  Time Range (compact dropdown):                                    │
+  │  ┌──────────────────────────────────────────────────────────────┐  │
+  │  │  [Last 24 hours ▼]                                            │  │
+  │  │  ┌──────────────────────────────────────────────────────────┐ │  │
+  │  │  │  Last 1 hour                                             │ │  │
+  │  │  │  Last 24 hours          ← selected                       │ │  │
+  │  │  │  Last 7 days                                            │ │  │
+  │  │  │  Last 30 days                                           │ │  │
+  │  │  │  Last 90 days                                           │ │  │
+  │  │  │  This month                                             │ │  │
+  │  │  │  Previous month                                         │ │  │
+  │  │  │  ───────────────────────                                 │ │  │
+  │  │  │  Custom Range                                           │ │  │
+  │  │  │  ┌─────────┐ → ┌─────────┐                              │ │  │
+  │  │  │  │ now-24h │   │ now     │  [Apply]                     │ │  │
+  │  │  │  └─────────┘   └─────────┘                              │ │  │
+  │  │  └──────────────────────────────────────────────────────────┘ │  │
+  │  └──────────────────────────────────────────────────────────────┘  │
+  │                                                                     │
+  │  All widgets automatically update when time range changes           │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  STEP 6: SAVE, EXPORT, AND SHARE                                  │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │                                                                     │
+  │  Save: Click "Save" button — saves to localStorage                 │
+  │                                                                     │
+  │  Clone: Creates a copy of the current dashboard                    │
+  │                                                                     │
+  │  Export: Downloads the dashboard as a JSON file                    │
+  │  ┌──────────────────────────────────────────────────────────────┐   │
+  │  │  JSON includes:                                              │   │
+  │  │  • Dashboard name, description, category, tags               │   │
+  │  │  • All panels with their types, queries, positions           │   │
+  │  │  • Time range and global filters                             │   │
+  │  │  • Panel IDs, sizes, locked status                           │   │
+  │  └──────────────────────────────────────────────────────────────┘   │
+  │                                                                     │
+  │  Import: Upload a JSON file to restore a dashboard                  │
+  │                                                                     │
+  │  Fullscreen: Click the fullscreen button for immersive view        │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+                4. WIDGET TYPES (17 Supported)
+══════════════════════════════════════════════════════════════════════════
+
+  ┌────────────────────┬──────────────────┬────────────────────────────┐
+  │ Widget             │ Library          │ Best For                   │
+  ├────────────────────┼──────────────────┼────────────────────────────┤
+  │ 📊 Bar Chart       │ Plotly.js        │ Comparing categories       │
+  │ 📈 Line Chart      │ Plotly.js        │ Trends over time           │
+  │ 📉 Area Chart      │ Plotly.js        │ Filled time series         │
+  │ 🥧 Pie / Donut     │ Plotly.js        │ Percentage distribution    │
+  │ 🔢 Metric Card     │ HTML/CSS         │ Single KPI display         │
+  │ 📋 Data Table      │ TanStack Table   │ Detailed tabular data      │
+  │ 🗺️ Heatmap         │ D3.js            │ MITRE ATT&CK matrix        │
+  │ 🎯 Gauge           │ D3.js            │ Progress vs target         │
+  │ ⏱️ Timeline        │ Plotly.js        │ Event chronology           │
+  │ 🌍 Coordinate Map  │ Leaflet          │ Geo points on map          │
+  │ 📝 Markdown        │ React            │ Rich text / instructions   │
+  │ ☁️ Tag Cloud       │ D3.js            │ Word frequency             │
+  │ 🏆 Top N List      │ Plotly.js        │ Top values with counts     │
+  │ 🔔 Alert Counter   │ HTML/CSS         │ Alert count by severity    │
+  │ 📜 Log Stream      │ React            │ Live log event stream      │
+  │ 💡 KPI Cards       │ HTML/CSS         │ Multi-metric KPI display   │
+  │ 🖥️ Agent Status    │ HTML/CSS         │ Agent online/offline       │
+  └────────────────────┴──────────────────┴────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+              5. DATA SOURCES (12 Available)
+══════════════════════════════════════════════════════════════════════════
+
+  ┌──────────────────────┬─────────────────────┬──────────────────────┐
+  │ Data Source          │ Icon                │ API Endpoint         │
+  ├──────────────────────┼─────────────────────┼──────────────────────┤
+  │ Security Alerts      │ 🔴                  │ /api/aggregate       │
+  │ Agent Status         │ 🖥️                  │ /api/aggregate       │
+  │ MITRE ATT&CK         │ 🎯                  │ /api/query/mitre-stats│
+  │ Authentication Logs  │ 🔑                  │ /api/search          │
+  │ Windows Events       │ 🪟                  │ /api/aggregate       │
+  │ Linux Events         │ 🐧                  │ /api/aggregate       │
+  │ FIM Events           │ 📁                  │ /api/aggregate       │
+  │ Vulnerability        │ 🔓                  │ /api/aggregate       │
+  │ Firewall Logs        │ 🛡️                  │ /api/aggregate       │
+  │ AWS Logs             │ ☁️                  │ /api/search          │
+  │ Azure Logs           │ 🔵                  │ /api/search          │
+  │ GCP Logs             │ 🟢                  │ /api/search          │
+  └──────────────────────┴─────────────────────┴──────────────────────┘
+
+  Each data source maps to Wazuh index fields:
+  ┌───────────────────┬──────────────────────────────────────────────┐
+  │ Data Source       │ Query Example                                │
+  ├───────────────────┼──────────────────────────────────────────────┤
+  │ Security Alerts   │ index: unishield360-alerts-4.x-*             │
+  │ MITRE ATT&CK     │ (q: '_exists_:rule.mitre.id')                │
+  │ Windows Events   │ (q: 'rule.groups:windows')                   │
+  │ Authentication   │ (q: 'rule.groups:authentication')            │
+  │ Firewall Logs    │ (q: 'rule.groups:pfsense')                   │
+  │ FIM Events       │ (q: 'rule.groups:syscheck')                  │
+  └───────────────────┴──────────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+              6. SOC DASHBOARD TEMPLATES (8 Included)
+══════════════════════════════════════════════════════════════════════════
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  TEMPLATE: SOC Overview                                            │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │  ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐                         │
+  │  │ Total │ │Critical│ │Active │ │Alert  │                         │
+  │  │Alerts │ │       │ │Agents │ │Rate   │                          │
+  │  └───────┘ └───────┘ └───────┘ └───────┘                         │
+  │  ┌──────────────────┐ ┌──────────┐ ┌──────────┐                   │
+  │  │ Alert Timeline   │ │Top Rules │ │ Severity │                   │
+  │  │ (Area)           │ │(Bar)     │ │ (Pie)    │                   │
+  │  └──────────────────┘ └──────────┘ └──────────┘                   │
+  │  ┌──────────────────────────────────────────────────────────────┐  │
+  │  │ Recent Alerts (Table)                                       │  │
+  │  └──────────────────────────────────────────────────────────────┘  │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  TEMPLATE: Executive Dashboard                                    │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │  ┌───────┐ ┌──────────────────────┐ ┌──────────┐                   │
+  │  │Security│ │ Event Trend         │ │Compliance│                   │
+  │  │Posture │ │ (Line)              │ │ (Pie)    │                   │
+  │  │(Gauge) │ └──────────────────────┘ └──────────┘                   │
+  │  └───────┘                                                         │
+  │  ┌──────────────────────────────────────────────────────────────┐  │
+  │  │ Top Threats (Table)                                         │  │
+  │  └──────────────────────────────────────────────────────────────┘  │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  TEMPLATE: Authentication Dashboard                               │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │  ┌────────────┐ ┌────────────┐                                     │
+  │  │ Auth Events│ │Failed Logon│                                     │
+  │  └────────────┘ └────────────┘                                     │
+  │  ┌──────────────────┐ ┌────────────┐ ┌────────────┐                │
+  │  │ Logon Timeline   │ │Top Failed  │ │ Auth by    │                │
+  │  │ (Line)           │ │Users (Bar) │ │ Type (Pie) │                │
+  │  └──────────────────┘ └────────────┘ └────────────┘                │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  TEMPLATE: Threat Hunting Dashboard                                │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │  ┌────────────┐ ┌────────────┐                                     │
+  │  │IOC Matches │ │MITRE Events│                                     │
+  │  └────────────┘ └────────────┘                                     │
+  │  ┌──────────────────────┐ ┌──────────────────────────┐             │
+  │  │ MITRE Matrix (Heatmap)│ │ Recent Threats (Table)  │             │
+  │  └──────────────────────┘ └──────────────────────────┘             │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  TEMPLATE: MITRE ATT&CK Dashboard                                 │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │  ┌────────────┐ ┌────────────┐ ┌────────────┐                      │
+  │  │Tactics     │ │Techniques  │ │Tactics     │                      │
+  │  │Detected    │ │Detected    │ │Breakdown   │                      │
+  │  └────────────┘ └────────────┘ └────────────┘                      │
+  │  ┌──────────────────────────────────────────────────────────────┐  │
+  │  │ MITRE Alerts (Table)                                        │  │
+  │  └──────────────────────────────────────────────────────────────┘  │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  TEMPLATE: Vulnerability Dashboard                                 │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │  ┌────────────┐ ┌────────────┐ ┌────────────┐                      │
+  │  │Total Vulns │ │Critical    │ │Severity    │                      │
+  │  │            │ │CVEs        │ │Dist (Pie)  │                      │
+  │  └────────────┘ └────────────┘ └────────────┘                      │
+  │  ┌──────────────────┐ ┌────────────┐ ┌────────────┐               │
+  │  │ Vuln Trend (Area)│ │Top CVEs    │ │Affected    │               │
+  │  │                  │ │(Bar)       │ │Agents(Table)               │
+  │  └──────────────────┘ └────────────┘ └────────────┘               │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  TEMPLATE: Windows Audit Dashboard                                │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │  ┌────────────┐ ┌────────────┐ ┌────────────┐                      │
+  │  │Windows     │ │Security    │ │Event IDs   │                      │
+  │  │Events      │ │Events      │ │(Bar)       │                      │
+  │  └────────────┘ └────────────┘ └────────────┘                      │
+  │  ┌──────────────────────┐ ┌──────────────────────────┐             │
+  │  │ Windows Timeline      │ │ Recent Events (Table)     │           │
+  │  │ (Area)               │ │                          │             │
+  │  └──────────────────────┘ └──────────────────────────┘             │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  TEMPLATE: Firewall Dashboard                                      │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │  ┌────────────┐ ┌────────────┐                                     │
+  │  │Blocks      │ │Source IPs  │                                     │
+  │  └────────────┘ └────────────┘                                     │
+  │  ┌──────────────┐ ┌──────────────────┐ ┌────────────┐              │
+  │  │Top Sources   │ │Firewall Events   │ │ By Protocol│              │
+  │  │(Bar)         │ │(Area)            │ │ (Pie)      │              │
+  │  └──────────────┘ └──────────────────┘ └────────────┘              │
+  └─────────────────────────────────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+              7. PANEL OPERATIONS
+══════════════════════════════════════════════════════════════════════════
+
+  Each panel has a context menu (click ⋮ icon):
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  ┌───────────────────────────────────────────────┐                  │
+  │  │  📋 Panel Header                               │                  │
+  │  ├───────────────────────────────────────────────┤                  │
+  │  │  ● Color dot (by chart type)                   │                  │
+  │  │  ● Title (click to rename)                     │                  │
+  │  │  ● ⋮ Menu button (visible on hover)            │                  │
+  │  └───────────────────────────────────────────────┘                  │
+  │                                                                     │
+  │  Menu Options:                                                      │
+  │  ┌───────────────────────────────────────────────┐                  │
+  │  │  📄 Duplicate   — Creates a copy of the panel  │                  │
+  │  │  🔒 Lock        — Prevents drag/resize         │                  │
+  │  │  🗑️ Remove      — Deletes the panel            │                  │
+  │  └───────────────────────────────────────────────┘                  │
+  │                                                                     │
+  │  Panel interactions:                                                │
+  │  • Click title to rename inline                                     │
+  │  • Drag by title bar to move                                        │
+  │  • Resize by bottom-right handle                                    │
+  │  • Double-click nothing (future: edit modal)                        │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+              8. REAL-TIME DATA & REFRESH
+══════════════════════════════════════════════════════════════════════════
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  DATA FLOW                                                         │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │                                                                     │
+  │  When a dashboard is created from a template:                       │
+  │                                                                     │
+  │  1. Template defines panels with query configs                     │
+  │  2. createFromTemplate() generates unique panel IDs                │
+  │  3. DashboardPanel mounts → fetches data from API                  │
+  │  4. Metrics: GET /api/count?index=...&q=...                        │
+  │  5. Charts:  GET /api/aggregate?index=...&field=...&type=...      │
+  │  6. Tables:  GET /api/search?index=...&sort=...&limit=...         │
+  │  7. Data is rendered in Plotly charts / HTML tables / metrics      │
+  │                                                                     │
+  │  All API calls go through the Express proxy (port 3099)            │
+  │  → which forwards to the Wazuh API (port 9999)                     │
+  │                                                                     │
+  │  Auto-refresh: Click "Refresh" button to re-fetch all panels       │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+              9. DASHBOARD JSON STRUCTURE
+══════════════════════════════════════════════════════════════════════════
+
+  When you export a dashboard, you get a JSON file like this:
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  {                                                                  │
+  │    "id": "dash_1718800000_abc123",                                  │
+  │    "name": "SOC Overview",                                          │
+  │    "description": "Real-time SOC monitoring dashboard",             │
+  │    "category": "soc",                                               │
+  │    "tags": ["critical", "soc"],                                     │
+  │    "template": "soc-overview",                                      │
+  │    "version": 3,                                                    │
+  │    "starred": true,                                                 │
+  │    "createdAt": "2026-06-19T10:00:00.000Z",                        │
+  │    "updatedAt": "2026-06-19T12:30:00.000Z",                        │
+  │    "timeRange": { "from": "now-24h", "to": "now" },                │
+  │    "refreshInterval": 60,                                           │
+  │    "globalFilters": [],                                             │
+  │    "panels": [                                                      │
+  │      {                                                              │
+  │        "id": "panel_1",                                             │
+  │        "title": "Total Alerts",                                     │
+  │        "type": "metric",                                            │
+  │        "dataSource": "alerts",                                      │
+  │        "query": {                                                   │
+  │          "language": "lucene",                                      │
+  │          "query": "",                                               │
+  │          "aggregation": { "type": "count" }                         │
+  │        },                                                           │
+  │        "config": { "suffix": "events", "color": "#8b5cf6" },       │
+  │        "x": 0, "y": 0, "w": 3, "h": 2,                            │
+  │        "locked": false                                              │
+  │      }                                                              │
+  │    ]                                                                │
+  │  }                                                                  │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+              10. FILE LOCATIONS
+══════════════════════════════════════════════════════════════════════════
+
+  ┌─────────────────────────────┬───────────────────────────────────────┐
+  │ File                       │ Purpose                               │
+  ├─────────────────────────────┼───────────────────────────────────────┤
+  │ src/tabs/CustomDashboardTab.jsx │ Main custom dashboard page       │
+  │ src/components/dashboard/      │ All dashboard components           │
+  │   DashboardToolbar.jsx         │ Toolbar with all actions          │
+  │   DashboardGrid.jsx            │ Drag & drop grid                  │
+  │   DashboardPanel.jsx           │ Widget container with data fetch  │
+  │   dashboardStore.jsx           │ State management (Context+Reducer)│
+  │   dashboardService.js          │ localStorage CRUD                │
+  │   dashboardTemplates.js        │ 8 SOC template definitions        │
+  │   TimeRangeSelector.jsx        │ Compact time range dropdown       │
+  │   GlobalFilters.jsx            │ Filter chips with field/value     │
+  │   TemplateLibraryModal.jsx     │ Template browser modal           │
+  │   WidgetLibraryModal.jsx       │ 3-step widget wizard             │
+  └─────────────────────────────┴───────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+              11. KEYBOARD SHORTCUTS
+══════════════════════════════════════════════════════════════════════════
+
+  ┌──────────────────┬──────────────────────────────────────────────────┐
+  │ Shortcut         │ Action                                           │
+  ├──────────────────┼──────────────────────────────────────────────────┤
+  │ Ctrl/Cmd + S     │ Save current dashboard                           │
+  │ Ctrl/Cmd + N     │ Create new dashboard                             │
+  │ Ctrl/Cmd + E     │ Export dashboard as JSON                        │
+  │ Ctrl/Cmd + I     │ Import dashboard from JSON file                  │
+  │ F11              │ Toggle fullscreen mode                           │
+  │ Escape           │ Close modal / deselect                           │
+  └──────────────────┴──────────────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+           End of UniShield360 Custom Dashboard Builder Guide
+══════════════════════════════════════════════════════════════════════════

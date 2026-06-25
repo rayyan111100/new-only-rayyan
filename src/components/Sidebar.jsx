@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 const NAV_SECTIONS = [
   { key: 'discover', label: 'Raw Event Viewer', icon: 'search' },
-  { key: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
+  { key: 'customdashboard', label: 'Dashboard', icon: 'dashboard' },
   {
     key: 'securityhub', label: 'Security Operations', icon: 'security',
     children: [

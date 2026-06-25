@@ -77,7 +77,32 @@ export default function ComplianceTab() {
   const [timelineFilter, setTimelineFilter] = useState(null)
   const LOG_PAGE_SIZE = 50
   const MAX_LOG_PAGES = 10
-  const { data, loading, error, refresh, logs, totalLogCount, loadMore, loadingMore } = useCompliance()
+  const filterQ = useMemo(() => {
+    const parts = []
+    const sevRanges = { Critical: 'rule.level:[12 TO 15]', High: 'rule.level:[7 TO 11]', Medium: 'rule.level:[4 TO 6]', Low: 'rule.level:[1 TO 3]' }
+    if (filters.severity?.length) {
+      const rangeParts = filters.severity.map(s => sevRanges[s]).filter(Boolean)
+      if (rangeParts.length) parts.push('(' + rangeParts.join(' OR ') + ')')
+    }
+    if (excludes.severity?.length) {
+      const rangeParts = excludes.severity.map(s => sevRanges[s]).filter(Boolean)
+      if (rangeParts.length) parts.push('NOT (' + rangeParts.join(' OR ') + ')')
+    }
+    for (const key of Object.keys(filters)) {
+      if (key === 'severity') continue
+      for (const val of (filters[key] || [])) {
+        parts.push(key + ':"' + val.replace(/"/g, '\\"') + '"')
+      }
+    }
+    for (const key of Object.keys(excludes)) {
+      if (key === 'severity') continue
+      for (const val of (excludes[key] || [])) {
+        parts.push('NOT ' + key + ':"' + val.replace(/"/g, '\\"') + '"')
+      }
+    }
+    return parts.length ? parts.join(' AND ') : ''
+  }, [filters, excludes])
+  const { data, loading, error, refresh } = useCompliance(filterQ)
   const toggleRow = useCallback((id) => {
     setExpandedRow(prev => ({ ...prev, [id]: !prev[id] }))
   }, [])
@@ -122,7 +147,7 @@ export default function ComplianceTab() {
   const DAY_MS = 86400000
 
   const filteredRecent = useMemo(() => {
-    const all = logs || []
+    const all = data?.recent || []
     return all.filter(r => {
       const level = parseInt(r.rule?.level || r.level || 0)
       const sev = toSev(level)
@@ -172,7 +197,7 @@ export default function ComplianceTab() {
       }
       return true
     })
-  }, [logs, filters, excludes, timelineFilter])
+  }, [data?.recent, filters, excludes, timelineFilter])
 
   const totalLogPages = Math.max(1, Math.ceil(filteredRecent.length / LOG_PAGE_SIZE))
 
@@ -274,8 +299,7 @@ export default function ComplianceTab() {
         </div>
         <div className="flex items-center gap-2 mt-1.5">
           <div className="-mr-1.5"><DateRangePicker /></div>
-          <button onClick={() => refresh()} title="Refresh data"
-            className="p-1.5 rounded border border-transparent hover:bg-[#161b22] text-[#8b949e] hover:text-[#e8681a] transition-colors">
+          <button onClick={() => refresh()} className="p-1.5 rounded border border-transparent hover:bg-[#161b22] text-[#8b949e] hover:text-[#e8681a] transition-colors">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           </button>
         </div>
@@ -359,14 +383,14 @@ export default function ComplianceTab() {
         {/* Framework Event Distribution */}
         <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Framework Event Distribution</div>
-          {(hasActiveFilter && chartData ? chartData.frameworkCounts : data?.frameworkCounts || []).map(fw => (
-            <div key={fw.framework || fw.key} onClick={() => setFilter('framework', fw.framework || fw.key)}
-              className={`flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] cursor-pointer text-[11px] ${filters.framework?.includes(fw.framework || fw.key) ? 'bg-[#a371f7]/5 ring-1 ring-inset ring-[#a371f7]/30' : ''}`}>
-              <span className="w-[130px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0 truncate" title={fw.framework || fw.key}>{fw.framework || fw.key}</span>
+          {(data?.frameworkCounts || []).map(fw => (
+            <div key={fw.framework} onClick={() => setFilter('framework', fw.framework)}
+              className={`flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] cursor-pointer text-[11px] ${filters.framework?.includes(fw.framework) ? 'bg-[#a371f7]/5 ring-1 ring-inset ring-[#a371f7]/30' : ''}`}>
+              <span className="w-[90px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0">{fw.framework}</span>
               <div className="flex-1 h-2 bg-[#d0d7de] dark:bg-[#1d2432] rounded-full overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${((fw.count || fw.doc_count || 0) / maxFw) * 100}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
+                <div className="h-full rounded-full" style={{ width: `${(fw.count / maxFw) * 100}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
               </div>
-              <span className="w-14 text-right text-[#1f2328] dark:text-[#f0f6fc] font-bold">{(fw.count || fw.doc_count || 0).toLocaleString()}</span>
+              <span className="w-7 text-right text-[#1f2328] dark:text-[#f0f6fc] font-bold">{fw.count}</span>
             </div>
           ))}
           <div className="flex justify-between text-[9px] text-[#8b949e] mt-1.5 px-1">
@@ -756,24 +780,6 @@ export default function ComplianceTab() {
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
             </div>
-          </div>
-        )}
-        {logPage === totalLogPages && totalLogCount > logs.length && logs.length < 10000 && (
-          <div className="flex justify-center mt-3">
-            <button onClick={loadMore} disabled={loadingMore}
-              className="px-4 py-1.5 text-[11px] font-medium rounded-lg border border-[#e5e7eb] dark:border-[#2d3140] text-[#e8681a] hover:bg-[#e8681a]/5 dark:hover:bg-[#e8681a]/10 transition-all disabled:opacity-40 flex items-center gap-1.5">
-              {loadingMore ? (
-                <><svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" strokeDasharray="31.4 31.4"/><line x1="12" y1="2" x2="12" y2="6"/></svg> Loading...</>
-              ) : (
-                <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="12 5 19 12 12 19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Load 500 more ({Math.min(totalLogCount - logs.length, 10000 - logs.length)} remaining)</>
-              )}
-            </button>
-          </div>
-        )}
-        {logs.length >= 10000 && (
-          <div className="flex items-center gap-2 mt-3 px-3 py-2 rounded-lg bg-[#ddf4ff] dark:bg-[#0c2d6b] border border-[#54aeff66] dark:border-[#1f6feb66] text-[11px] text-[#0969da] dark:text-[#58a6ff]">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            <span>Maximum 10,000 logs loaded. Select a narrower time range for more detailed log views.</span>
           </div>
         )}
       </div>
