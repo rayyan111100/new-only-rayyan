@@ -1,0 +1,6 @@
+✖ Auth failed: timeout of 10000ms exceeded
+✖ Auth failed: timeout of 10000ms exceeded
+✖ Auth failed: timeout of 10000ms exceeded
+✖ Auth failed: timeout of 10000ms exceeded
+✖ Realtime poll error (1): connect ETIMEDOUT 100.110.74.122:9999
+✖ Auth failed: timeout of 10000ms exceeded

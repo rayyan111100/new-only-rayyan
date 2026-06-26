@@ -1,0 +1,577 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║    UniShield360 — Custom Dashboard Builder — Complete Design Spec      ║
+║    Wazuh-based SIEM Platform · SOC Dashboard Builder · v3.0            ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+══════════════════════════════════════════════════════════════════════════
+                    1. EXISTING FEATURES AUDIT
+══════════════════════════════════════════════════════════════════════════
+
+  ✅ Already Implemented:
+  ──────────────────────────────────────────────────────────────────────
+  • Dashboard CRUD (create/edit/delete/clone)
+  • Dashboard import/export JSON
+  • Dashboard search + favorites
+  • Dashboard grid (react-grid-layout) with drag/drop/resize
+  • Dashboard toolbar (New/Save/Clone/Export/Import/Fullscreen)
+  • DashboardPanel with context menu (duplicate/lock/remove/rename)
+  • DashboardProvider (React Context + Reducer state management)
+  • dashboardService (localStorage CRUD)
+  • Panel data fetching from Wazuh API
+  • Live Plotly chart rendering in panels
+  • GlobalFilters component (field/KQL modes)
+  • TimeRangeSelector (7 presets + custom)
+  • Visualization Manager (VizManager — list/grid/search/paginate/rename)
+  • Visualization Builder (VizBuilder — Y/X axis, filters, preview)
+  • From Saved → Add to Dashboard flow
+  • VizBuilder → Add to Dashboard flow
+  • Inspect Panel (4 tabs: Overview/Request/Response/Timings)
+  • Share Dialog (link/PNG/PDF/CSV/JSON/embed)
+  • Report Creator (schedule/email/PDF preview)
+  • Real-time WebSocket + SSE
+  • MITRE ATT&CK page
+  • Alerts page
+  • SocDashboard (overview with metrics, timeline, top rules/agents)
+
+  ❌ Missing (Needs Implementation):
+  ──────────────────────────────────────────────────────────────────────
+  1. Dashboard Templates (12 SOC templates)
+  2. Widget Builder (visual query builder)
+  3. Dashboard Categories + Tags
+  4. Dashboard Version History
+  5. Saved Queries
+  6. Query Validation + Preview
+  7. Click-to-Investigate / Alert Drill Down
+  8. Timeline Correlation
+  9. IOC Search
+  10. Incident Creation / Case Management
+  11. RBAC (Admin/SOC Manager/SOC Analyst L1-L3/Client)
+  12. Breadcrumb Navigation
+  13. Dashboard auto-refresh per panel
+  14. Wazuh-specific data source widgets
+
+══════════════════════════════════════════════════════════════════════════
+                    2. DATABASE SCHEMA
+══════════════════════════════════════════════════════════════════════════
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ Dashboard Object (localStorage + Backend)                          │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ {                                                                    │
+  │   id: string,            // 'dash_' + timestamp + random            │
+  │   name: string,          // 'SOC Overview'                          │
+  │   description: string,   // 'Summary of security events'            │
+  │   category: string,      // 'soc', 'executive', 'threat-hunting'   │
+  │   tags: string[],        // ['critical', 'compliance', 'network']   │
+  │   template: string|null, // 'soc-overview', null = custom           │
+  │   version: number,       // 1,2,3...                                │
+  │   starred: boolean,      // favorites                               │
+  │   panels: Panel[],       // array of panel objects                   │
+  │   timeRange: {from,to},  // default time range                       │
+  │   globalFilters: Filter[], // global KQL/filters                     │
+  │   refreshInterval: number, // seconds, 0 = off                      │
+  │   createdAt: ISOString,                                             │
+  │   updatedAt: ISOString,                                             │
+  │   createdBy: string,     // user ID                                  │
+  │   role: string,          // 'admin','manager','analyst','client'     │
+  │   sharedWith: string[],  // user IDs the dashboard is shared with   │
+  │ }                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ Panel Object                                                        │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ {                                                                    │
+  │   id: string,          // 'panel_' + timestamp + random             │
+  │   title: string,       // 'Top Alert Rules'                         │
+  │   type: string,        // 'bar','line','area','pie','table',        │
+  │                        // 'metric','gauge','heatmap','map',         │
+  │                        // 'timeline','markdown','alert-counter',    │
+  │                        // 'log-stream','kpi','top-n'                │
+  │   dataSource: string,  // 'alerts','agents','mitre','fim',          │
+  │                        // 'vulnerability','sca','auth','windows',   │
+  │                        // 'linux','syslog','firewall','aws',        │
+  │                        // 'azure','gcp','threat-intel'              │
+  │   query: Query,        // query configuration                       │
+  │   config: PanelConfig, // visualization-specific config             │
+  │   x: number, y: number, w: number, h: number, // grid position     │
+  │   minW: number, minH: number,                                        │
+  │   locked: boolean,     // prevent drag/resize                       │
+  │   refreshInterval: number, // per-panel override, 0 = dashboard     │
+  │ }                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ Query Object                                                        │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ {                                                                    │
+  │   language: 'lucene'|'kql'|'dsl',                                   │
+  │   query: string,         // 'rule.level:>=10'                       │
+  │   filters: Filter[],     // structured filters                      │
+  │   aggregation: {         // for chart types                         │
+  │     field: string,       // 'rule.level'                            │
+  │     type: string,        // 'terms','date_histogram','avg','sum'    │
+  │     interval: string,    // '1h','1d' for date_histogram            │
+  │     limit: number,       // max buckets                             │
+  │   },                                                                 │
+  │   sort: { field, order },                                           │
+  │   limit: number,                                                    │
+  │ }                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+                    3. API DESIGN
+══════════════════════════════════════════════════════════════════════════
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ REST Endpoints                                                      │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ DASHBOARDS:                                                         │
+  │ POST   /api/dashboards              — Create dashboard              │
+  │ GET    /api/dashboards              — List dashboards (filtered)    │
+  │ GET    /api/dashboards/:id          — Get dashboard by ID           │
+  │ PUT    /api/dashboards/:id          — Update dashboard              │
+  │ DELETE /api/dashboards/:id          — Delete dashboard              │
+  │ POST   /api/dashboards/:id/clone    — Clone dashboard               │
+  │ POST   /api/dashboards/:id/export   — Export dashboard JSON         │
+  │ POST   /api/dashboards/import       — Import dashboard JSON         │
+  │ POST   /api/dashboards/:id/version  — Save version snapshot         │
+  │ GET    /api/dashboards/:id/versions — List version history          │
+  │ POST   /api/dashboards/:id/rollback — Rollback to version           │
+  │ POST   /api/dashboards/:id/share    — Share with users              │
+  │                                                                       │
+  │ PANELS:                                                              │
+  │ POST   /api/dashboards/:id/panels              — Add panel          │
+  │ PUT    /api/dashboards/:id/panels/:pid         — Update panel       │
+  │ DELETE /api/dashboards/:id/panels/:pid         — Delete panel       │
+  │ POST   /api/dashboards/:id/panels/reorder      — Reorder panels     │
+  │                                                                       │
+  │ DATA SOURCES:                                                        │
+  │ GET    /api/datasources              — List available data sources  │
+  │ GET    /api/datasources/:id/fields   — Get fields for data source   │
+  │ POST   /api/datasources/:id/query    — Execute query against source │
+  │ POST   /api/datasources/:id/preview  — Preview query results        │
+  │                                                                       │
+  │ QUERIES:                                                             │
+  │ POST   /api/queries/validate         — Validate query syntax        │
+  │ POST   /api/queries/preview          — Preview query results        │
+  │ GET    /api/queries/saved            — List saved queries           │
+  │ POST   /api/queries/saved            — Save query                   │
+  │ DELETE /api/queries/saved/:id        — Delete saved query           │
+  │                                                                       │
+  │ TEMPLATES:                                                           │
+  │ GET    /api/templates/dashboards     — List dashboard templates     │
+  │ GET    /api/templates/dashboards/:id  — Get template detail         │
+  │ POST   /api/templates/dashboards/:id/use — Create from template    │
+  │                                                                       │
+  │ SEARCH:                                                              │
+  │ GET    /api/search/ioc               — IOC search                    │
+  │ GET    /api/search/threat-intel      — Threat intelligence lookup   │
+  │                                                                       │
+  │ INCIDENTS:                                                           │
+  │ POST   /api/incidents                — Create incident from alert   │
+  │ GET    /api/incidents                — List incidents               │
+  └─────────────────────────────────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+                    4. REACT COMPONENT TREE
+══════════════════════════════════════════════════════════════════════════
+
+  CustomDashboardTab
+  ├── DashboardProvider (context)
+  ├── DashboardBreadcrumb           [NEW]
+  ├── DashboardToolbar
+  │   ├── DashboardSelector (dropdown)
+  │   ├── SearchBar
+  │   ├── ActionButtons (New/Save/Clone/Export/Import)
+  │   └── ViewControls (Fullscreen/Refresh)
+  ├── GlobalFilterBar                [ENHANCED]
+  │   ├── TimeRangeSelector
+  │   ├── FilterChips (severity, agent, etc.)
+  │   └── QueryInput (KQL/DQL)
+  ├── DashboardGrid
+  │   ├── DashboardPanel (x N)
+  │   │   ├── PanelHeader (title, menu)
+  │   │   ├── WidgetRenderer          [NEW]
+  │   │   │   ├── ChartWidget (Plotly)
+  │   │   │   ├── MetricWidget
+  │   │   │   ├── TableWidget
+  │   │   │   ├── MapWidget
+  │   │   │   ├── AlertCounterWidget
+  │   │   │   ├── LogStreamWidget
+  │   │   │   ├── KPIWidget
+  │   │   │   └── MarkdownWidget
+  │   │   └── PanelFooter (data source, last updated)
+  │   └── AddPanelButton (empty state)
+  ├── WidgetLibraryModal             [NEW]
+  │   ├── WidgetCategoryTabs
+  │   ├── WidgetCardGrid
+  │   └── DataSourceSelector
+  ├── QueryBuilderPanel              [NEW]
+  │   ├── QueryLanguageToggle (DQL/KQL/Lucene/DSL)
+  │   ├── QueryInput (syntax highlighting)
+  │   ├── FilterBuilder (field/operator/value)
+  │   ├── SavedQueriesDropdown
+  │   ├── QueryValidationButton
+  │   └── QueryPreviewButton
+  ├── DashboardSettingsModal         [ENHANCED]
+  │   ├── Name + Description
+  │   ├── Category + Tags
+  │   ├── Time Range Default
+  │   ├── Auto Refresh Interval
+  │   ├── Share Settings
+  │   └── Version History
+  ├── TemplateLibraryModal           [NEW]
+  │   ├── TemplateCategories
+  │   ├── TemplatePreview
+  │   └── CreateFromTemplate
+  ├── IncidentCreateModal            [NEW]
+  └── ExportImportModal
+
+══════════════════════════════════════════════════════════════════════════
+                    5. SOC DASHBOARD TEMPLATES (12)
+══════════════════════════════════════════════════════════════════════════
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ 1. SOC Overview                                                     │
+  │    Panels: Total Alerts (metric), Alert Timeline (area),            │
+  │            Top Rules (bar), Top Agents (bar),                       │
+  │            Severity Breakdown (pie), Recent Alerts (table),         │
+  │            Alert Rate (metric), Active Agents (metric)              │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ 2. Executive Dashboard                                              │
+  │    Panels: Security Posture (gauge), Risk Score (metric),           │
+  │            Compliance Status (pie), Trend (line),                   │
+  │            Top Threats (table), MITRE Coverage (heatmap)            │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ 3. Authentication Dashboard                                        │
+  │    Panels: Auth Events (metric), Failed Logons (metric),            │
+  │            Logon Timeline (line), Top Failed Users (bar),           │
+  │            Geo Login Map (map), Auth by Type (pie)                  │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ 4. Threat Hunting Dashboard                                        │
+  │    Panels: IOC Matches (metric), Threat Intel (metric),             │
+  │            MITRE Techniques (heatmap), Suspicious IPs (map),        │
+  │            Alert Timeline (area), Top Threats (table)               │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ 5. MITRE Dashboard                                                  │
+  │    Panels: Tactic Coverage (matrix), Technique Count (bar),         │
+  │            Top Tactics (pie), Alerts by Tactic (area),              │
+  │            Recent MITRE Alerts (table), MITRE Trend (line)          │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ 6. Vulnerability Dashboard                                         │
+  │    Panels: Total Vulns (metric), Critical (metric),                 │
+  │            Severity Distribution (pie), Top CVEs (bar),             │
+  │            Vuln Trend (area), Top Agents by Vuln (table)            │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ 7. Compliance Dashboard                                             │
+  │    Panels: Compliance Score (gauge), PCI-DSS (metric),              │
+  │            HIPAA (metric), GDPR (metric), SOC2 (metric),            │
+  │            Violations by Framework (bar), Compliance Trend (area)   │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ 8. Firewall Dashboard                                               │
+  │    Panels: Blocks (metric), Allowed (metric),                       │
+  │            Top Source IPs (bar), Top Dest Ports (bar),              │
+  │            Firewall Events (area), Blocked IPs Map (map)            │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ 9. Windows Audit Dashboard                                         │
+  │    Panels: Windows Events (metric), Security Events (metric),       │
+  │            Event IDs (bar), Top Hosts (bar),                        │
+  │            Logon Failures (area), Recent Events (table)             │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ 10. Linux Audit Dashboard                                          │
+  │    Panels: Linux Events (metric), Sudo Usage (metric),              │
+  │            Auth Failures (metric), Users (bar),                     │
+  │            Audit Events (area), Recent Logins (table)               │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ 11. EDR Dashboard                                                   │
+  │    Panels: Endpoints (metric), Alerts (metric),                     │
+  │            Endpoint Status (pie), Top Malware (bar),                │
+  │            Alert Timeline (area), Compromised Hosts (table)         │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ 12. NOC Dashboard                                                   │
+  │    Panels: System Health (gauge), CPU/Memory (metric),              │
+  │            Agent Status (pie), Event Rate (area),                   │
+  │            Top Log Sources (bar), Recent Events (table)             │
+  └─────────────────────────────────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+                    6. WIDGET TYPES (17)
+══════════════════════════════════════════════════════════════════════════
+
+  ┌──────────────────────────┬──────────┬──────────────────────────────┐
+  │ Widget Type              │ Library  │ Config Options               │
+  ├──────────────────────────┼──────────┼──────────────────────────────┤
+  │ Data Table               │ TanStack │ sortable, pageSize, columns  │
+  │ Line Chart               │ Plotly   │ smoothing, markers, colors   │
+  │ Area Chart               │ Plotly   │ fill, stacked, opacity       │
+  │ Bar Chart                │ Plotly   │ orientation, palette, labels │
+  │ Pie Chart                │ Plotly   │ donut, legend, labels        │
+  │ Heatmap                  │ D3       │ colorScale, thresholds       │
+  │ Metric Card              │ CSS      │ prefix, suffix, changePct    │
+  │ Timeline                 │ Plotly   │ zones, markers, rangeSlider │
+  │ Geo Map                  │ Leaflet  │ pointSize, clustering, color │
+  │ Markdown                 │ React    │ content, enableHTML          │
+  │ Gauge                    │ D3       │ ranges, max, label           │
+  │ Top N Widget             │ Plotly   │ N, sort, field               │
+  │ Alert Counter            │ CSS      │ severity, sources            │
+  │ Log Stream               │ React    │ maxLines, showTimestamps     │
+  │ KPI Cards                │ CSS      │ columns, metrics             │
+  │ MITRE Matrix             │ D3       │ tactics, techniques          │
+  │ Agent Status             │ CSS      │ groupBy, showOffline         │
+  └──────────────────────────┴──────────┴──────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+                    7. WAZUH DATA SOURCES (19)
+══════════════════════════════════════════════════════════════════════════
+
+  ┌──────────────────────────┬──────────────────────┬──────────────────┐
+  │ Data Source              │ Wazuh API Endpoint   │ Index Pattern    │
+  ├──────────────────────────┼──────────────────────┼──────────────────┤
+  │ Security Alerts          │ /search, /count      │ wazuh-alerts-*   │
+  │ Agent Status             │ /agents              │ —                │
+  │ MITRE ATT&CK             │ /search+mitre filter │ wazuh-alerts-*   │
+  │ Authentication Logs      │ /search+auth filter  │ wazuh-alerts-*   │
+  │ Windows Events           │ /search+windows      │ wazuh-alerts-*   │
+  │ Linux Events             │ /search+linux        │ wazuh-alerts-*   │
+  │ Syslog Events            │ /search+syslog       │ wazuh-alerts-*   │
+  │ FIM Events               │ /search+fim          │ wazuh-alerts-*   │
+  │ Vulnerability Detection  │ /vulnerability       │ wazuh-states-*   │
+  │ Rootcheck                │ /rootcheck           │ —                │
+  │ SCA Compliance           │ /sca                 │ —                │
+  │ VirusTotal               │ /search+virustotal   │ wazuh-alerts-*   │
+  │ Threat Intelligence      │ /search+threat       │ wazuh-alerts-*   │
+  │ Active Response           │ /active-response     │ —                │
+  │ AWS Logs                 │ /search+aws          │ wazuh-alerts-*   │
+  │ Azure Logs               │ /search+azure        │ wazuh-alerts-*   │
+  │ GCP Logs                 │ /search+gcp          │ wazuh-alerts-*   │
+  │ Firewall Logs            │ /search+pfsense      │ wazuh-alerts-*   │
+  │ Fortigate/Palo Alto     │ /search+fortigate    │ wazuh-alerts-*   │
+  └──────────────────────────┴──────────────────────┴──────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+                    8. RBAC DESIGN
+══════════════════════════════════════════════════════════════════════════
+
+  ┌──────────────────────────┬──────────┬───────┬───────┬───────┬──────┐
+  │ Action                   │ Admin    │ Mgr   │ L3    │ L2    │ L1   │
+  ├──────────────────────────┼──────────┼───────┼───────┼───────┼──────┤
+  │ Create Dashboard         │ ✅       │ ✅    │ ✅   │ ❌    │ ❌   │
+  │ Edit Dashboard           │ ✅       │ ✅    │ ✅   │ ❌    │ ❌   │
+  │ Delete Dashboard         │ ✅       │ ✅    │ ❌   │ ❌    │ ❌   │
+  │ View Dashboard           │ ✅       │ ✅    │ ✅   │ ✅    │ ✅   │
+  │ Share Dashboard          │ ✅       │ ✅    │ ✅   │ ❌    │ ❌   │
+  │ Export Dashboard         │ ✅       │ ✅    │ ✅   │ ✅    │ ❌   │
+  │ Import Dashboard         │ ✅       │ ✅    │ ❌   │ ❌    │ ❌   │
+  │ Create Template          │ ✅       │ ✅    │ ❌   │ ❌    │ ❌   │
+  │ Create Incident          │ ✅       │ ✅    │ ✅   │ ✅    │ ❌   │
+  │ View Raw Logs            │ ✅       │ ✅    │ ✅   │ ✅    │ ❌   │
+  │ Threat Intel Lookup      │ ✅       │ ✅    │ ✅   │ ❌    │ ❌   │
+  │ Schedule Reports         │ ✅       │ ✅    │ ❌   │ ❌    │ ❌   │
+  │ Manage Data Sources      │ ✅       │ ❌    │ ❌   │ ❌    │ ❌   │
+  │ User Management          │ ✅       │ ❌    │ ❌   │ ❌    │ ❌   │
+  └──────────────────────────┴──────────┴───────┴───────┴───────┴──────┘
+
+══════════════════════════════════════════════════════════════════════════
+                    9. IMPLEMENTATION PLAN (Phased)
+══════════════════════════════════════════════════════════════════════════
+
+  PHASE 1 — Foundation (Week 1) 
+  ──────────────────────────────────────────────────────────────────────
+  [ ] Create WidgetLibraryModal — 17 widget types with search/filter
+  [ ] Create QueryBuilderPanel — visual query builder with validation
+  [ ] Create TemplateLibraryModal — 12 SOC templates
+  [ ] Create WidgetRenderer — renders any widget type dynamically
+  [ ] Add auto-refresh per panel + global refresh
+  [ ] Add Dashboard categories + tags
+  [ ] Add Breadcrumb navigation
+
+  PHASE 2 — SOC Templates & Data Sources (Week 2)
+  ──────────────────────────────────────────────────────────────────────
+  [ ] Implement all 12 dashboard templates as JSON definitions
+  [ ] Add "Create from Template" flow
+  [ ] Add all 19 Wazuh data sources
+  [ ] Add data source field mapping
+  [ ] Add query builder for each data source
+
+  PHASE 3 — Advanced SOC Features (Week 3)
+  ──────────────────────────────────────────────────────────────────────
+  [ ] Click-to-Investigate (alert drill-down)
+  [ ] Timeline correlation
+  [ ] IOC search
+  [ ] Threat intelligence lookup
+  [ ] MITRE mapping in drill-down
+  [ ] Incident creation from alert
+
+  PHASE 4 — Reporting & Sharing (Week 4)
+  ──────────────────────────────────────────────────────────────────────
+  [ ] Dashboard version history
+  [ ] Scheduled report generation
+  [ ] Email reports
+  [ ] Share dashboard with RBAC
+  [ ] Role-based access control UI
+  [ ] Client user view
+
+  PHASE 5 — Production Hardening (Week 5)
+  ──────────────────────────────────────────────────────────────────────
+  [ ] Performance optimization (virtualization, lazy loading)
+  [ ] Error boundaries for each widget
+  [ ] Loading skeletons
+  [ ] Caching layer
+  [ ] Audit logging
+  [ ] Rate limiting
+
+══════════════════════════════════════════════════════════════════════════
+                    10. UI WIREFRAME (Custom Dashboard Page)
+══════════════════════════════════════════════════════════════════════════
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  Breadcrumb: Home > Dashboards > SOC Overview                      │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │  [Dashboard Selector ▼]  [🔍 Search]  [New] [Save] [Clone]         │
+  │  [Export] [Import] [🔃 Refresh] [⛶ Fullscreen]                     │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │  ⏱ Time: [Last 24h ▼]  ⚙ Filters: [severity:x] [agent:y] [+]     │
+  │  🔍 KQL: [rule.level:>=10 AND agent.name:*]                        │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ │
+  │  │ Metric Card │ │ Metric Card │ │ Alert Count │ │ Agent Status│ │
+  │  │  12,345     │ │  89         │ │  456 Crit   │ │  25 Online  │ │
+  │  │  Total Alts │ │  Critical   │ │  Last 24h   │ │  Agents     │ │
+  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘ │
+  │  ┌──────────────────────────────────┐ ┌──────────────────────────┐ │
+  │  │     Alert Timeline (Area)        │ │    Top Rules (Bar)       │ │
+  │  │     📈·········                  │ │    ██ #752  689          │ │
+  │  │    ·    ···                      │ │    ██ #751  443          │ │
+  │  │   ·       ···                    │ │    ██ #750  227          │ │
+  │  │  ·          ··                   │ │    ██ #87702 157         │ │
+  │  └──────────────────────────────────┘ └──────────────────────────┘ │
+  │  ┌──────────────────────────┐ ┌──────────────────────────────────┐ │
+  │  │  Severity (Pie)          │ │  Recent Alerts (Table)           │ │
+  │  │    🥧 Crit 5%            │ │  Time    │ Rule    │ Agent      │ │
+  │  │       High 15%           │ │  09:36   │ #87702  │ root       │ │
+  │  │    Med 30%   Low 50%     │ │  09:34   │ #60642  │ Rayyan     │ │
+  │  └──────────────────────────┘ └──────────────────────────────────┘ │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │  [+ Add Widget]  [From Saved]  [Template Library]                  │
+  └─────────────────────────────────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════
+                    11. DASHBOARD JSON STRUCTURE (Example)
+══════════════════════════════════════════════════════════════════════════
+
+  {
+    "id": "dash_1718800000_abc123",
+    "name": "SOC Overview",
+    "description": "Real-time SOC monitoring dashboard",
+    "category": "soc",
+    "tags": ["critical", "soc", "overview"],
+    "template": "soc-overview",
+    "version": 3,
+    "starred": true,
+    "createdAt": "2026-06-19T10:00:00.000Z",
+    "updatedAt": "2026-06-19T12:30:00.000Z",
+    "createdBy": "user_admin",
+    "role": "admin",
+    "sharedWith": ["user_mgr1", "user_l31", "user_l32"],
+    "timeRange": { "from": "now-24h", "to": "now" },
+    "refreshInterval": 60,
+    "globalFilters": [
+      { "field": "rule.level", "operator": "gte", "value": "5" }
+    ],
+    "panels": [
+      {
+        "id": "panel_1",
+        "title": "Total Alerts",
+        "type": "metric",
+        "dataSource": "alerts",
+        "query": {
+          "language": "lucene",
+          "query": "",
+          "filters": [],
+          "aggregation": { "field": "", "type": "count" }
+        },
+        "config": { "prefix": "", "suffix": "", "color": "#EF843C" },
+        "x": 0, "y": 0, "w": 3, "h": 2, "locked": false
+      },
+      {
+        "id": "panel_2",
+        "title": "Alert Timeline",
+        "type": "area",
+        "dataSource": "alerts",
+        "query": {
+          "language": "lucene",
+          "query": "",
+          "filters": [],
+          "aggregation": {
+            "field": "@timestamp",
+            "type": "date_histogram",
+            "interval": "1h",
+            "limit": 48
+          }
+        },
+        "config": { "fill": "tozeroy", "lineColor": "#EF843C" },
+        "x": 3, "y": 0, "w": 6, "h": 4, "locked": false
+      },
+      {
+        "id": "panel_3",
+        "title": "Recent Alerts",
+        "type": "table",
+        "dataSource": "alerts",
+        "query": {
+          "language": "lucene",
+          "query": "",
+          "filters": [],
+          "sort": { "field": "@timestamp", "order": "desc" },
+          "limit": 10
+        },
+        "config": { "sortable": true, "pageSize": 10 },
+        "x": 9, "y": 0, "w": 3, "h": 4, "locked": false
+      }
+    ]
+  }
+
+══════════════════════════════════════════════════════════════════════════
+                    12. PRODUCTION READY DEVELOPMENT PLAN
+══════════════════════════════════════════════════════════════════════════
+
+  Week 1 — Core Builder
+  ──────────────────────────────────────────────────────────────────────
+  • WidgetLibraryModal — searchable grid of 17 widget types
+  • QueryBuilderPanel — visual query builder
+  • WidgetRenderer — dynamic widget rendering engine
+  • Dashboard auto-refresh (global + per-panel)
+  • Breadcrumb navigation
+
+  Week 2 — Templates & Data Sources
+  ──────────────────────────────────────────────────────────────────────
+  • 12 SOC dashboard templates in JSON
+  • Template Library modal with preview
+  • 19 Wazuh data source integrations
+  • Data source → field mapping
+
+  Week 3 — SOC Workflows
+  ──────────────────────────────────────────────────────────────────────
+  • Click-to-investigate modal
+  • IOC search
+  • Threat intelligence lookup
+  • Incident creation
+
+  Week 4 — Sharing & Governance
+  ──────────────────────────────────────────────────────────────────────
+  • Dashboard version history
+  • RBAC UI
+  • Dashboard sharing
+  • Report scheduling
+
+  Week 5 — Polish & Performance
+  ──────────────────────────────────────────────────────────────────────
+  • Error boundaries
+  • Loading skeletons
+  • Performance optimization
+  • Audit logging
+  • Security hardening
+
+══════════════════════════════════════════════════════════════════════════
+                    End of Custom Dashboard Builder Design Spec
+══════════════════════════════════════════════════════════════════════════
