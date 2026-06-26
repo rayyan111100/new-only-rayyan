@@ -44,6 +44,7 @@ import MitreAttackTab from './tabs/MitreAttackTab'
 import NistTab from './tabs/NistTab'
 import CspmTab from './tabs/CspmTab'
 import CustomDashboardTab from './tabs/CustomDashboardTab'
+import DashboardNewTab from './tabs/DashboardNewTab'
 import LoginModal from './components/LoginModal'
 import ErrorBoundary from './components/ErrorBoundary'
 
@@ -51,6 +52,7 @@ const TABS = {
   discover: DiscoverTab,
   dashboard: DashboardTab,
   customdashboard: CustomDashboardTab,
+  'dashboard-new': DashboardNewTab,
   securityhub: SecurityHub,
   search: SearchTab,
   analytics: AnalyticsTab,

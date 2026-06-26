@@ -3,7 +3,13 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 const NAV_SECTIONS = [
   { key: 'discover', label: 'Raw Event Viewer', icon: 'search' },
-  { key: 'customdashboard', label: 'Dashboard', icon: 'dashboard' },
+  {
+    key: 'dashboard', label: 'Dashboard', icon: 'dashboard',
+    children: [
+      { key: 'customdashboard', label: 'Dashboard', icon: 'dashboard' },
+      { key: 'dashboard-new', label: 'Dashboard-New', icon: 'monitor' },
+    ]
+  },
   {
     key: 'securityhub', label: 'Security Operations', icon: 'security',
     children: [
@@ -112,6 +118,7 @@ function isChildActive(active, item) {
 export default function Sidebar({ active, onSelect, collapsed, onToggle }) {
   const [expanded, setExpanded] = useState(() => {
     const keys = []
+    if (['customdashboard', 'dashboard-new'].includes(active)) keys.push('dashboard')
     if (['createrule', 'rulegroups', 'ruleview', 'ruleguide'].includes(active)) keys.push('rules')
     if (['securityhub', 'windowsevent', 'securityevents', 'vulnerabilitydetection', 'malwaredetection', 'fim', 'incidentmanagement'].includes(active)) keys.push('securityhub')
     if (['aim', 'infrastructurehealth', 'dtm'].includes(active)) keys.push('noc')
@@ -120,6 +127,7 @@ export default function Sidebar({ active, onSelect, collapsed, onToggle }) {
     return keys
   })
 
+  const isInDashboard = ['customdashboard', 'dashboard-new'].includes(active)
   const isInRules = ['createrule', 'rulegroups', 'ruleview', 'ruleguide'].includes(active)
   const isInSecurity = ['securityhub', 'windowsevent', 'securityevents', 'vulnerabilitydetection', 'malwaredetection', 'fim', 'incidentmanagement'].includes(active)
   const isInNoc = ['aim', 'infrastructurehealth', 'dtm'].includes(active)
@@ -143,7 +151,7 @@ export default function Sidebar({ active, onSelect, collapsed, onToggle }) {
         {NAV_SECTIONS.map(item => {
           if (item.children) {
             const isExpanded = !collapsed && expanded.includes(item.key)
-            const parentActive = item.key === 'rules' ? isInRules : item.key === 'securityhub' ? isInSecurity : item.key === 'noc' ? isInNoc : item.key === 'compliance' ? isInCompliance : item.key === 'cspm' ? isInCspm : false
+            const parentActive = item.key === 'dashboard' ? isInDashboard : item.key === 'rules' ? isInRules : item.key === 'securityhub' ? isInSecurity : item.key === 'noc' ? isInNoc : item.key === 'compliance' ? isInCompliance : item.key === 'cspm' ? isInCspm : false
             return (
               <div key={item.key}>
                 <button

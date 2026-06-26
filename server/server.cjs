@@ -1139,6 +1139,160 @@ app.get('/api/fim-events', async (req, res) => {
   }
 });
 
+// ─── Asset Inventory Endpoint ───
+const ASSET_CATEGORIES = {
+  'U360-Engine': { category: 'Security Engines', type: 'SIEM Engine', color: '#7F77DD', icon: 'engine', role: 'Correlation & UEBA Engine' },
+  'root': { category: 'Linux', type: 'Linux Server', color: '#1D9E75', icon: 'linux', role: 'Wazuh Manager / Master Node' },
+  'COREGENIX': { category: 'Windows', type: 'Windows Server', color: '#378ADD', icon: 'windows', role: 'Application Server' },
+  'My-SurfaceLaptop': { category: 'Windows', type: 'Windows Endpoint', color: '#378ADD', icon: 'windows', role: 'Workstation' },
+  'Rayyan': { category: 'Linux', type: 'Linux Workstation', color: '#1D9E75', icon: 'linux', role: 'Developer Workstation' },
+  'suyash-window': { category: 'Windows', type: 'Windows Server', color: '#378ADD', icon: 'windows', role: 'Windows Server' },
+  'Rayyan-laptop': { category: 'Windows', type: 'Windows Endpoint', color: '#378ADD', icon: 'windows', role: 'Laptop / Endpoint' },
+};
+
+const DEFAULT_CATEGORY = { category: 'Other', type: 'Unknown Device', color: '#6b7280', icon: 'device', role: 'Unclassified' };
+
+function classifyAgent(agentName) {
+  return ASSET_CATEGORIES[agentName] || DEFAULT_CATEGORY;
+}
+
+function calcSeverity(levelBuckets) {
+  let highest = 0;
+  for (const b of (levelBuckets || [])) {
+    const lvl = parseInt(b.key) || 0;
+    if (lvl > highest) highest = lvl;
+  }
+  if (highest >= 12) return { sev: 'critical', sevLabel: 'Critical' };
+  if (highest >= 7) return { sev: 'warn', sevLabel: 'Warning' };
+  return { sev: 'ok', sevLabel: 'Healthy' };
+}
+
+app.get('/api/asset-inventory', async (req, res) => {
+  const { start_date, end_date } = req.query;
+  const idx = 'unishield360-alerts-4.x-*';
+  const sd = start_date || 'now-7d';
+  const ed = end_date || 'now';
+  try {
+    // 1. Get all agents with event counts
+    const agentAgg = await api.get('/aggregate', {
+      params: { index: idx, field: 'agent.name', type: 'terms', limit: 100, start_date: sd, end_date: ed }
+    }).catch(() => ({ data: { buckets: [] } }));
+    const agentBuckets = agentAgg.data?.buckets || [];
+
+    // 2. Parallel per-agent data
+    const agentPromises = agentBuckets.map(async (bucket) => {
+      const agentName = bucket.key;
+      const totalEvents = bucket.doc_count || 0;
+
+      // Severity distribution
+      const sevRes = await api.get('/aggregate', {
+        params: { index: idx, field: 'rule.level', type: 'terms', limit: 20, q: `agent.name:"${agentName}"`, start_date: sd, end_date: ed }
+      }).catch(() => ({ data: { buckets: [] } }));
+
+      // Alert count (level >= 7)
+      const alertCountRes = await api.get('/count', {
+        params: { index: idx, q: `agent.name:"${agentName}" AND rule.level:[7 TO 15]`, start_date: sd, end_date: ed }
+      }).catch(() => ({ data: { count: 0 } }));
+
+      // Latest event for lastSeen + location
+      const latestRes = await api.get('/search', {
+        params: { index: idx, q: `agent.name:"${agentName}"`, limit: 1, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed }
+      }).catch(() => ({ data: { results: [] } }));
+      const latestEvent = latestRes.data?.results?.[0] || {};
+
+      // Recent alerts (highest severity events)
+      const alertsRes = await api.get('/search', {
+        params: { index: idx, q: `agent.name:"${agentName}" AND (rule.level:12 OR rule.level:13 OR rule.level:14 OR rule.level:15)`, limit: 5, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed }
+      }).catch(() => ({ data: { results: [] } }));
+
+      const levelBuckets = sevRes.data?.buckets || [];
+      const { sev, sevLabel } = calcSeverity(levelBuckets);
+      const classification = classifyAgent(agentName);
+      const alertCount = alertCountRes.data?.count || 0;
+
+      const alerts = (alertsRes.data?.results || []).map(r => {
+        const rl = r.rule || {};
+        return {
+          sev: (parseInt(rl.level) || 0) >= 12 ? 'c' : (parseInt(rl.level) || 0) >= 7 ? 'h' : 'm',
+          label: (parseInt(rl.level) || 0) >= 12 ? 'Critical' : (parseInt(rl.level) || 0) >= 7 ? 'High' : 'Medium',
+          msg: rl.description || 'No description',
+          time: r['@timestamp'] ? new Date(r['@timestamp']).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '--'
+        };
+      });
+
+      const sevCounts = {};
+      let sevCritical = 0, sevHigh = 0, sevMedium = 0, sevLow = 0;
+      for (const b of levelBuckets) {
+        const lvl = parseInt(b.key) || 0;
+        const cnt = b.doc_count || 0;
+        if (lvl >= 12) sevCritical += cnt;
+        else if (lvl >= 7) sevHigh += cnt;
+        else if (lvl >= 4) sevMedium += cnt;
+        else sevLow += cnt;
+      }
+
+      return {
+        name: agentName,
+        type: classification.type,
+        category: classification.category,
+        categoryColor: classification.color,
+        role: classification.role,
+        sev,
+        sevLabel,
+        lastSeen: latestEvent['@timestamp'] || null,
+        location: latestEvent.location || 'unknown',
+        totalEvents,
+        metrics: {
+          alerts: alertCount,
+          critical: sevCritical,
+          high: sevHigh,
+          medium: sevMedium,
+          low: sevLow,
+        },
+        alerts,
+        severityBuckets: levelBuckets.slice(0, 5),
+      };
+    });
+
+    const devicesArray = await Promise.all(agentPromises);
+
+    // 3. Build grouped categories
+    const categoryMap = {};
+    for (const d of devicesArray) {
+      if (!categoryMap[d.category]) {
+        categoryMap[d.category] = {
+          name: d.category,
+          color: d.categoryColor,
+          devices: [],
+        };
+      }
+      categoryMap[d.category].devices.push(d);
+    }
+    const categories = Object.values(categoryMap);
+
+    // 4. Compute totals
+    const totalAssets = devicesArray.length;
+    const totalAlerts = devicesArray.reduce((s, d) => s + d.metrics.alerts, 0);
+    const totalEvents = devicesArray.reduce((s, d) => s + d.totalEvents, 0);
+    const criticalCount = devicesArray.filter(d => d.sev === 'critical').length;
+
+    res.json({
+      success: true,
+      summary: {
+        totalAssets,
+        totalAlerts,
+        totalEvents,
+        criticalCount,
+      },
+      categories,
+      devices: devicesArray,
+    });
+  } catch (err) {
+    console.error('Asset inventory error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Auth ───
 const auth = require('./auth.cjs');
 
