@@ -47,11 +47,20 @@ Enterprise Security Operations Center (SOC) Dashboard built with React + Vite + 
 - Use efficient data structures (Set for lookups, Map for keyed access).
 
 ## Compliance Frameworks Supported
-- PCI-DSS (rule.pci_dss field)
-- HIPAA (rule.hipaa field)
-- GDPR (rule.gdpr field)
-- TSC (SOC 2) (rule.tsc field)
-- MITRE ATT&CK (rule.mitre_attack field)
+- PCI-DSS (rule.pci_dss field — array of strings)
+- HIPAA (rule.hipaa field — array of strings)
+- GDPR (rule.gdpr field — array of strings)
+- TSC (SOC 2) (rule.tsc field — array of strings)
+- MITRE ATT&CK (rule.mitre object — NOT rule.mitre_attack)
+- NIST 800-53 (rule.nist_800_53 field — array of strings)
+
+## CRITICAL: Real Data Structure (VERIFIED from MCP `/mcp/alerts/search`)
+**ALL compliance fields are ARRAYS of strings** (e.g., `rule.gdpr: ["IV_35.7.d"]`), NOT scalars.
+`rule.mitre_attack` does NOT exist — use `rule.mitre` which is an object: `{ technique: [str], id: [str], tactic: [str] }`.
+
+## MCP Server (Backend Ground Truth)
+Available at `https://192.168.1.77/mcp/` — use `/mcp/alerts/search` with raw OpenSearch queries to verify field structures before building features.
+Endpoints: `/health`, `/info`, `/config`, `/rules`, `/decoders`, `/integrations`, `/agents`, `/alerts/schema`, `/alerts/search`
 
 ---
 

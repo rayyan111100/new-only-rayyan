@@ -14,15 +14,15 @@ const NAV_SECTIONS = [
   { key: 'health', label: 'Health', icon: 'health' },
   { key: 'vulnerability', label: 'Vulnerability', icon: 'vulnerability' },
   {
-    key: 'compliance', label: 'Compliance Management', icon: 'compliance',
+    key: 'compliance', label: 'Compliance Management / Frameworks', icon: 'compliance',
     children: [
       { key: 'compliance', label: 'Overview', icon: 'dashboard' },
       { key: 'pcidss', label: 'PCI-DSS', icon: 'assignment' },
       { key: 'hipaa', label: 'HIPAA', icon: 'assignment' },
       { key: 'gdpr', label: 'GDPR', icon: 'assignment' },
       { key: 'tscsoc2', label: 'SOC 2 (TSC)', icon: 'assignment' },
-      { key: 'mitreattack', label: 'MITRE ATT&CK', icon: 'assignment' },
       { key: 'nist80053', label: 'NIST 800-53', icon: 'assignment' },
+      { key: 'mitreattack', label: 'MITRE ATT&CK', icon: 'assignment' },
     ]
   },
   {

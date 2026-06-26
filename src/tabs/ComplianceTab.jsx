@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react'
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useApp } from '../context/AppContext'
 import { formatPretty } from '../utils'
@@ -8,8 +8,10 @@ import LogDetailModal from '../components/LogDetailModal'
 import useCompliance from '../hooks/useCompliance'
 import { exportExcel, exportPDFReport, prepareRows } from '../utils/exportLogs'
 import { PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { api } from '../api'
+import { parseDateStr } from '../utils'
 
-const FRAMEWORKS = ['PCI-DSS', 'HIPAA', 'GDPR', 'TSC (SOC 2)', 'MITRE ATT&CK', 'NIST 800-53']
+const FRAMEWORKS = ['PCI-DSS', 'HIPAA', 'GDPR', 'TSC (SOC 2)', 'NIST 800-53', 'MITRE ATT&CK']
 const SEV_COLORS = { Critical: '#f85149', High: '#e8681a', Medium: '#d29922', Low: '#3fb950' }
 const SEV_ORDER = ['Critical', 'High', 'Medium', 'Low']
 const QUICK_TIMES = [
@@ -32,10 +34,37 @@ const COMPLIANCE_EXPORT_COLS = [
   { header: 'File', accessor: r => r.data?.file || r.file || '--' },
 ]
 
+const FRAMEWORK_TO_FIELD = {
+  'PCI-DSS': 'rule.pci_dss',
+  'HIPAA': 'rule.hipaa',
+  'GDPR': 'rule.gdpr',
+  'TSC (SOC 2)': 'rule.tsc',
+  'NIST 800-53': 'rule.nist_800_53',
+  'MITRE ATT&CK': 'rule.mitre_attack'
+}
+
+function buildFilterQuery(filters) {
+  const parts = []
+  if (filters.framework && FRAMEWORK_TO_FIELD[filters.framework]) {
+    parts.push('_exists_:' + FRAMEWORK_TO_FIELD[filters.framework])
+  }
+  if (filters.severity) {
+    const sevRanges = { Critical: 'rule.level:>=12', High: '(rule.level:[7 TO 11])', Medium: '(rule.level:[4 TO 6])', Low: '(rule.level:[1 TO 3])' }
+    if (sevRanges[filters.severity]) parts.push(sevRanges[filters.severity])
+  }
+  if (filters.agent) {
+    parts.push('agent.name:"' + filters.agent.replace(/"/g, '\\"') + '"')
+  }
+  if (filters.rule) {
+    parts.push('rule.id:"' + filters.rule.replace(/"/g, '\\"') + '"')
+  }
+  return parts.join(' AND ')
+}
+
 const CustomTip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-white dark:bg-[#0d1117] border border-[#e5e7eb] dark:border-[#2d3140] rounded-lg px-3 py-2 text-xs shadow-xl">
+    <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-lg px-3 py-2 text-xs shadow-xl">
       <p className="text-[#9ca3af] dark:text-[#8b949e] mb-1">{label}</p>
       {payload.map((p, i) => (
         <p key={i} style={{ color: p.color }}>{p.name}: <span className="font-semibold text-[#1a1c23] dark:text-[#f0f6fc]">{p.value?.toLocaleString() || p.value}</span></p>
@@ -74,6 +103,76 @@ export default function ComplianceTab() {
   const LOG_PAGE_SIZE = 50
   const MAX_LOG_PAGES = 10
   const { data, loading, error, refresh } = useCompliance()
+  const [evExtraLogs, setEvExtraLogs] = useState([])
+  const evExtraOffsetRef = useRef(0)
+  const [evLoadingMore, setEvLoadingMore] = useState(false)
+  const evFilterQuery = buildFilterQuery(filters)
+  const evFilterOffsetRef = useRef(0)
+
+  const handleRefresh = useCallback(() => {
+    setFilters({})
+    setLogPage(1)
+    setExpandedRow({})
+    setJsonView({})
+    setEvExtraLogs([])
+    evExtraOffsetRef.current = 0
+    evFilterOffsetRef.current = 0
+    refresh()
+  }, [refresh])
+
+  const fetchFilteredLogs = useCallback(async (append) => {
+    if (!evFilterQuery) return
+    setEvLoadingMore(true)
+    try {
+      const sd = parseDateStr(startDate).toISOString()
+      const ed = parseDateStr(endDate).toISOString()
+      const offset = append ? evFilterOffsetRef.current : 0
+      const res = await api('search', { index: 'unishield360-alerts-4.x-*', start_date: sd, end_date: ed, q: evFilterQuery, limit: 500, offset, sort: '@timestamp', order: 'desc' })
+      const results = res.results || []
+      if (append) {
+        setEvExtraLogs(prev => [...prev, ...results])
+      } else {
+        setEvExtraLogs(results)
+      }
+      evFilterOffsetRef.current = append ? evFilterOffsetRef.current + results.length : results.length
+    } catch (e) {
+      console.error('fetchFilteredLogs error:', e)
+      if (!append) setEvExtraLogs([])
+    } finally {
+      setEvLoadingMore(false)
+    }
+  }, [startDate, endDate, evFilterQuery])
+
+  const loadMoreLogs = useCallback(async () => {
+    if (evFilterQuery) {
+      return fetchFilteredLogs(true)
+    }
+    setEvLoadingMore(true)
+    try {
+      const sd = parseDateStr(startDate).toISOString()
+      const ed = parseDateStr(endDate).toISOString()
+      const q = ''
+      const res = await api('search', { index: 'unishield360-alerts-4.x-*', start_date: sd, end_date: ed, q, limit: 500, offset: evExtraOffsetRef.current, sort: '@timestamp', order: 'desc' })
+      const results = res.results || []
+      setEvExtraLogs(prev => [...prev, ...results])
+      evExtraOffsetRef.current += results.length
+    } catch (e) {
+      console.error('loadMoreLogs error:', e)
+    } finally {
+      setEvLoadingMore(false)
+    }
+  }, [startDate, endDate, evFilterQuery, fetchFilteredLogs])
+
+  useEffect(() => {
+    if (evFilterQuery) {
+      setEvExtraLogs([])
+      evFilterOffsetRef.current = 0
+      fetchFilteredLogs(false)
+    } else {
+      setEvExtraLogs([])
+      evExtraOffsetRef.current = 0
+    }
+  }, [evFilterQuery, fetchFilteredLogs])
   const toggleRow = useCallback((id) => {
     setExpandedRow(prev => ({ ...prev, [id]: !prev[id] }))
   }, [])
@@ -115,16 +214,8 @@ export default function ComplianceTab() {
 
   const activeFilters = Object.keys(filters)
 
-  const totalEvents = data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
-  const maxFw = data ? Math.max(...data.frameworkCounts.map(f => f.count), 1) : 1
-  const maxAgent = data ? Math.max(...data.topAgents.map(a => a.doc_count || 0), 1) : 1
-
-  const sevDonut = SEV_ORDER.filter(s => (data?.severity?.[s] || 0) > 0).map(s => ({
-    name: s, value: data.severity[s], color: SEV_COLORS[s]
-  }))
-
   const filteredRecent = useMemo(() => {
-    const all = data?.recent || []
+    const all = [...(data?.recent || []), ...evExtraLogs]
     return all.filter(r => {
       const level = parseInt(r.rule?.level || r.level || 0)
       const sev = toSev(level)
@@ -138,13 +229,73 @@ export default function ComplianceTab() {
         if (ruleId !== filters.rule) return false
       }
       if (filters.framework) {
-        if (!(r._frameworks || []).includes(filters.framework)) return false
+        const fws = r._frameworks || []
+        if (fws.includes(filters.framework)) return true
+        const field = FRAMEWORK_TO_FIELD[filters.framework]
+        if (field) {
+          const parts = field.split('.')
+          let val = r
+          for (const p of parts) { if (val) val = val[p] }
+          if (val && val.toString().trim()) return true
+        }
+        return false
       }
       return true
     })
-  }, [data?.recent, filters])
+  }, [data?.recent, evExtraLogs, filters])
 
   const totalLogPages = Math.max(1, Math.ceil(filteredRecent.length / LOG_PAGE_SIZE))
+
+  const hasActiveFilter = activeFilters.length > 0
+
+  const chartData = useMemo(() => {
+    if (!hasActiveFilter) return null
+    const sev = {}
+    SEV_ORDER.forEach(s => sev[s] = 0)
+    const ctrlMap = {}
+    const agMap = {}
+    const ruleMap = {}
+    const fwMap = {}
+    for (const r of filteredRecent) {
+      const level = parseInt(r.rule?.level || r.level || 0)
+      const s = level >= 12 ? 'Critical' : level >= 7 ? 'High' : level >= 4 ? 'Medium' : 'Low'
+      sev[s] = (sev[s] || 0) + 1
+      const agentName = r.agent?.name || r.agent || ''
+      if (agentName) agMap[agentName] = (agMap[agentName] || 0) + 1
+      const ruleId = r.rule?.id || r.rule || ''
+      if (ruleId) ruleMap[ruleId] = (ruleMap[ruleId] || 0) + 1
+      const ctrl = r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || ''
+      if (ctrl) ctrlMap[ctrl] = (ctrlMap[ctrl] || 0) + 1
+      const frameworks = r._frameworks || []
+      if (frameworks.length === 0) {
+        for (const [fwName, fwField] of Object.entries(FRAMEWORK_TO_FIELD)) {
+          const parts = fwField.split('.')
+          let val = r
+          for (const p of parts) { if (val) val = val[p] }
+          if (val && val.toString().trim()) frameworks.push(fwName)
+        }
+      }
+      for (const fw of frameworks) fwMap[fw] = (fwMap[fw] || 0) + 1
+    }
+    return {
+      severity: sev,
+      controls: ctrlMap,
+      topAgents: Object.entries(agMap).map(([key, doc_count]) => ({ key, doc_count })).sort((a, b) => b.doc_count - a.doc_count).slice(0, 8),
+      topRules: Object.entries(ruleMap).map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count).slice(0, 8),
+      frameworkCounts: Object.entries(fwMap).map(([framework, count]) => ({ framework, count })).sort((a, b) => b.count - a.count)
+    }
+  }, [filteredRecent, hasActiveFilter])
+  const totalEvents = hasActiveFilter && chartData
+    ? Object.values(chartData.severity).reduce((a, b) => a + b, 0)
+    : data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
+  const fwCounts = hasActiveFilter && chartData ? chartData.frameworkCounts : data?.frameworkCounts || []
+  const maxFw = fwCounts.length > 0 ? Math.max(...fwCounts.map(f => f.count), 1) : 1
+  const agentsData = hasActiveFilter && chartData ? chartData.topAgents : data?.topAgents || []
+  const maxAgent = agentsData.length > 0 ? Math.max(...agentsData.map(a => a.doc_count || 0), 1) : 1
+  const sevData = hasActiveFilter && chartData ? chartData.severity : data?.severity || {}
+  const sevDonut = SEV_ORDER.filter(s => (sevData[s] || 0) > 0).map(s => ({
+    name: s, value: sevData[s], color: SEV_COLORS[s]
+  }))
 
   const FILTER_STYLES = {
     severity: (v) => ({
@@ -188,7 +339,7 @@ export default function ComplianceTab() {
     if (!d) return null
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeModal}>
-        <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-5 w-[500px] max-h-[72vh] overflow-y-auto shadow-lg dark:shadow-[0_8px_32px_rgba(0,0,0,0.6)]" onClick={e => e.stopPropagation()}>
+        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-5 w-[500px] max-h-[72vh] overflow-y-auto shadow-lg dark:shadow-[0_8px_32px_rgba(0,0,0,0.6)]" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between mb-4">
             <span className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc]">{d.t}</span>
             <button onClick={closeModal} className="text-[#656d76] dark:text-[#8b949e] hover:text-[#1f2328] dark:hover:text-[#f0f6fc] text-lg leading-none">&times;</button>
@@ -207,12 +358,12 @@ export default function ComplianceTab() {
       {/* Page Header */}
       <div className="flex items-start justify-between mb-3">
         <div>
-          <div className="text-[11px] text-[#8b949e]">Home / <span className="text-[#e8681a]">Compliance Management</span></div>
-          <div className="text-xl font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">Compliance Management Overview</div>
+          <div className="text-[11px] text-[#8b949e]">Home / <span className="text-[#e8681a]">Compliance Management / Frameworks</span></div>
+          <div className="text-xl font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">Compliance Overview</div>
         </div>
         <div className="flex items-center gap-2 mt-1.5">
           <div className="-mr-1.5"><DateRangePicker /></div>
-          <button onClick={() => refresh()} className="p-1.5 rounded border border-transparent hover:bg-[#161b22] text-[#8b949e] hover:text-[#e8681a] transition-colors">
+          <button onClick={handleRefresh} className="p-1.5 rounded border border-transparent hover:bg-[#161b22] text-[#8b949e] hover:text-[#e8681a] transition-colors">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           </button>
         </div>
@@ -229,7 +380,7 @@ export default function ComplianceTab() {
           { key: 'm-frameworks', label: 'Active Frameworks', val: FRAMEWORKS.length, sub: FRAMEWORKS.join(', '), icon: 'layout-grid', iconBg: '#7c3aed1a', iconColor: '#7c3aed' },
         ].map(card => (
           <div key={card.key} onClick={() => openModal(card.key)}
-              className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 cursor-pointer hover:border-[#e8681a]/50 dark:hover:border-[#e8681a]/60 transition-all duration-300 hover:-translate-y-[3px] shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] hover:shadow-[0_8px_25px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)]"
+              className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 cursor-pointer hover:border-[#e8681a]/50 dark:hover:border-[#e8681a]/60 transition-all duration-300 hover:-translate-y-[3px] shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] hover:shadow-[0_8px_25px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)]"
             style={{}}>
             <div className="float-right w-[34px] h-[34px] rounded-lg flex items-center justify-center text-lg" style={{ background: card.iconBg }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={card.iconColor} strokeWidth="2">
@@ -250,9 +401,9 @@ export default function ComplianceTab() {
       {/* Tri Row */}
       <div className="grid grid-cols-[1.1fr_0.85fr_1.05fr] gap-2.5 mb-2.5">
         {/* Framework Event Distribution */}
-        <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
+        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Framework Event Distribution</div>
-          {(data?.frameworkCounts || []).map(fw => (
+          {fwCounts.map(fw => (
             <div key={fw.framework} onClick={() => setFilter('framework', fw.framework)}
               className={`flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] cursor-pointer text-[11px] ${filters.framework === fw.framework ? 'bg-[#a371f7]/5 ring-1 ring-inset ring-[#a371f7]/30' : ''}`}>
               <span className="w-[90px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0">{fw.framework}</span>
@@ -269,14 +420,14 @@ export default function ComplianceTab() {
         </div>
 
         {/* Severity Distribution Donut */}
-        <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 flex flex-col shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
+        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 flex flex-col shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2">Severity Distribution</div>
           <div className="grid grid-cols-2 gap-1 mb-2">
-            {SEV_ORDER.filter(s => (data?.severity?.[s] || 0) > 0).map(s => (
+            {SEV_ORDER.filter(s => (sevData[s] || 0) > 0).map(s => (
               <span key={s} onClick={() => setFilter('severity', s)}
                 className={`flex items-center gap-1.5 text-[11px] cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] ${filters.severity === s ? 'ring-1 ring-[#e8681a]/30 bg-[#e8681a]/5' : ''} ${filters.severity && filters.severity !== s ? 'opacity-40' : ''}`}>
                 <span className="w-[10px] h-[10px] rounded flex-shrink-0" style={{ background: SEV_COLORS[s] }} />
-                {s} <span className="text-[#8b949e]">{data?.severity?.[s] || 0} ({Math.round(((data?.severity?.[s] || 0) / (totalEvents || 1)) * 100)}%)</span>
+                {s} <span className="text-[#8b949e]">{sevData[s] || 0} ({Math.round(((sevData[s] || 0) / (totalEvents || 1)) * 100)}%)</span>
               </span>
             ))}
           </div>
@@ -300,10 +451,10 @@ export default function ComplianceTab() {
         </div>
 
         {/* Compliance Trend */}
-        <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
+        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2 flex items-center justify-between">
             <span>Compliance Trend</span>
-            <span onClick={() => setTimeRange(t => t === 'now-24h' ? 'now-7d' : t === 'now-7d' ? 'now-30d' : t === 'now-30d' ? 'now-90d' : 'now-24h')} className="text-[10px] text-[#8b949e] bg-[#f0f2f4] dark:bg-[#21262d] px-2 py-0.5 rounded font-medium normal-case cursor-pointer hover:bg-[#e5e7eb] dark:hover:bg-[#2d3140]">
+            <span onClick={() => setTimeRange(t => t === 'now-24h' ? 'now-7d' : t === 'now-7d' ? 'now-30d' : t === 'now-30d' ? 'now-90d' : 'now-24h')} className="text-[10px] text-[#8b949e] bg-[#f0f2f4] dark:bg-[#2d3140] px-2 py-0.5 rounded font-medium normal-case cursor-pointer hover:bg-[#e5e7eb] dark:hover:bg-[#2d3140]">
               {timeRange === 'now-24h' ? 'Last 24 Hours' : timeRange === 'now-7d' ? 'Last 7 Days' : timeRange === 'now-30d' ? 'Last 30 Days' : 'Last 90 Days'} <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="inline ml-0.5"><polyline points="6 9 12 15 18 9"/></svg>
             </span>
           </div>
@@ -329,20 +480,20 @@ export default function ComplianceTab() {
       {/* Three Table Row */}
       <div className="grid grid-cols-3 gap-2.5 mb-2.5">
         {/* Top Violated Controls */}
-        <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
+        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Top Violated Controls</div>
           <table className="w-full text-[11px] border-collapse">
-            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Framework</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Control</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Events</th></tr></thead>
+            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Framework</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Control</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Events</th></tr></thead>
             <tbody>
-              {(data?.topRules || []).slice(0, 5).map((r, i) => {
+              {(hasActiveFilter && chartData ? chartData.topRules : data?.topRules || []).slice(0, 5).map((r, i) => {
                 const ruleId = r.ruleId || r.key || r.rule || r.id || ''
                 return (
                   <tr key={r.key || i} onClick={() => setFilter('rule', ruleId)}
                     className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors ${filters.rule === ruleId ? 'bg-[#e8681a]/5 ring-1 ring-inset ring-[#e8681a]/30' : ''}`}>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">{i + 1}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#e8681a] font-semibold">{ruleId}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#36454f] dark:text-[#c9d1d9]">{r.control || r.description?.substring(0, 30) || 'Control violation'}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{r.doc_count || r.count || 0}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-[#8b949e]">{i + 1}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-[#e8681a] font-semibold">{ruleId}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9]">{r.control || r.description?.substring(0, 30) || 'Control violation'}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{r.doc_count || r.count || 0}</td>
                   </tr>
                 )
               })}
@@ -353,19 +504,19 @@ export default function ComplianceTab() {
         </div>
 
         {/* Top Agents */}
-        <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
+        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Top Agents</div>
           <table className="w-full text-[11px] border-collapse">
-            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Agent</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Events</th></tr></thead>
+            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Agent</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Events</th></tr></thead>
             <tbody>
-              {(data?.topAgents || []).slice(0, 5).map((a, i) => {
+              {agentsData.slice(0, 5).map((a, i) => {
                 const agentName = a.key || a.agent || 'Unknown'
                 return (
                   <tr key={a.key || i} onClick={() => setFilter('agent', agentName)}
                     className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors ${filters.agent === agentName ? 'bg-[#58a6ff]/5 ring-1 ring-inset ring-[#58a6ff]/30' : ''}`}>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">{i + 1}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{agentName}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-[#8b949e]">{i + 1}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{agentName}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140]">
                       <div className="flex items-center justify-end gap-1.5">
                         <div className="w-[70px] h-[6px] bg-[#d0d7de] dark:bg-[#1d2432] rounded-full overflow-hidden">
                           <div className="h-full rounded-full" style={{ width: `${((a.doc_count || 0) / maxAgent) * 100}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
@@ -383,16 +534,16 @@ export default function ComplianceTab() {
         </div>
 
         {/* Event Categories */}
-        <div className="bg-white dark:bg-[#0d1117] border border-[#d0d7de] dark:border-[#1d2432] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
+        <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Event Categories</div>
           <table className="w-full text-[11px] border-collapse">
-            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">#</th><th className="text-left py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Category</th><th className="text-right py-1 px-2 border-b border-[#d0d7de] dark:border-[#1d2432]">Events</th></tr></thead>
+            <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Category</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Events</th></tr></thead>
             <tbody>
               {(data?.categories || []).slice(0, 7).map((c, i) => (
                 <tr key={c.key || i} className="hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
-                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e]">{i + 1}</td>
-                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#36454f] dark:text-[#c9d1d9]">{c.key || '--'}</td>
-                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{(c.doc_count || 0).toLocaleString()}</td>
+                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-[#8b949e]">{i + 1}</td>
+                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9]">{c.key || '--'}</td>
+                  <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{(c.doc_count || 0).toLocaleString()}</td>
                 </tr>
               ))}
               {(!data?.categories || data.categories.length === 0) && (
@@ -408,21 +559,21 @@ export default function ComplianceTab() {
         <div className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc] mb-2.5 tracking-tight">Framework Event Distribution</div>
         <table className="w-full text-[11px] border-collapse">
           <thead>
-            <tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide bg-[#f0f2f4] dark:bg-[#161b22]">
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Framework</th>
-              <th className="text-center py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Events</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Distribution</th>
+            <tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide bg-[#f0f2f4] dark:bg-[#16181f]">
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Framework</th>
+              <th className="text-center py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Events</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Distribution</th>
             </tr>
           </thead>
           <tbody>
-            {(data?.frameworkCounts || []).map(fw => {
+            {fwCounts.map(fw => {
               const pct = maxFw ? (fw.count / maxFw) * 100 : 0
               return (
                 <tr key={fw.framework} onClick={() => setFilter('framework', fw.framework)}
                   className={`hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] cursor-pointer transition-colors ${filters.framework === fw.framework ? 'bg-[#a371f7]/5 ring-1 ring-inset ring-[#a371f7]/30' : ''}`}>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{fw.framework}</td>
-                  <td className="text-center py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] font-bold text-[#1f2328] dark:text-[#f0f6fc]">{fw.count}</td>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{fw.framework}</td>
+                  <td className="text-center py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] font-bold text-[#1f2328] dark:text-[#f0f6fc]">{fw.count}</td>
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140]">
                     <div className="h-2 bg-[#d0d7de] dark:bg-[#1d2432] rounded-full overflow-hidden w-32">
                       <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
                     </div>
@@ -432,12 +583,12 @@ export default function ComplianceTab() {
             })}
           </tbody>
           <tfoot>
-            <tr className="font-bold text-[#1f2328] dark:text-[#f0f6fc] bg-[#f0f2f4] dark:bg-[#161b22]">
-              <td className="py-1.5 px-2 border-t border-[#d0d7de] dark:border-[#1d2432]">Total</td>
-              <td className="text-center py-1.5 px-2 border-t border-[#d0d7de] dark:border-[#1d2432]">
-                {data?.frameworkCounts?.reduce((sum, fw) => sum + fw.count, 0) || 0}
+            <tr className="font-bold text-[#1f2328] dark:text-[#f0f6fc] bg-[#f0f2f4] dark:bg-[#16181f]">
+              <td className="py-1.5 px-2 border-t border-[#e5e7eb] dark:border-[#2d3140]">Total</td>
+              <td className="text-center py-1.5 px-2 border-t border-[#e5e7eb] dark:border-[#2d3140]">
+                {fwCounts.reduce((sum, fw) => sum + fw.count, 0) || 0}
               </td>
-              <td className="py-1.5 px-2 border-t border-[#d0d7de] dark:border-[#1d2432]"></td>
+              <td className="py-1.5 px-2 border-t border-[#e5e7eb] dark:border-[#2d3140]"></td>
             </tr>
           </tfoot>
         </table>
@@ -449,12 +600,12 @@ export default function ComplianceTab() {
           <div className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">Compliance Logs</div>
           <div className="flex items-center gap-1.5">
             <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportExcel(filteredRecent, COMPLIANCE_EXPORT_COLS, `compliance-logs-${ts}.xlsx`) }}
-              className="text-[10px] px-2 py-1 rounded font-medium bg-[#e8eaed] dark:bg-[#21262d] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
+              className="text-[10px] px-2 py-1 rounded font-medium bg-[#e8eaed] dark:bg-[#2d3140] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Excel
             </button>
             <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportPDFReport({ filename: `compliance-report-${ts}.pdf`, title: 'Compliance Report', dateRange: `${startDate || 'now-24h'} to ${endDate || 'now'}`, metrics: [{ label: 'Events (24h)', value: (data?.count24 || 0).toLocaleString() }, { label: 'Events (7d)', value: (data?.count7d || 0).toLocaleString() }, { label: 'Alert Sources', value: data?.topAgents?.length || 0 }, { label: 'Total Logs', value: filteredRecent.length }], severity: Object.entries(data?.severity || {}).map(([level, count]) => ({ level, count })), topRules: (data?.topRules || []).map(r => ({ key: r.key || r.ruleId || r.id || '--', count: r.doc_count || r.count || 0 })), topAgents: (data?.topAgents || []).map(a => ({ key: a.key || a.agent || a.name || '--', count: a.doc_count || a.events || 0 })), frameworkCounts: (data?.frameworkCounts || []).map(f => ({ framework: f.framework || f.key || '--', count: f.count || f.doc_count || 0 })), timeline: (data?.timeline || []).map(t => ({ time: t.time, count: t.count })), logHeaders: COMPLIANCE_EXPORT_COLS.map(c => c.header.toLowerCase()), logRows: prepareRows(filteredRecent, COMPLIANCE_EXPORT_COLS) }) }}
-              className="text-[10px] px-2 py-1 rounded font-medium bg-[#e8eaed] dark:bg-[#21262d] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
+              className="text-[10px] px-2 py-1 rounded font-medium bg-[#e8eaed] dark:bg-[#2d3140] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
               PDF
             </button>
@@ -468,16 +619,16 @@ export default function ComplianceTab() {
               <col style={{ minWidth: '100px', width: '12%' }} /><col style={{ minWidth: '85px', width: '10%' }} /><col style={{ minWidth: '70px', width: '8%' }} />
             </colgroup>
             <thead>
-              <tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide bg-[#f0f2f4] dark:bg-[#161b22]">
-                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Time</th>
-                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Agent</th>
-                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Rule</th>
-                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Lvl</th>
-                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Description</th>
-                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Event</th>
-                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Frameworks</th>
-                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">Control</th>
-                <th className="text-left py-1.5 px-2 border-b-2 border-[#d0d7de] dark:border-[#1d2432]">File</th>
+              <tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide bg-[#f0f2f4] dark:bg-[#16181f]">
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Time</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Agent</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Rule</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Lvl</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Description</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Event</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Frameworks</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Control</th>
+                <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">File</th>
               </tr>
             </thead>
             <tbody>
@@ -490,44 +641,44 @@ export default function ComplianceTab() {
                 return (
                   <React.Fragment key={rowId}>
                     <tr onClick={() => toggleRow(rowId)}
-                      className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors ${isExp ? 'bg-[#f6f8fa] dark:bg-[#161b22]' : ''}`}>
-                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] text-[#8b949e] overflow-hidden text-ellipsis whitespace-nowrap">
+                      className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors ${isExp ? 'bg-[#f6f8fa] dark:bg-[#16181f]' : ''}`}>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-[#8b949e] overflow-hidden text-ellipsis whitespace-nowrap">
                         <span className="inline-flex items-center gap-1">
                           <span className="text-[10px] w-3 shrink-0">{isExp ? '▾' : '▸'}</span>
                           <span className="truncate">{(r['@timestamp'] || r.timestamp) ? new Date(r['@timestamp'] || r.timestamp).toLocaleString() : '--'}</span>
                         </span>
                       </td>
-                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap">
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap">
                         <button onClick={(e) => { e.stopPropagation(); setFilter('agent', agentName) }}
                           className={`font-semibold text-left hover:underline truncate max-w-full ${filters.agent === agentName ? 'text-[#58a6ff]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
                           {agentName}
                         </button>
                       </td>
-                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap">
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap">
                         <button onClick={(e) => { e.stopPropagation(); setFilter('rule', ruleId) }}
                           className={`font-bold text-left hover:underline truncate max-w-full ${filters.rule === ruleId ? 'text-[#e8681a] underline' : 'text-[#e8681a]'}`}>
                           {ruleId}
                         </button>
                       </td>
-                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432]">{
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140]">{
                         (() => { const lv = parseInt(r.rule?.level || r.level || 0); return <span className="inline-flex items-center justify-center w-[22px] h-[18px] rounded text-[10px] font-semibold" style={{ background: lv >= 7 ? '#450a0a' : lv >= 4 ? '#3d1a00' : '#0d1117', color: lv >= 7 ? '#fca5a5' : lv >= 4 ? '#fdba74' : '#8b949e' }}>{lv}</span> })()
                       }</td>
-                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap text-[#36454f] dark:text-[#c9d1d9] max-w-0">
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap text-[#36454f] dark:text-[#c9d1d9] max-w-0">
                         {r.rule?.description || r.description || '--'}
                       </td>
-                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap text-[#e8681a] font-medium">
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap text-[#e8681a] font-medium">
                         {r.rule?.groups?.[0] || r.event_type || '--'}
                       </td>
-                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap text-[#8b949e] font-medium">{(r._frameworks || []).join(', ') || '--'}</td>
-                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap text-[#8b949e]">{r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || '--'}</td>
-                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#1d2432] overflow-hidden text-ellipsis whitespace-nowrap text-[#8b949e]">{r.data?.file || r.file || '--'}</td>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap text-[#8b949e] font-medium">{(r._frameworks || []).join(', ') || '--'}</td>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap text-[#8b949e]">{r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || '--'}</td>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap text-[#8b949e]">{r.data?.file || r.file || '--'}</td>
                     </tr>
                     {isExp && (
                       <tr>
-                        <td colSpan={9} className="p-0 border-b border-[#f0f2f4] dark:border-[#1d2432]">
+                        <td colSpan={9} className="p-0 border-b border-[#f0f2f4] dark:border-[#2d3140]">
                           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} transition={{ duration: 0.15 }}>
-                            <div className="bg-[#f6f8fa] dark:bg-[#0d1117] border-t border-[#d0d7de] dark:border-[#1d2432]">
-                              <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#d0d7de] dark:border-[#1d2432]">
+                            <div className="bg-[#f6f8fa] dark:bg-[#16181f] border-t border-[#e5e7eb] dark:border-[#2d3140]">
+                              <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#e5e7eb] dark:border-[#2d3140]">
                                 <div className="flex items-center gap-2">
                                   <button onClick={(e) => { e.stopPropagation(); setJsonView(prev => ({ ...prev, [rowId]: false })) }}
                                     className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${!jsonView[rowId] ? 'bg-[#e8681a] text-white' : 'text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#21262d]'}`}>Table</button>
@@ -535,7 +686,7 @@ export default function ComplianceTab() {
                                     className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${jsonView[rowId] ? 'bg-[#e8681a] text-white' : 'text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#21262d]'}`}>JSON</button>
                                 </div>
                                 <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(JSON.stringify(r, null, 2)) }}
-                                  className="text-[10px] px-2 py-0.5 rounded font-medium bg-[#e8eaed] dark:bg-[#21262d] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
+                                  className="text-[10px] px-2 py-0.5 rounded font-medium bg-[#e8eaed] dark:bg-[#2d3140] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
                                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
                                   Copy
                                 </button>
@@ -547,7 +698,7 @@ export default function ComplianceTab() {
                                   <table className="w-full text-[11px]">
                                     <tbody>
                                       {flattenDoc(r).map((fld, fi) => (
-                                        <tr key={fi} className="border-b border-[#d0d7de]/30 dark:border-[#1d2432]/30 hover:bg-[#f0f2f4] dark:hover:bg-[#161b22]">
+                                        <tr key={fi} className="border-b border-[#e5e7eb]/30 dark:border-[#2d3140]/30 hover:bg-[#f0f2f4] dark:hover:bg-[#161b22]">
                                           <td className="px-3 py-1 font-medium text-[#1f2328] dark:text-[#f0f6fc] whitespace-nowrap w-1/3 align-top text-[10px]">{fld.path}</td>
                                           <td className="px-3 py-1 text-[#36454f] dark:text-[#c9d1d9] break-all text-[11px]">{String(fld.value ?? '')}</td>
                                         </tr>
@@ -574,36 +725,45 @@ export default function ComplianceTab() {
           <div className="flex items-center justify-between mt-2.5 flex-wrap gap-2">
             <div className="flex items-center gap-1 text-[11px] text-[#8b949e]">
               <span className="mr-1 text-[10px]">{(logPage - 1) * LOG_PAGE_SIZE + 1}-{Math.min(logPage * LOG_PAGE_SIZE, filteredRecent.length)} of {filteredRecent.length}</span>
-              <button onClick={() => setLogPage(p => Math.max(1, p - 1))} disabled={logPage === 1}
-                className="bg-transparent border border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-              </button>
-              {Array.from({ length: Math.min(totalLogPages, 5) }, (_, i) => {
-                const startPage = Math.max(1, Math.min(logPage - 2, totalLogPages - 4))
-                const p = startPage + i
-                if (p > totalLogPages) return null
-                return (
-                  <button key={p} onClick={() => setLogPage(p)}
-                    className={`bg-transparent border px-2 py-0.5 rounded text-[11px] min-w-[28px] transition-all ${
-                      p === logPage ? 'bg-[#e8681a] text-white border-[#e8681a]' : 'border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a]'
-                    }`}>{p}</button>
-                )
-              })}
-              {totalLogPages > 5 && logPage < totalLogPages - 2 && <span className="px-0.5 text-[#8b949e] text-[10px]">...</span>}
-              {totalLogPages > 5 && logPage < totalLogPages - 2 && (
-                <button onClick={() => setLogPage(totalLogPages)}
-                  className="bg-transparent border border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] transition-all">{totalLogPages}</button>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setLogPage(p => Math.max(1, p - 1))} disabled={logPage === 1}
+                  className="bg-transparent border border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[10px] min-w-[26px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                {Array.from({ length: Math.min(totalLogPages, 5) }, (_, i) => {
+                  const pn = totalLogPages <= 5 ? i + 1 : Math.max(1, Math.min(logPage - 2, totalLogPages - 4)) + i
+                  if (pn > totalLogPages) return null
+                  return (
+                    <button key={pn} onClick={() => setLogPage(pn)}
+                      className={`bg-transparent border px-2 py-0.5 rounded text-[10px] min-w-[26px] transition-all ${pn === logPage ? 'bg-[#e8681a] text-white border-[#e8681a]' : 'border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a]'}`}>{pn}</button>
+                  )
+                })}
+                {totalLogPages > 5 && logPage < totalLogPages - 2 && <span className="px-0.5 text-[#8b949e]">...</span>}
+                {totalLogPages > 5 && (
+                  <button onClick={() => setLogPage(totalLogPages)}
+                    className="bg-transparent border border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[10px] min-w-[26px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] transition-all">{totalLogPages}</button>
+                )}
+                <button onClick={() => setLogPage(p => Math.min(totalLogPages, p + 1))} disabled={logPage === totalLogPages}
+                  className="bg-transparent border border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[10px] min-w-[26px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+              </div>
+              {logPage === totalLogPages && (evFilterQuery ? evFilterOffsetRef.current < 10000 : evExtraOffsetRef.current < (data?.recentTotal || 0)) && (
+                <button onClick={loadMoreLogs} disabled={evLoadingMore}
+                  className="ml-auto px-3 py-1 text-xs font-bold bg-[#e8681a]/10 text-[#e8681a] border border-[#e8681a]/30 rounded-lg hover:bg-[#e8681a]/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-2">
+                  {evLoadingMore ? (
+                    <><svg className="animate-spin" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="32" strokeLinecap="round"/></svg> Loading...</>
+                  ) : (
+                    <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg> Load 500 more ({evFilterQuery ? Math.min(10000 - evFilterOffsetRef.current, 10000 - evFilterOffsetRef.current) : Math.min((data?.recentTotal || 0) - evExtraOffsetRef.current, 10000 - evExtraOffsetRef.current)} remaining)</>
+                  )}
+                </button>
               )}
-              <button onClick={() => setLogPage(p => Math.min(totalLogPages, p + 1))} disabled={logPage === totalLogPages}
-                className="bg-transparent border border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-              </button>
             </div>
           </div>
         )}
       </div>
 
-      <div className="text-center text-[10px] text-[#8b949e] py-3 border-t border-[#d0d7de] dark:border-[#1d2432]">&copy; 2025 UniShield 360. All rights reserved.</div>
+      <div className="text-center text-[10px] text-[#8b949e] py-3 border-t border-[#e5e7eb] dark:border-[#2d3140]">&copy; 2025 UniShield 360. All rights reserved.</div>
 
       {modalContent()}
     </motion.div>

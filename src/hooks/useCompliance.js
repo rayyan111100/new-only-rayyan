@@ -31,7 +31,7 @@ function transform(d) {
     })),
     categories: (d.categories || []).slice(0, 8),
     topControls: d.topControls || [],
-    recent: (d.recent || []).slice(0, 500),
+    recent: (d.recent || []).slice(0, 1000),
     recentTotal: d.recentTotal || 0
   }
 }
@@ -69,7 +69,7 @@ export default function useCompliance(framework) {
   const mountedRef = useRef(true)
   const cacheKeyRef = useRef(cacheKey)
 
-  const fetchData = useCallback(async (silent) => {
+  const fetchData = useCallback(async (silent, noCache) => {
     const key = cacheKeyRef.current
     const cached = cache.get(key)
     if (!silent && !cached) {
@@ -84,6 +84,7 @@ export default function useCompliance(framework) {
         end_date: ed.toISOString(),
       }
       if (framework) params.framework = framework
+      if (noCache) params._t = Date.now()
       const d = await api('compliance', params)
       const t = transform(d)
       cache.set(key, { data: { d: t, time: Date.now(), timeKey } })
@@ -134,7 +135,7 @@ export default function useCompliance(framework) {
     return () => { mountedRef.current = false }
   }, [])
 
-  const refresh = useCallback(() => fetchData(false), [fetchData])
+  const refresh = useCallback(() => fetchData(false, true), [fetchData])
 
   return useMemo(() => ({ ...state, refresh, toLogEntry, toSev }), [state, refresh])
 }

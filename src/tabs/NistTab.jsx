@@ -9,6 +9,8 @@ import { exportExcel, exportPDFReport, prepareRows } from '../utils/exportLogs'
 import { PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import FilterableMetricCard from '../components/FilterableMetricCard'
 import InlineFilter from '../components/InlineFilter'
+import { api } from '../api'
+import { parseDateStr } from '../utils'
 
 const SEV_COLORS = { Critical: '#f85149', High: '#e8681a', Medium: '#d29922', Low: '#3fb950' }
 const SEV_ORDER = ['Critical', 'High', 'Medium', 'Low']
@@ -54,6 +56,40 @@ export default function NistTab() {
   const containerRef = useRef(null)
   const LOG_PAGE_SIZE = 10
   const { data, loading, error, toLogEntry, toSev, refresh } = useCompliance('NIST 800-53')
+  const [evExtraLogs, setEvExtraLogs] = useState([])
+  const evExtraOffsetRef = useRef(0)
+  const [evLoadingMore, setEvLoadingMore] = useState(false)
+  const loadMoreLogs = useCallback(async () => {
+    setEvLoadingMore(true)
+    try {
+      const sd = parseDateStr(startDate).toISOString()
+      const ed = parseDateStr(endDate).toISOString()
+      const res = await api('search', { index: 'unishield360-alerts-4.x-*', start_date: sd, end_date: ed, q: '_exists_:rule.nist_800_53', limit: 500, offset: evExtraOffsetRef.current, sort: '@timestamp', order: 'desc' })
+      const results = res.results || []
+      const mapped = results.map(r => ({ ...toLogEntry(r), raw: r }))
+      setEvExtraLogs(prev => [...prev, ...mapped])
+      evExtraOffsetRef.current += mapped.length
+    } catch (e) {
+      console.error('loadMoreLogs error:', e)
+    } finally {
+      setEvLoadingMore(false)
+    }
+  }, [startDate, endDate, toLogEntry])
+  useEffect(() => {
+    setEvExtraLogs([])
+    evExtraOffsetRef.current = 0
+  }, [data?.recent])
+  const handleRefresh = useCallback(() => {
+    setFilters({})
+    setExcludes({})
+    setTimelineFilter(null)
+    setLogPage(1)
+    setExpandedRow({})
+    setJsonView({})
+    setEvExtraLogs([])
+    evExtraOffsetRef.current = 0
+    refresh()
+  }, [refresh])
   const toggleRow = useCallback((id) => {
     setExpandedRow(prev => ({ ...prev, [id]: !prev[id] }))
   }, [])
@@ -159,8 +195,9 @@ export default function NistTab() {
   const activeExcludes = Object.keys(excludes)
 
   const logEntries = useMemo(() => {
-    return (data?.recent || []).map(r => ({ ...toLogEntry(r), raw: r }))
-  }, [data, toLogEntry])
+    const initial = (data?.recent || []).map(r => ({ ...toLogEntry(r), raw: r }))
+    return [...initial, ...evExtraLogs]
+  }, [data, toLogEntry, evExtraLogs])
 
   const hasActiveFilter = activeFilters.length > 0 || activeExcludes.length > 0 || !!timelineFilter
 
@@ -399,7 +436,7 @@ export default function NistTab() {
         </div>
         <div className="flex items-center gap-2 mt-1.5">
           <DateRangePicker />
-          <button onClick={() => refresh()} className="p-1.5 rounded border border-transparent hover:bg-[#21262d] text-[#8b949e] hover:text-[#e8681a] transition-colors">
+          <button onClick={handleRefresh} className="p-1.5 rounded border border-transparent hover:bg-[#21262d] text-[#8b949e] hover:text-[#e8681a] transition-colors">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           </button>
         </div>
@@ -654,7 +691,7 @@ export default function NistTab() {
       </div>
 
       <div className="mb-3">
-        {data?.recentTotal > 500 && (
+        {data?.recentTotal > 1000 && (
           <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-[#ddf4ff] dark:bg-[#0c2d6b] border border-[#54aeff66] dark:border-[#1f6feb66] text-[11px] text-[#0969da] dark:text-[#58a6ff]">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             <span><strong>{data.recentTotal.toLocaleString()}</strong> events found. Select a narrower time range for detailed log views.</span>
@@ -820,26 +857,38 @@ export default function NistTab() {
           <div className="flex items-center gap-1 text-[11px] text-[#8b949e]">
             <span className="mr-1">{(logPage - 1) * LOG_PAGE_SIZE + 1}-{Math.min(logPage * LOG_PAGE_SIZE, filteredLogs.length)} of {filteredLogs.length}</span>
             <button onClick={() => setLogPage(p => Math.max(1, p - 1))} disabled={logPage === 1}
-              className="bg-transparent border border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
+              className="bg-transparent border border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
             </button>
             {Array.from({ length: Math.min(totalLogPages, 3) }, (_, i) => i + 1).map(p => (
               <button key={p} onClick={() => setLogPage(p)}
                 className={`bg-transparent border px-2 py-0.5 rounded text-[11px] min-w-[28px] transition-all ${
-                  p === logPage ? 'bg-[#e8681a] text-white border-[#e8681a]' : 'border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a]'
+                  p === logPage ? 'bg-[#e8681a] text-white border-[#e8681a]' : 'border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a]'
                 }`}>{p}</button>
             ))}
             {totalLogPages > 3 && <span className="px-0.5 text-[#8b949e]">...</span>}
             {totalLogPages > 3 && (
               <button onClick={() => setLogPage(totalLogPages)}
-                className="bg-transparent border border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] transition-all">{totalLogPages}</button>
+                className="bg-transparent border border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] transition-all">{totalLogPages}</button>
             )}
             <button onClick={() => setLogPage(p => Math.min(totalLogPages, p + 1))} disabled={logPage === totalLogPages}
-              className="bg-transparent border border-[#d0d7de] dark:border-[#30363d] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
+              className="bg-transparent border border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
             </button>
           </div>
         </div>
+        {logPage === totalLogPages && evExtraOffsetRef.current < (data?.recentTotal || 0) && (
+          <div className="flex justify-center py-3 border-t border-[#e5e7eb] dark:border-[#2d3140]">
+            <button onClick={loadMoreLogs} disabled={evLoadingMore}
+              className="px-4 py-1.5 text-xs font-bold bg-[#e8681a]/10 text-[#e8681a] border border-[#e8681a]/30 rounded-lg hover:bg-[#e8681a]/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-2">
+              {evLoadingMore ? (
+                <><svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="32" strokeLinecap="round"/></svg> Loading 500 more...</>
+              ) : (
+                <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg> Load 500 more ({Math.min((data?.recentTotal || 0) - evExtraOffsetRef.current, 10000 - evExtraOffsetRef.current)} remaining)</>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="text-center text-[10px] text-[#8b949e] py-3 border-t border-[#d0d7de] dark:border-[#30363d]">&copy; 2025 UniShield 360. All rights reserved.</div>
