@@ -376,3 +376,34 @@ Configure: title, dimensions, bucket field/type/size, query filter, X-Axis (labe
    - Check value quoting — are colons/spaces wrapped in quotes?
    - Log the actual API URL being called
    - Test the same URL directly via curl/PowerShell
+
+## MCP Server Data Context
+- **URL**: `http://192.168.1.77:9996` (Wazuh host, port 9996)
+- **Endpoints**: `/info`, `/health`, `/rules`, `/rules/read`, `/decoders`, `/decoders/read`, `/integrations`, `/config`, `/alerts/schema`, `/alerts/search`, `/agents`
+
+### Alert Schema (from `/alerts/schema`)
+| Key | Type | Sub-fields |
+|---|---|---|
+| `predecoder` | object | `hostname: string`, `program_name: string`, `timestamp: string` |
+| `agent` | object | `name: string`, `id: string` |
+| `manager` | object | `name: string` |
+| `rule` | object | `firedtimes: number`, `mail: boolean`, `level: number`, `description: string`, `groups: string[]`, `id: string`, `gpg13: string[]`, `gdpr: string[]` |
+| `decoder` | object | `name: string` |
+| `input` | object | `type: string` |
+| `full_log` | string | — |
+| `@timestamp` | string | — |
+| `location` | string | — |
+| `id` | string | — |
+| `timestamp` | string | — |
+
+### Decoders (9 files)
+auditd_decoders.xml, decoder-linux-sysmon.xml, local_decoder.xml, local_decoder_activeresponse.xml, naxsi-opnsense_decoders.xml, pcre2_0510-maltrail_decoders.xml, pfsense_custom.xml, vvf_action1_decoders.xml, yara_decoders.xml
+
+### Agents (7)
+U360-Engine, root, COREGENIX, Rayyan, suyash-window, My-SurfaceLaptop, Rayyan-laptop
+
+### Known Rule Groups (from real data + schema)
+`local`, `systemd`, `syscheck`, `syscheck_file`, `syscheck_registry`, `syscheck_entry_added`, `syscheck_entry_deleted`, `syscheck_entry_modified`, `misp`, `multiple_blocks`, `reconnaissance`
+
+### FIM-Specific Fields (verified from real API)
+`syscheck.path`, `syscheck.event`, `syscheck.uname_after`, `syscheck.audit.user.name`, `syscheck.inode`, `syscheck.gid`, `syscheck.gname`, `syscheck.hard_links`, `syscheck.uid`, `syscheck.uname`, `syscheck.perm_after`, `syscheck.perm_before`, `syscheck.md5_before`, `syscheck.sha1_before`, `syscheck.sha256_before`, `syscheck.md5_after`, `syscheck.sha1_after`, `syscheck.sha256_after`
