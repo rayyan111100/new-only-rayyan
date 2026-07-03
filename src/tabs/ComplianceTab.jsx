@@ -40,7 +40,7 @@ const FRAMEWORK_TO_FIELD = {
   'GDPR': 'rule.gdpr',
   'TSC (SOC 2)': 'rule.tsc',
   'NIST 800-53': 'rule.nist_800_53',
-  'MITRE ATT&CK': 'rule.mitre_attack'
+  'MITRE ATT&CK': 'rule.mitre'
 }
 
 function buildFilterQuery(filters) {
@@ -49,7 +49,7 @@ function buildFilterQuery(filters) {
     parts.push('_exists_:' + FRAMEWORK_TO_FIELD[filters.framework])
   }
   if (filters.severity) {
-    const sevRanges = { Critical: 'rule.level:>=12', High: '(rule.level:[7 TO 11])', Medium: '(rule.level:[4 TO 6])', Low: '(rule.level:[1 TO 3])' }
+    const sevRanges = { Critical: 'rule.level:[12 TO *]', High: '(rule.level:[7 TO 11])', Medium: '(rule.level:[4 TO 6])', Low: '(rule.level:[1 TO 3])' }
     if (sevRanges[filters.severity]) parts.push(sevRanges[filters.severity])
   }
   if (filters.agent) {
@@ -102,7 +102,7 @@ export default function ComplianceTab() {
   const [logPage, setLogPage] = useState(1)
   const LOG_PAGE_SIZE = 50
   const MAX_LOG_PAGES = 10
-  const { data, loading, error, refresh } = useCompliance()
+  const { data, loading, error, refresh } = useCompliance(filters.framework)
   const [evExtraLogs, setEvExtraLogs] = useState([])
   const evExtraOffsetRef = useRef(0)
   const [evLoadingMore, setEvLoadingMore] = useState(false)
@@ -246,53 +246,12 @@ export default function ComplianceTab() {
 
   const totalLogPages = Math.max(1, Math.ceil(filteredRecent.length / LOG_PAGE_SIZE))
 
-  const hasActiveFilter = activeFilters.length > 0
-
-  const chartData = useMemo(() => {
-    if (!hasActiveFilter) return null
-    const sev = {}
-    SEV_ORDER.forEach(s => sev[s] = 0)
-    const ctrlMap = {}
-    const agMap = {}
-    const ruleMap = {}
-    const fwMap = {}
-    for (const r of filteredRecent) {
-      const level = parseInt(r.rule?.level || r.level || 0)
-      const s = level >= 12 ? 'Critical' : level >= 7 ? 'High' : level >= 4 ? 'Medium' : 'Low'
-      sev[s] = (sev[s] || 0) + 1
-      const agentName = r.agent?.name || r.agent || ''
-      if (agentName) agMap[agentName] = (agMap[agentName] || 0) + 1
-      const ruleId = r.rule?.id || r.rule || ''
-      if (ruleId) ruleMap[ruleId] = (ruleMap[ruleId] || 0) + 1
-      const ctrl = r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || ''
-      if (ctrl) ctrlMap[ctrl] = (ctrlMap[ctrl] || 0) + 1
-      const frameworks = r._frameworks || []
-      if (frameworks.length === 0) {
-        for (const [fwName, fwField] of Object.entries(FRAMEWORK_TO_FIELD)) {
-          const parts = fwField.split('.')
-          let val = r
-          for (const p of parts) { if (val) val = val[p] }
-          if (val && val.toString().trim()) frameworks.push(fwName)
-        }
-      }
-      for (const fw of frameworks) fwMap[fw] = (fwMap[fw] || 0) + 1
-    }
-    return {
-      severity: sev,
-      controls: ctrlMap,
-      topAgents: Object.entries(agMap).map(([key, doc_count]) => ({ key, doc_count })).sort((a, b) => b.doc_count - a.doc_count).slice(0, 8),
-      topRules: Object.entries(ruleMap).map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count).slice(0, 8),
-      frameworkCounts: Object.entries(fwMap).map(([framework, count]) => ({ framework, count })).sort((a, b) => b.count - a.count)
-    }
-  }, [filteredRecent, hasActiveFilter])
-  const totalEvents = hasActiveFilter && chartData
-    ? Object.values(chartData.severity).reduce((a, b) => a + b, 0)
-    : data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
-  const fwCounts = hasActiveFilter && chartData ? chartData.frameworkCounts : data?.frameworkCounts || []
+  const totalEvents = data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
+  const fwCounts = data?.frameworkCounts || []
   const maxFw = fwCounts.length > 0 ? Math.max(...fwCounts.map(f => f.count), 1) : 1
-  const agentsData = hasActiveFilter && chartData ? chartData.topAgents : data?.topAgents || []
+  const agentsData = data?.topAgents || []
   const maxAgent = agentsData.length > 0 ? Math.max(...agentsData.map(a => a.doc_count || 0), 1) : 1
-  const sevData = hasActiveFilter && chartData ? chartData.severity : data?.severity || {}
+  const sevData = data?.severity || {}
   const sevDonut = SEV_ORDER.filter(s => (sevData[s] || 0) > 0).map(s => ({
     name: s, value: sevData[s], color: SEV_COLORS[s]
   }))
@@ -485,7 +444,7 @@ export default function ComplianceTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Framework</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Control</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Events</th></tr></thead>
             <tbody>
-              {(hasActiveFilter && chartData ? chartData.topRules : data?.topRules || []).slice(0, 5).map((r, i) => {
+              {(data?.topRules || []).slice(0, 5).map((r, i) => {
                 const ruleId = r.ruleId || r.key || r.rule || r.id || ''
                 return (
                   <tr key={r.key || i} onClick={() => setFilter('rule', ruleId)}

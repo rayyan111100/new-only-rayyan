@@ -24,16 +24,24 @@ function transform(d) {
     frameworkCounts: d.frameworkCounts || [],
     topRules: (d.topRules || []).slice(0, 8),
     topAgents: (d.topAgents || []).slice(0, 8),
-    timeline: (d.timeline || []).map(b => ({
-      time: new Date(b.time || b.key).toLocaleDateString([], { month: 'short', day: 'numeric' }),
-      rawTime: b.time || b.key,
-      count: b.count || b.doc_count || 0
-    })),
+    timeline: (d.timeline || []).map(b => {
+      const ts = parseInt(b.time || b.key) || 0
+      const d2 = ts ? new Date(ts) : null
+      return {
+        time: d2 ? d2.toLocaleDateString([], { month: 'short', day: 'numeric' }) : '--',
+        rawTime: ts,
+        count: b.count || b.doc_count || 0
+      }
+    }),
     categories: (d.categories || []).slice(0, 8),
     topControls: d.topControls || [],
     recent: (d.recent || []).slice(0, 1000),
     recentTotal: d.recentTotal || 0
   }
+}
+
+function toEntry(val) {
+  return Array.isArray(val) ? val[0] : val
 }
 
 function toLogEntry(r) {
@@ -46,15 +54,17 @@ function toLogEntry(r) {
     event: r.rule?.groups?.[0] || r.event_type || '--',
     file: r.data?.file || r.file || '--',
     groups: r.rule?.groups?.join(', ') || '--',
-    ctrl: r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || '--'
+    ctrl: toEntry(r.rule?.gdpr) || toEntry(r.rule?.tsc) || toEntry(r.rule?.hipaa) || toEntry(r.rule?.pci_dss) || toEntry(r.rule?.nist_800_53) || r.control || '--'
   }
 }
 
-export default function useCompliance(framework) {
+export default function useCompliance(framework, filters = {}) {
   const { startDate: rawStart, endDate: rawEnd } = useApp()
   const startDate = rawStart || 'now-24h'
   const endDate = rawEnd || 'now'
-  const cacheKey = framework || '__all__'
+  const severityFilter = filters.severity
+  const sevKey = (severityFilter || []).sort().join(',')
+  const cacheKey = `${framework || '__all__'}|${sevKey}`
   const timeKey = `${startDate}|${endDate}`
 
   const [state, setState] = useState(() => {
@@ -84,6 +94,7 @@ export default function useCompliance(framework) {
         end_date: ed.toISOString(),
       }
       if (framework) params.framework = framework
+      if (severityFilter?.length) params.severity = severityFilter.join(',')
       if (noCache) params._t = Date.now()
       const d = await api('compliance', params)
       const t = transform(d)
@@ -96,7 +107,7 @@ export default function useCompliance(framework) {
         setState(s => ({ ...s, loading: false, error: silent ? null : e.message }))
       }
     }
-  }, [framework, startDate, endDate, timeKey])
+  }, [framework, startDate, endDate, timeKey, severityFilter])
 
   useEffect(() => {
     cacheKeyRef.current = cacheKey

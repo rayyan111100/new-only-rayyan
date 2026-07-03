@@ -59,30 +59,34 @@ export default function GdprTab() {
   const [timelineFilter, setTimelineFilter] = useState(null)
   const containerRef = useRef(null)
   const LOG_PAGE_SIZE = 10
-  const { data, loading, error, toLogEntry, toSev, refresh } = useCompliance('GDPR')
+  const { data, loading, error, toLogEntry, toSev, refresh } = useCompliance('GDPR', filters)
   const [evExtraLogs, setEvExtraLogs] = useState([])
-  const evExtraOffsetRef = useRef(0)
   const [evLoadingMore, setEvLoadingMore] = useState(false)
+  const loadedCount = (data?.recent?.length || 0) + evExtraLogs.length
   const loadMoreLogs = useCallback(async () => {
     setEvLoadingMore(true)
     try {
       const sd = parseDateStr(startDate).toISOString()
       const ed = parseDateStr(endDate).toISOString()
-      const res = await api('search', { index: 'unishield360-alerts-4.x-*', start_date: sd, end_date: ed, q: '_exists_:rule.gdpr', limit: 500, offset: evExtraOffsetRef.current, sort: '@timestamp', order: 'desc' })
+      const offset = (data?.recent?.length || 0) + evExtraLogs.length
+      const res = await api('search', { index: 'unishield360-alerts-4.x-*', start_date: sd, end_date: ed, q: '_exists_:rule.gdpr', limit: 500, offset, sort: '@timestamp', order: 'desc' })
       const results = res.results || []
-      const mapped = results.map(r => ({ ...toLogEntry(r), raw: r }))
+      const mapped = results.map(r => {
+        const entry = toLogEntry(r)
+        const gdpr = r.rule?.gdpr
+        entry.art = Array.isArray(gdpr) ? gdpr[0] : (gdpr || entry.ctrl || '--')
+        return { ...entry, raw: r }
+      })
       setEvExtraLogs(prev => [...prev, ...mapped])
-      evExtraOffsetRef.current += mapped.length
     } catch (e) {
       console.error('loadMoreLogs error:', e)
     } finally {
       setEvLoadingMore(false)
     }
-  }, [startDate, endDate, toLogEntry])
+  }, [startDate, endDate, data, evExtraLogs, toLogEntry])
   useEffect(() => {
     setEvExtraLogs([])
-    evExtraOffsetRef.current = 0
-  }, [data?.recent])
+  }, [filters.severity, startDate, endDate])
   const handleRefresh = useCallback(() => {
     setFilters({})
     setExcludes({})
@@ -91,7 +95,6 @@ export default function GdprTab() {
     setExpandedRow({})
     setJsonView({})
     setEvExtraLogs([])
-    evExtraOffsetRef.current = 0
     refresh()
   }, [refresh])
   const toggleRow = useCallback((id) => {
@@ -199,11 +202,14 @@ export default function GdprTab() {
   const activeExcludes = Object.keys(excludes)
 
   const logEntries = useMemo(() => {
-    const initial = (data?.recent || []).map(r => ({ ...toLogEntry(r), raw: r }))
+    const initial = (data?.recent || []).map(r => {
+      const entry = toLogEntry(r)
+      const gdpr = r.rule?.gdpr
+      entry.art = Array.isArray(gdpr) ? gdpr[0] : (gdpr || entry.ctrl || '--')
+      return { ...entry, raw: r }
+    })
     return [...initial, ...evExtraLogs]
   }, [data, toLogEntry, evExtraLogs])
-
-  const hasActiveFilter = activeFilters.length > 0 || activeExcludes.length > 0 || !!timelineFilter
 
   const DAY_MS = 86400000
   const filteredLogs = logEntries.filter(l => {
@@ -230,65 +236,26 @@ export default function GdprTab() {
 
   const totalLogPages = Math.ceil(filteredLogs.length / LOG_PAGE_SIZE)
 
-  const chartData = useMemo(() => {
-    if (!hasActiveFilter) return null
-    const logs = filteredLogs
-    const sev = {}
-    SEV_ORDER.forEach(s => sev[s] = 0)
-    logs.forEach(l => { if (l.sev) sev[l.sev] = (sev[l.sev] || 0) + 1 })
-    const ctrlMap = {}
-    logs.forEach(l => { if (l.art) ctrlMap[l.art] = (ctrlMap[l.art] || 0) + 1 })
-    const agMap = {}
-    logs.forEach(l => { if (l.agent) agMap[l.agent] = (agMap[l.agent] || 0) + 1 })
-    const ruleMap = {}
-    logs.forEach(l => { if (l.rule) ruleMap[l.rule] = (ruleMap[l.rule] || 0) + 1 })
-    return {
-      severity: sev,
-      controls: ctrlMap,
-      topAgents: Object.entries(agMap).map(([key, doc_count]) => ({ key, doc_count })).sort((a, b) => b.doc_count - a.doc_count).slice(0, 10),
-      topRules: Object.entries(ruleMap).map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count).slice(0, 10)
-    }
-  }, [filteredLogs, hasActiveFilter])
-
-  useEffect(() => { setLogPage(1) }, [activeFilters.join(), activeExcludes.join()])
-
-  const totalEvents = hasActiveFilter && chartData
-    ? Object.values(chartData.severity).reduce((a, b) => a + b, 0)
-    : data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
-
-  const maxAgent = hasActiveFilter && chartData
-    ? Math.max(...chartData.topAgents.map(a => a.doc_count || 0), 1)
-    : data ? Math.max(...data.topAgents.map(a => a.doc_count || 0), 1) : 1
+  const totalEvents = data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
+  const maxAgent = data ? Math.max(...data.topAgents.map(a => a.doc_count || 0), 1) : 1
 
   const articleEvents = useMemo(() => {
     const map = {}
-    if (hasActiveFilter && chartData) {
-      GDPR_ARTICLES.forEach(a => { map[a.art] = chartData.controls[a.art] || 0 })
-      return map
+    for (const c of (data?.topControls || [])) {
+      map[c.control || c.key] = c.count
     }
-    if (data?.topRules) {
-      data.topRules.forEach(r => {
-        const art = r.control || ''
-        if (art && GDPR_ARTICLES.some(a => a.art === art)) {
-          map[art] = (map[art] || 0) + (r.count || 0)
-        }
-      })
-    }
-    if (Object.keys(map).length === 0 && data?.recent) {
-      data.recent.forEach(r => {
-        const entry = toLogEntry(r)
-        if (entry.ctrl && GDPR_ARTICLES.some(a => a.art === entry.ctrl)) {
-          map[entry.ctrl] = (map[entry.ctrl] || 0) + 1
-        }
-      })
-    }
-    GDPR_ARTICLES.forEach(a => { if (!map[a.art]) map[a.art] = 0 })
     return map
-  }, [data, toLogEntry, chartData, hasActiveFilter])
+  }, [data])
 
   const maxArticle = Math.max(...Object.values(articleEvents), 1)
+  const topArticlesByCount = useMemo(() =>
+    Object.entries(articleEvents)
+      .map(([art, count]) => ({ art, count }))
+      .sort((a, b) => b.count - a.count),
+    [articleEvents]
+  )
 
-  const severitySource = hasActiveFilter && chartData ? chartData.severity : data?.severity || {}
+  const severitySource = data?.severity || {}
   const sevDonut = SEV_ORDER.filter(s => (severitySource[s] || 0) > 0).map(s => ({
     name: s, value: severitySource[s], color: SEV_COLORS[s]
   }))
@@ -320,6 +287,10 @@ export default function GdprTab() {
     setModal(k)
   }
 
+  const articlesViolated = topArticlesByCount.filter(a => a.count > 0).length
+  const topArticle = topArticlesByCount[0]
+  const topArticleVal = topArticle?.count > 0 ? topArticle.art : '--'
+  const topArticleSub = topArticle?.count > 0 ? topArticle.art + ' · ' + topArticle.count + ' Events' : ''
   const getArticleEvents = (art) => articleEvents[art] || 0
 
   const modalContent = () => {
@@ -335,8 +306,7 @@ export default function GdprTab() {
 
     if (mKey.startsWith('art-')) {
       const art = mKey.replace('art-', '')
-      const article = GDPR_ARTICLES.find(a => a.art === art)
-      if (!article) return null
+      const entry = GDPR_ARTICLES.find(a => a.art === art)
       const ev = getArticleEvents(art)
       return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeModal}>
@@ -349,7 +319,7 @@ export default function GdprTab() {
               <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Article</div><div className="text-sm font-bold text-[#e8681a]">{art}</div></div>
               <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Events</div><div className="text-2xl font-bold text-[#f0f6fc]">{ev}</div></div>
             </div>
-            <p className="text-xs text-[#36454f] dark:text-[#c9d1d9] leading-relaxed mb-3">{article.desc} &mdash; {ev} events detected in this period. Review flagged resources and assess whether any personal data breach notification obligations under Article 33 apply.</p>
+            <p className="text-xs text-[#36454f] dark:text-[#c9d1d9] leading-relaxed mb-3">{entry?.desc || art} &mdash; {ev} events detected in this period. Review flagged resources and assess whether any personal data breach notification obligations under Article 33 apply.</p>
             <div className="p-3 rounded-lg text-xs leading-relaxed" style={{ background: '#e8893a18', border: '1px solid #e8893a44', color: '#fdba74' }}>
               <strong>Recommendation:</strong> Investigate all {ev} events tied to {art}. If personal data was compromised, notify the DPA within 72 hours per Article 33(1).
             </div>
@@ -402,15 +372,14 @@ export default function GdprTab() {
       )
     }
 
-    const topArticle = GDPR_ARTICLES.map(a => ({ ...a, ev: getArticleEvents(a.art) })).sort((a, b) => b.ev - a.ev)[0]
     const md = {
-      'm-events': { t: 'GDPR Events', b: `Total GDPR events: ${totalEvents.toLocaleString()} across ${data?.topAgents?.length || 0} active agents. Top article: ${topArticle?.art || 'N/A'} with ${topArticle?.ev || 0} events.` },
+      'm-events': { t: 'GDPR Events', b: `Total GDPR events: ${totalEvents.toLocaleString()} across ${data?.topAgents?.length || 0} active agents. Top article: ${topArticle?.art || 'N/A'} with ${topArticle?.count || 0} events.` },
       'm-crit': { t: 'Critical Violations', b: `Critical violations: ${data?.severity?.Critical || 0}. Immediate action required if any constitute personal data breaches under GDPR Article 33.` },
       'm-high': { t: 'High Severity Violations', b: `High severity violations: ${data?.severity?.High || 0}. These require prompt investigation to determine if personal data was compromised.` },
       'm-med': { t: 'Medium Severity Violations', b: `Medium severity violations: ${data?.severity?.Medium || 0}. Review and address according to incident response procedures.` },
       'm-assets': { t: 'Monitored Assets', b: `${data?.topAgents?.length || 0} active agents generating GDPR compliance events.` },
-      'm-articles': { t: 'Articles Violated', b: `${GDPR_ARTICLES.filter(a => getArticleEvents(a.art) > 0).length} unique GDPR articles were violated this period: ${GDPR_ARTICLES.filter(a => getArticleEvents(a.art) > 0).map(a => a.art).join(', ')}. Each maps to specific obligations under the GDPR.` },
-      'm-top-art': { t: 'Most Active Article', b: topArticle ? `Article ${topArticle.art} (${topArticle.desc}) is the most frequently violated article with ${topArticle.ev} events.` : 'No article violation data available.' }
+      'm-articles': { t: 'Articles Violated', b: `${articlesViolated} unique GDPR articles were violated this period: ${topArticlesByCount.filter(a => a.count > 0).map(a => a.art).join(', ')}. Each maps to specific obligations under the GDPR.` },
+      'm-top-art': { t: 'Most Active Article', b: topArticle ? `Article ${topArticle.art} is the most frequently violated article with ${topArticle.count} events.` : 'No article violation data available.' }
     }
 
     const d = md[mKey]
@@ -499,14 +468,13 @@ export default function GdprTab() {
       {/* Metric Cards */}
       <div className="grid grid-cols-6 gap-2.5 mb-3">
         {(() => {
-          const topArticle = GDPR_ARTICLES.map(a => ({ ...a, ev: getArticleEvents(a.art) })).sort((a, b) => b.ev - a.ev)[0]
           const cards = [
             { key: 'm-events', label: 'GDPR Events', val: totalEvents.toLocaleString(), icon: 'certificate', iconBg: '#a371f71a', iconColor: '#a371f7' },
             { key: 'm-crit', label: 'Critical Violations', val: (severitySource?.Critical || 0).toLocaleString(), icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b', filterField: 'severity', filterValue: 'Critical' },
             { key: 'm-high', label: 'High Severity Violations', val: (severitySource?.High || 0).toLocaleString(), icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a', filterField: 'severity', filterValue: 'High' },
-            { key: 'm-assets', label: 'Monitored Assets', val: hasActiveFilter && chartData ? chartData.topAgents.length : data?.topAgents?.length || 0, icon: 'device-desktop', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
-            { key: 'm-articles', label: 'Articles Violated', val: GDPR_ARTICLES.length, icon: 'list-check', iconBg: '#3fb95018', iconColor: '#3fb950' },
-            { key: 'm-top-art', label: 'Most Active Article', val: topArticle ? topArticle.art : '--', icon: 'award', iconBg: '#e8681a18', iconColor: '#e8681a', valColor: '#e8681a', valSize: 'text-base', filterField: 'article', filterValue: topArticle?.art || '' },
+            { key: 'm-assets', label: 'Monitored Assets', val: data?.topAgents?.length || 0, icon: 'device-desktop', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
+            { key: 'm-articles', label: 'Articles Violated', val: articlesViolated, icon: 'list-check', iconBg: '#3fb95018', iconColor: '#3fb950' },
+            { key: 'm-top-art', label: 'Most Active Article', val: topArticleVal, icon: 'award', iconBg: '#e8681a18', iconColor: '#e8681a', valColor: '#e8681a', valSize: 'text-base', filterField: 'article', filterValue: topArticle?.art || '' },
           ]
           return cards.map(card => (
             <FilterableMetricCard
@@ -530,22 +498,24 @@ export default function GdprTab() {
         {/* Events by GDPR Article */}
         <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Events by GDPR Article (Top 5)</div>
-          {GDPR_ARTICLES.map(a => {
-            const ev = getArticleEvents(a.art)
-            const pct = (ev / maxArticle) * 100
+          {topArticlesByCount.slice(0, 5).map(a => {
+            const pct = maxArticle > 0 ? (a.count / maxArticle) * 100 : 0
             return (
-              <div key={a.art} onClick={() => openModal('art-' + a.art)}
-                className="flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] cursor-pointer text-[11px]">
+              <div key={a.art} onClick={() => setFilter('article', a.art)}
+                className={`flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] cursor-pointer text-[11px] ${filters.article?.includes(a.art) ? 'bg-[#e8681a]/5 ring-1 ring-inset ring-[#e8681a]/30' : ''}`}>
                 <span className="w-[90px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0">{a.art}</span>
                 <div className="flex-1 h-2 bg-[#d0d7de] dark:bg-[#30363d] rounded-full overflow-hidden">
                   <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
                 </div>
-                <span className="w-7 text-right text-[#1f2328] dark:text-[#f0f6fc] font-bold">{ev}</span>
+                <span className="w-7 text-right text-[#1f2328] dark:text-[#f0f6fc] font-bold">{a.count}</span>
               </div>
             )
           })}
+          {topArticlesByCount.slice(0, 5).length === 0 && (
+            <div className="text-[10px] text-[#8b949e] text-center py-4">No GDPR article data</div>
+          )}
           <div className="flex justify-between text-[9px] text-[#8b949e] mt-1.5 px-1">
-            <span>0</span><span>10</span><span>20</span><span>30</span><span>40</span>
+            <span>0</span><span>{Math.round(maxArticle / 4)}</span><span>{Math.round(maxArticle / 2)}</span><span>{Math.round(maxArticle * 3 / 4)}</span><span>{maxArticle}</span>
           </div>
           <div className="text-center text-[10px] text-[#8b949e] mt-0.5">Events</div>
         </div>
@@ -588,9 +558,7 @@ export default function GdprTab() {
         <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2 flex items-center justify-between">
             <span>GDPR Events Trend</span>
-            <span className="text-[10px] text-[#8b949e] bg-[#f0f2f4] dark:bg-[#2d3140] px-2 py-0.5 rounded font-medium normal-case">
-              {startDate === 'now-24h' ? 'Last 24 Hours' : startDate === 'now-7d' ? 'Last 7 Days' : startDate === 'now-30d' ? 'Last 30 Days' : startDate === 'now-90d' ? 'Last 90 Days' : startDate || 'Last 7 Days'}
-            </span>
+
           </div>
           <div className="h-[150px]">
             {data?.timeline?.length > 0 ? (
@@ -601,7 +569,7 @@ export default function GdprTab() {
                     if (rt) setTimelineFilter(timelineFilter === rt ? null : rt)
                   }}>
                   <defs><linearGradient id="gdprGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e8681a" stopOpacity={0.12} /><stop offset="95%" stopColor="#e8681a" stopOpacity={0} /></linearGradient></defs>
-                  <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={40} />
                   <YAxis tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
                   <Tooltip content={<CustomTip />} />
                   <Area type="monotone" dataKey="count" stroke="#e8681a" fill="url(#gdprGrad)" strokeWidth={2.5} dot={{ r: 3, fill: '#e8681a', stroke: isDark ? '#161b22' : '#ffffff', strokeWidth: 2 }} />
@@ -616,9 +584,7 @@ export default function GdprTab() {
               </div>
             )}
           </div>
-          <div className="flex justify-between text-[9px] text-[#8b949e] mt-1 px-0.5">
-            {(data?.timeline || []).slice(0, 7).map((t, i) => <span key={i}>{t.time}</span>)}
-          </div>
+
         </div>
       </div>
 
@@ -630,17 +596,20 @@ export default function GdprTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Article</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Description</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Events</th></tr></thead>
             <tbody>
-              {GDPR_ARTICLES.map((a, i) => {
-                const ev = getArticleEvents(a.art)
+              {topArticlesByCount.slice(0, 5).map((a, i) => {
+                const entry = GDPR_ARTICLES.find(r => r.art === a.art)
                 return (
-                  <tr key={a.art} onClick={() => openModal('art-' + a.art)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
+                  <tr key={a.art} onClick={() => setFilter('article', a.art)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-semibold">{a.art}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">{a.desc}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{ev}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">{entry?.desc || a.art}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{a.count}</td>
                   </tr>
                 )
               })}
+              {topArticlesByCount.slice(0, 5).length === 0 && (
+                <tr><td colSpan={4} className="text-center py-3 text-[10px] text-[#8b949e]">No article data</td></tr>
+              )}
             </tbody>
           </table>
           <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
@@ -653,7 +622,7 @@ export default function GdprTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Agent</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Events</th></tr></thead>
             <tbody>
-              {(hasActiveFilter && chartData ? chartData.topAgents : data?.topAgents || []).slice(0, 5).map((a, i) => {
+              {(data?.topAgents || []).slice(0, 5).map((a, i) => {
                 const name = a.key || a.agent || a.name || 'Unknown'
                 const cnt = a.doc_count || a.events || 0
                 const pct = (cnt / maxAgent) * 100
@@ -685,7 +654,7 @@ export default function GdprTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Rule ID</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Description</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Fired</th></tr></thead>
             <tbody>
-              {(hasActiveFilter && chartData ? chartData.topRules : data?.topRules || []).slice(0, 5).map((r, i) => {
+              {(data?.topRules || []).slice(0, 5).map((r, i) => {
                 const ruleId = r.ruleId || r.key || r.id || ''
                 return (
                   <tr key={ruleId || i} onClick={() => setFilter('rule', ruleId)}
@@ -706,12 +675,6 @@ export default function GdprTab() {
 
       {/* GDPR Event Logs */}
       <div className="mb-3">
-        {data?.recentTotal > 1000 && (
-          <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-[#ddf4ff] dark:bg-[#0c2d6b] border border-[#54aeff66] dark:border-[#1f6feb66] text-[11px] text-[#0969da] dark:text-[#58a6ff]">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            <span><strong>{data.recentTotal.toLocaleString()}</strong> events total. Use the <strong>Load 500 more</strong> button below to load additional logs.</span>
-          </div>
-        )}
         <div className="flex items-center justify-between mb-2.5">
           <div className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">GDPR Event Logs</div>
           <div className="flex items-center gap-1.5">
@@ -720,12 +683,21 @@ export default function GdprTab() {
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Excel
             </button>
-            <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportPDFReport({ filename: `gdpr-report-${ts}.pdf`, title: 'GDPR Event Report', dateRange: `${startDate || 'now-24h'} to ${endDate || 'now'}`, metrics: [{ label: 'Events (24h)', value: (data?.count24 || 0).toLocaleString() }, { label: 'Events (7d)', value: (data?.count7d || 0).toLocaleString() }, { label: 'Alert Sources', value: data?.topAgents?.length || 0 }, { label: 'Total Logs', value: filteredLogs.length }], severity: Object.entries(data?.severity || {}).map(([l, c]) => ({ level: l, count: c })), topRules: (data?.topRules || []).map(r => ({ key: r.key || r.ruleId || r.id || '--', count: r.doc_count || r.count || 0 })), topAgents: (data?.topAgents || []).map(a => ({ key: a.key || a.agent || a.name || '--', count: a.doc_count || a.events || 0 })), topArticles: (data?.topControls || []).map(c => ({ key: c.key || c.code || '--', count: c.doc_count || c.count || 0 })), timeline: (data?.timeline || []).map(t => ({ time: t.time, count: t.count })), logHeaders: EXPORT_COLS.map(c => c.header.toLowerCase()), logRows: prepareRows(filteredLogs, EXPORT_COLS) }) }}
+            <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportPDFReport({ filename: `gdpr-report-${ts}.pdf`, title: 'GDPR Event Report', dateRange: `${startDate || 'now-24h'} to ${endDate || 'now'}`, metrics: [{ label: 'Events (24h)', value: (data?.count24 || 0).toLocaleString() }, { label: 'Events (7d)', value: (data?.count7d || 0).toLocaleString() }, { label: 'Active Agents', value: data?.topAgents?.length || 0 }, { label: 'Total Logs', value: filteredLogs.length }], severity: Object.entries(data?.severity || {}).map(([l, c]) => ({ level: l, count: c })), topRules: (data?.topRules || []).map(r => ({ key: r.key || r.ruleId || r.id || '--', count: r.doc_count || r.count || 0 })), topAgents: (data?.topAgents || []).map(a => ({ key: a.key || a.agent || a.name || '--', count: a.doc_count || a.events || 0 })), topArticles: (data?.topControls || []).map(c => ({ key: c.key || c.code || '--', count: c.doc_count || c.count || 0 })), timeline: (data?.timeline || []).map(t => ({ time: t.time, count: t.count })), recentEvents: data?.recent || [], logHeaders: EXPORT_COLS.map(c => c.header.toLowerCase()), logRows: prepareRows(filteredLogs, EXPORT_COLS) }) }}
               className="text-[10px] px-2 py-1 rounded font-medium bg-[#e8eaed] dark:bg-[#2d3140] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
               PDF Report
             </button>
           </div>
+        </div>
+        <div className="flex items-center justify-between mb-2 px-1">
+          <div className="text-[11px] text-[#8b949e]">
+            Showing <span className="font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{filteredLogs.length.toLocaleString()}</span> of <span className="font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{(data?.recentTotal || 0).toLocaleString()}</span> logs
+            {loadedCount < (data?.recentTotal || 0) && (
+              <span className="ml-1.5 text-[#e8681a]">({((data?.recentTotal || 0) - loadedCount).toLocaleString()} remaining)</span>
+            )}
+          </div>
+          <div className="text-[10px] text-[#8b949e]">{logPage} of {totalLogPages} pages</div>
         </div>
         <table className="w-full text-[10px] border-collapse table-fixed">
           <colgroup>
@@ -896,14 +868,14 @@ export default function GdprTab() {
             </button>
           </div>
         </div>
-        {logPage === totalLogPages && evExtraOffsetRef.current < (data?.recentTotal || 0) && (
+        {logPage === totalLogPages && loadedCount < (data?.recentTotal || 0) && (
           <div className="flex justify-center py-3 border-t border-[#e5e7eb] dark:border-[#2d3140]">
             <button onClick={loadMoreLogs} disabled={evLoadingMore}
               className="px-4 py-1.5 text-xs font-bold bg-[#e8681a]/10 text-[#e8681a] border border-[#e8681a]/30 rounded-lg hover:bg-[#e8681a]/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-2">
               {evLoadingMore ? (
                 <><svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="32" strokeLinecap="round"/></svg> Loading 500 more...</>
               ) : (
-                <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg> Load 500 more ({Math.min((data?.recentTotal || 0) - evExtraOffsetRef.current, 10000 - evExtraOffsetRef.current)} remaining)</>
+                <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg> Load 500 more ({Math.max(0, (data?.recentTotal || 0) - loadedCount)} remaining)</>
               )}
             </button>
           </div>
@@ -916,7 +888,7 @@ export default function GdprTab() {
         open={sidebar === 'agents'}
         onClose={() => setSidebar(null)}
         onSelectItem={(name) => setInclude('agent', name)}
-        items={hasActiveFilter && chartData ? chartData.topAgents : data?.topAgents || []}
+        items={data?.topAgents || []}
         title="All Agents"
         icon="agent"
         itemLabel="agents"
@@ -926,7 +898,10 @@ export default function GdprTab() {
         open={sidebar === 'articles'}
         onClose={() => setSidebar(null)}
         onSelectItem={(name) => setInclude('article', name)}
-        items={GDPR_ARTICLES.map(a => ({ key: a.art, description: a.desc, doc_count: getArticleEvents(a.art) }))}
+        items={Object.keys(articleEvents).map(art => {
+          const entry = GDPR_ARTICLES.find(a => a.art === art)
+          return { key: art, description: entry?.desc || art, doc_count: articleEvents[art] || 0 }
+        })}
         title="All GDPR Articles"
         icon="article"
         itemLabel="articles"
@@ -937,7 +912,7 @@ export default function GdprTab() {
         open={sidebar === 'rules'}
         onClose={() => setSidebar(null)}
         onSelectItem={(name) => setInclude('rule', name)}
-        items={hasActiveFilter && chartData ? chartData.topRules : data?.topRules || []}
+        items={data?.topRules || []}
         title="All Rule IDs"
         icon="rule"
         itemLabel="rules"
@@ -947,3 +922,4 @@ export default function GdprTab() {
     </motion.div>
   )
 }
+

@@ -147,7 +147,9 @@ export default function MitreAttackTab() {
       const extraTechs = techBuckets.filter(b => !mitreKnowledge.techniques?.some(t => t.name === b.key)).map(b => ({
         name: b.key, count: b.doc_count
       }))
-      const techNames = [...enrichedTechs, ...extraTechs].sort((a, b) => b.count - a.count)
+      const techMap = {}
+      ;[...enrichedTechs, ...extraTechs].forEach(t => { techMap[t.name] = (techMap[t.name] || 0) + t.count })
+      const techNames = Object.entries(techMap).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count)
 
       const sevMap = groupSev(sevBuckets)
       const sevData = SEV_ORDER.filter(s => sevMap[s]).map(s => ({ name: s, value: sevMap[s], color: SEV_COLORS[s] }))

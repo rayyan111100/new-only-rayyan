@@ -300,7 +300,7 @@ const FRAMEWORK_FIELDS = {
   'HIPAA': 'rule.hipaa',
   'GDPR': 'rule.gdpr',
   'TSC (SOC 2)': 'rule.tsc',
-  'MITRE ATT&CK': 'rule.mitre_attack',
+  'MITRE ATT&CK': 'rule.mitre',
   'NIST 800-53': 'rule.nist_800_53'
 };
 const FRAMEWORK_CONTROLS = {
@@ -327,9 +327,11 @@ function classifyDocFrameworks(doc) {
   return fws;
 }
 
+const SEV_LEVELS = { Critical: { gte: 12 }, High: { gte: 7, lte: 11 }, Medium: { gte: 4, lte: 6 }, Low: { gte: 1, lte: 3 } };
+
 // Compliance Dashboard Aggregation Endpoint
 app.get('/api/compliance', async (req, res) => {
-  const { index, start_date, end_date, framework } = req.query;
+  const { index, start_date, end_date, framework, severity } = req.query;
   const idx = index || 'unishield360-alerts-4.x-*';
   const sd = start_date || 'now-24h';
   const ed = end_date || 'now';
@@ -445,12 +447,40 @@ app.get('/api/compliance', async (req, res) => {
     }));
     const filteredRecent = framework ? recentDocs.filter(d => d._frameworks.includes(framework)) : recentDocs;
 
-    const recentActualTotal = recent.data?.total?.value || rawRecent.length;
+    const recentTotalVal = recent.data?.total;
+    const recentActualTotal = recentTotalVal != null ? (typeof recentTotalVal === 'object' ? (recentTotalVal.value || 0) : recentTotalVal) : rawRecent.length;
+
+    // Apply severity filter server-side (Wazuh API doesn't support _exists_ + range in q string)
+    let finalSeverity = severityMap;
+    let finalCount24 = count24v;
+    let finalCount7d = count7dv;
+    let finalRecent = filteredRecent;
+    let finalRecentTotal = recentActualTotal;
+    if (severity) {
+      const sevKeys = severity.split(',').filter(s => SEV_LEVELS[s]);
+      if (sevKeys.length) {
+        const kept = {};
+        for (const s of sevKeys) kept[s] = true;
+        finalSeverity = {};
+        for (const [s, c] of Object.entries(severityMap)) {
+          finalSeverity[s] = kept[s] ? c : 0;
+        }
+        finalCount24 = Object.values(finalSeverity).reduce((a, b) => a + b, 0);
+        finalCount7d = finalCount24;
+        // Filter recent events by severity level
+        const levelSets = sevKeys.map(s => SEV_LEVELS[s]);
+        finalRecent = filteredRecent.filter(doc => {
+          const lvl = parseInt(doc.rule?.level) || 0;
+          return levelSets.some(({ gte, lte }) => lvl >= gte && (lte === undefined || lvl <= lte));
+        });
+        finalRecentTotal = finalRecent.length;
+      }
+    }
 
     const body = {
-      count24: count24v,
-      count7d: count7dv,
-      severity: severityMap,
+      count24: finalCount24,
+      count7d: finalCount7d,
+      severity: finalSeverity,
       frameworkCounts: !framework ? FRAMEWORK_NAMES.map((fw, i) => ({
         framework: fw,
         count: frameworkCounts[i]?.data?.count || 0
@@ -466,8 +496,8 @@ app.get('/api/compliance', async (req, res) => {
         control: b.key,
         count: b.doc_count || 0
       })),
-      recent: filteredRecent,
-      recentTotal: recentActualTotal
+      recent: finalRecent,
+      recentTotal: finalRecentTotal
     };
 
     complianceCache.set(cacheKey, { data: body, ts: Date.now() });

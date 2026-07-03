@@ -59,30 +59,34 @@ export default function TscTab() {
   const [timelineFilter, setTimelineFilter] = useState(null)
   const containerRef = useRef(null)
   const LOG_PAGE_SIZE = 10
-  const { data, loading, error, toLogEntry, toSev, refresh } = useCompliance('TSC (SOC 2)')
+  const { data, loading, error, toLogEntry, toSev, refresh } = useCompliance('TSC (SOC 2)', filters)
   const [evExtraLogs, setEvExtraLogs] = useState([])
-  const evExtraOffsetRef = useRef(0)
   const [evLoadingMore, setEvLoadingMore] = useState(false)
+  const loadedCount = (data?.recent?.length || 0) + evExtraLogs.length
   const loadMoreLogs = useCallback(async () => {
     setEvLoadingMore(true)
     try {
       const sd = parseDateStr(startDate).toISOString()
       const ed = parseDateStr(endDate).toISOString()
-      const res = await api('search', { index: 'unishield360-alerts-4.x-*', start_date: sd, end_date: ed, q: '_exists_:rule.tsc', limit: 500, offset: evExtraOffsetRef.current, sort: '@timestamp', order: 'desc' })
+      const offset = (data?.recent?.length || 0) + evExtraLogs.length
+      const res = await api('search', { index: 'unishield360-alerts-4.x-*', start_date: sd, end_date: ed, q: '_exists_:rule.tsc', limit: 500, offset, sort: '@timestamp', order: 'desc' })
       const results = res.results || []
-      const mapped = results.map(r => ({ ...toLogEntry(r), raw: r }))
+      const mapped = results.map(r => {
+        const entry = toLogEntry(r)
+        const tsc = r.rule?.tsc
+        entry.ctrl = Array.isArray(tsc) ? tsc[0] : (tsc || entry.ctrl || '--')
+        return { ...entry, raw: r }
+      })
       setEvExtraLogs(prev => [...prev, ...mapped])
-      evExtraOffsetRef.current += mapped.length
     } catch (e) {
       console.error('loadMoreLogs error:', e)
     } finally {
       setEvLoadingMore(false)
     }
-  }, [startDate, endDate, toLogEntry])
+  }, [startDate, endDate, data, evExtraLogs, toLogEntry])
   useEffect(() => {
     setEvExtraLogs([])
-    evExtraOffsetRef.current = 0
-  }, [data?.recent])
+  }, [filters.severity, startDate, endDate])
   const handleRefresh = useCallback(() => {
     setFilters({})
     setExcludes({})
@@ -91,7 +95,6 @@ export default function TscTab() {
     setExpandedRow({})
     setJsonView({})
     setEvExtraLogs([])
-    evExtraOffsetRef.current = 0
     refresh()
   }, [refresh])
   const toggleRow = useCallback((id) => {
@@ -199,11 +202,14 @@ export default function TscTab() {
   const activeExcludes = Object.keys(excludes)
 
   const logEntries = useMemo(() => {
-    const initial = (data?.recent || []).map(r => ({ ...toLogEntry(r), raw: r }))
+    const initial = (data?.recent || []).map(r => {
+      const entry = toLogEntry(r)
+      const tsc = r.rule?.tsc
+      entry.ctrl = Array.isArray(tsc) ? tsc[0] : (tsc || entry.ctrl || '--')
+      return { ...entry, raw: r }
+    })
     return [...initial, ...evExtraLogs]
   }, [data, toLogEntry, evExtraLogs])
-
-  const hasActiveFilter = activeFilters.length > 0 || activeExcludes.length > 0 || !!timelineFilter
 
   const DAY_MS = 86400000
   const filteredLogs = logEntries.filter(l => {
@@ -232,62 +238,26 @@ export default function TscTab() {
 
   useEffect(() => { setLogPage(1) }, [activeFilters.join(), activeExcludes.join()])
 
-  const chartData = useMemo(() => {
-    if (!hasActiveFilter) return null
-    const logs = filteredLogs
-    const sev = {}
-    SEV_ORDER.forEach(s => sev[s] = 0)
-    logs.forEach(l => { if (l.sev) sev[l.sev] = (sev[l.sev] || 0) + 1 })
-    const ctrlMap = {}
-    logs.forEach(l => { if (l.ctrl) ctrlMap[l.ctrl] = (ctrlMap[l.ctrl] || 0) + 1 })
-    const agMap = {}
-    logs.forEach(l => { if (l.agent) agMap[l.agent] = (agMap[l.agent] || 0) + 1 })
-    const ruleMap = {}
-    logs.forEach(l => { if (l.rule) ruleMap[l.rule] = (ruleMap[l.rule] || 0) + 1 })
-    return {
-      severity: sev,
-      controls: ctrlMap,
-      topAgents: Object.entries(agMap).map(([key, doc_count]) => ({ key, doc_count })).sort((a, b) => b.doc_count - a.doc_count).slice(0, 10),
-      topRules: Object.entries(ruleMap).map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count).slice(0, 10)
-    }
-  }, [filteredLogs, hasActiveFilter])
+  const severitySource = data?.severity || {}
 
-  const severitySource = hasActiveFilter && chartData ? chartData.severity : data?.severity || {}
-
-  const totalEvents = hasActiveFilter && chartData
-    ? Object.values(chartData.severity).reduce((a, b) => a + b, 0)
-    : data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
-  const maxAgent = hasActiveFilter && chartData
-    ? Math.max(...chartData.topAgents.map(a => a.doc_count || 0), 1)
-    : data ? Math.max(...data.topAgents.map(a => a.doc_count || 0), 1) : 1
+  const totalEvents = data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
+  const maxAgent = data ? Math.max(...data.topAgents.map(a => a.doc_count || 0), 1) : 1
 
   const controlEvents = useMemo(() => {
     const map = {}
-    if (hasActiveFilter && chartData) {
-      TSC_CONTROLS.forEach(c => { map[c.ctrl] = chartData.controls[c.ctrl] || 0 })
-      return map
+    for (const c of (data?.topControls || [])) {
+      map[c.control || c.key] = c.count
     }
-    if (data?.topRules) {
-      data.topRules.forEach(r => {
-        const ctrl = r.control || ''
-        if (ctrl && TSC_CONTROLS.some(c => c.ctrl === ctrl)) {
-          map[ctrl] = (map[ctrl] || 0) + (r.count || 0)
-        }
-      })
-    }
-    if (Object.keys(map).length === 0 && data?.recent) {
-      data.recent.forEach(r => {
-        const entry = toLogEntry(r)
-        if (entry.ctrl && TSC_CONTROLS.some(c => c.ctrl === entry.ctrl)) {
-          map[entry.ctrl] = (map[entry.ctrl] || 0) + 1
-        }
-      })
-    }
-    TSC_CONTROLS.forEach(c => { if (!map[c.ctrl]) map[c.ctrl] = 0 })
     return map
-  }, [data, toLogEntry, chartData, hasActiveFilter])
+  }, [data])
 
   const maxControl = Math.max(...Object.values(controlEvents), 1)
+  const topControlsByCount = useMemo(() =>
+    Object.entries(controlEvents)
+      .map(([ctrl, count]) => ({ ctrl, count }))
+      .sort((a, b) => b.count - a.count),
+    [controlEvents]
+  )
 
   const sevDonut = SEV_ORDER.filter(s => (severitySource[s] || 0) > 0).map(s => ({
     name: s, value: severitySource[s], color: SEV_COLORS[s]
@@ -320,6 +290,10 @@ export default function TscTab() {
     setModal(k)
   }
 
+  const controlsViolated = topControlsByCount.filter(c => c.count > 0).length
+  const topControl = topControlsByCount[0]
+  const topControlVal = topControl?.count > 0 ? topControl.ctrl : '--'
+  const topControlSub = topControl?.count > 0 ? topControl.ctrl + ' · ' + topControl.count + ' Events' : ''
   const getControlEvents = (ctrl) => controlEvents[ctrl] || 0
 
   const modalContent = () => {
@@ -335,8 +309,7 @@ export default function TscTab() {
 
     if (mKey.startsWith('ctrl-')) {
       const ctrl = mKey.replace('ctrl-', '')
-      const control = TSC_CONTROLS.find(c => c.ctrl === ctrl)
-      if (!control) return null
+      const entry = TSC_CONTROLS.find(c => c.ctrl === ctrl)
       const ev = getControlEvents(ctrl)
       return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeModal}>
@@ -349,7 +322,7 @@ export default function TscTab() {
               <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Control</div><div className="text-sm font-bold text-[#e8681a]">{ctrl}</div></div>
               <div><div className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold mb-0.5">Events</div><div className="text-2xl font-bold text-[#f0f6fc]">{ev}</div></div>
             </div>
-            <p className="text-xs text-[#36454f] dark:text-[#c9d1d9] leading-relaxed mb-3">{control.desc} &mdash; {ev} events detected in this period. Review flagged resources to ensure controls are operating effectively for SOC 2 audit evidence.</p>
+            <p className="text-xs text-[#36454f] dark:text-[#c9d1d9] leading-relaxed mb-3">{entry?.desc || ctrl} &mdash; {ev} events detected in this period. Review flagged resources to ensure controls are operating effectively for SOC 2 audit evidence.</p>
             <div className="p-3 rounded-lg text-xs leading-relaxed" style={{ background: '#e8893a18', border: '1px solid #e8893a44', color: '#fdba74' }}>
               <strong>Recommendation:</strong> Investigate all {ev} events tied to {ctrl}. Correlate with access logs to confirm whether modifications were made by authorised principals.
             </div>
@@ -402,9 +375,8 @@ export default function TscTab() {
       )
     }
 
-    const topCtrlEntry = TSC_CONTROLS.map(c => ({ ...c, ev: getControlEvents(c.ctrl) })).sort((a, b) => b.ev - a.ev)[0]
     const md = {
-      'm-events': { t: 'SOC 2 Events', b: `Total TSC (SOC 2) events: ${totalEvents.toLocaleString()} across ${data?.topAgents?.length || 0} active agents. Top control: ${topCtrlEntry?.ctrl || 'N/A'} with ${topCtrlEntry?.ev || 0} events.` },
+      'm-events': { t: 'SOC 2 Events', b: `Total TSC (SOC 2) events: ${totalEvents.toLocaleString()} across ${data?.topAgents?.length || 0} active agents. Top control: ${topControl?.ctrl || 'N/A'} with ${topControl?.count || 0} events.` },
       'm-crit': { t: 'Critical Violations', b: `Critical violations: ${data?.severity?.Critical || 0}. Immediate action required if any affect SOC 2 control effectiveness.` },
       'm-high': { t: 'High Severity Violations', b: `High severity violations: ${data?.severity?.High || 0}. These require prompt investigation to ensure controls are operating effectively.` },
       'm-assets': { t: 'Monitored Assets', b: `${data?.topAgents?.length || 0} active agents generating SOC 2 compliance events.` },
@@ -498,14 +470,13 @@ export default function TscTab() {
       {/* Metric Cards */}
       <div className="grid grid-cols-6 gap-2.5 mb-3">
         {(() => {
-          const topControl = TSC_CONTROLS.map(c => ({ ...c, ev: getControlEvents(c.ctrl) })).sort((a, b) => b.ev - a.ev)[0]
           const cards = [
             { key: 'm-events', label: 'SOC 2 Events', val: totalEvents.toLocaleString(), icon: 'certificate', iconBg: '#a371f71a', iconColor: '#a371f7' },
             { key: 'm-crit', label: 'Critical Violations', val: (severitySource?.Critical || 0).toLocaleString(), icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b', filterField: 'severity', filterValue: 'Critical' },
             { key: 'm-high', label: 'High Severity Violations', val: (severitySource?.High || 0).toLocaleString(), icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a', filterField: 'severity', filterValue: 'High' },
-            { key: 'm-assets', label: 'Monitored Assets', val: hasActiveFilter && chartData ? chartData.topAgents.length : data?.topAgents?.length || 0, icon: 'device-desktop', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
-            { key: 'm-controls', label: 'Controls Violated', val: TSC_CONTROLS.filter(c => getControlEvents(c.ctrl) > 0).length, icon: 'list-check', iconBg: '#3fb95018', iconColor: '#3fb950' },
-            { key: 'm-top-ctrl', label: 'Most Active Control', val: topControl ? topControl.ctrl : '--', icon: 'award', iconBg: '#e8681a18', iconColor: '#e8681a', valColor: '#e8681a', valSize: 'text-base', filterField: 'control', filterValue: topControl?.ctrl || '' },
+            { key: 'm-assets', label: 'Monitored Assets', val: data?.topAgents?.length || 0, icon: 'device-desktop', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
+            { key: 'm-controls', label: 'Controls Violated', val: controlsViolated, icon: 'list-check', iconBg: '#3fb95018', iconColor: '#3fb950' },
+            { key: 'm-top-ctrl', label: 'Most Active Control', val: topControlVal, icon: 'award', iconBg: '#e8681a18', iconColor: '#e8681a', valColor: '#e8681a', valSize: 'text-base', filterField: 'control', filterValue: topControl?.ctrl || '' },
           ]
           return cards.map(card => (
             <FilterableMetricCard
@@ -529,22 +500,24 @@ export default function TscTab() {
         {/* Events by SOC 2 Control */}
         <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Events by SOC 2 Control (Top 5)</div>
-          {TSC_CONTROLS.map(c => {
-            const ev = getControlEvents(c.ctrl)
-            const pct = (ev / maxControl) * 100
+          {topControlsByCount.slice(0, 5).map(c => {
+            const pct = maxControl > 0 ? (c.count / maxControl) * 100 : 0
             return (
-              <div key={c.ctrl} onClick={() => openModal('ctrl-' + c.ctrl)}
-                className="flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] cursor-pointer text-[11px]">
+              <div key={c.ctrl} onClick={() => setFilter('control', c.ctrl)}
+                className={`flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] cursor-pointer text-[11px] ${filters.control?.includes(c.ctrl) ? 'bg-[#e8681a]/5 ring-1 ring-inset ring-[#e8681a]/30' : ''}`}>
                 <span className="w-[90px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0">{c.ctrl}</span>
                 <div className="flex-1 h-2 bg-[#d0d7de] dark:bg-[#30363d] rounded-full overflow-hidden">
                   <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
                 </div>
-                <span className="w-7 text-right text-[#1f2328] dark:text-[#f0f6fc] font-bold">{ev}</span>
+                <span className="w-7 text-right text-[#1f2328] dark:text-[#f0f6fc] font-bold">{c.count}</span>
               </div>
             )
           })}
+          {topControlsByCount.slice(0, 5).length === 0 && (
+            <div className="text-[10px] text-[#8b949e] text-center py-4">No SOC 2 control data</div>
+          )}
           <div className="flex justify-between text-[9px] text-[#8b949e] mt-1.5 px-1">
-            <span>0</span><span>10</span><span>20</span><span>30</span><span>40</span>
+            <span>0</span><span>{Math.round(maxControl / 4)}</span><span>{Math.round(maxControl / 2)}</span><span>{Math.round(maxControl * 3 / 4)}</span><span>{maxControl}</span>
           </div>
           <div className="text-center text-[10px] text-[#8b949e] mt-0.5">Events</div>
         </div>
@@ -587,9 +560,7 @@ export default function TscTab() {
         <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2 flex items-center justify-between">
             <span>SOC 2 Events Trend</span>
-            <span className="text-[10px] text-[#8b949e] bg-[#f0f2f4] dark:bg-[#2d3140] px-2 py-0.5 rounded font-medium normal-case">
-              {startDate === 'now-24h' ? 'Last 24 Hours' : startDate === 'now-7d' ? 'Last 7 Days' : startDate === 'now-30d' ? 'Last 30 Days' : startDate === 'now-90d' ? 'Last 90 Days' : startDate || 'Last 7 Days'}
-            </span>
+
           </div>
           <div className="h-[150px]">
             {data?.timeline?.length > 0 ? (
@@ -600,7 +571,7 @@ export default function TscTab() {
                     if (rt) setTimelineFilter(timelineFilter === rt ? null : rt)
                   }}>
                   <defs><linearGradient id="tscGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e8681a" stopOpacity={0.12} /><stop offset="95%" stopColor="#e8681a" stopOpacity={0} /></linearGradient></defs>
-                  <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={40} />
                   <YAxis tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
                   <Tooltip content={<CustomTip />} />
                   <Area type="monotone" dataKey="count" stroke="#e8681a" fill="url(#tscGrad)" strokeWidth={2.5} dot={{ r: 3, fill: '#e8681a', stroke: isDark ? '#161b22' : '#ffffff', strokeWidth: 2 }} />
@@ -615,9 +586,6 @@ export default function TscTab() {
               </div>
             )}
           </div>
-          <div className="flex justify-between text-[9px] text-[#8b949e] mt-1 px-0.5">
-            {(data?.timeline || []).slice(0, 7).map((t, i) => <span key={i}>{t.time}</span>)}
-          </div>
         </div>
       </div>
 
@@ -629,17 +597,20 @@ export default function TscTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Control</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Description</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Events</th></tr></thead>
             <tbody>
-              {TSC_CONTROLS.map((c, i) => {
-                const ev = getControlEvents(c.ctrl)
+              {topControlsByCount.slice(0, 5).map((c, i) => {
+                const entry = TSC_CONTROLS.find(r => r.ctrl === c.ctrl)
                 return (
-                  <tr key={c.ctrl} onClick={() => openModal('ctrl-' + c.ctrl)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
+                  <tr key={c.ctrl} onClick={() => setFilter('control', c.ctrl)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-semibold">{c.ctrl}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">{c.desc}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{ev}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">{entry?.desc || c.ctrl}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{c.count}</td>
                   </tr>
                 )
               })}
+              {topControlsByCount.slice(0, 5).length === 0 && (
+                <tr><td colSpan={4} className="text-center py-3 text-[10px] text-[#8b949e]">No control data</td></tr>
+              )}
             </tbody>
           </table>
           <div className="text-[#e8681a] text-[11px] font-semibold mt-2 cursor-pointer inline-flex items-center gap-1 hover:text-[#ff7b2e]"
@@ -652,7 +623,7 @@ export default function TscTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Agent</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Events</th></tr></thead>
             <tbody>
-              {(hasActiveFilter && chartData ? chartData.topAgents : data?.topAgents || []).slice(0, 5).map((a, i) => {
+              {(data?.topAgents || []).slice(0, 5).map((a, i) => {
                 const name = a.key || a.agent || a.name || 'Unknown'
                 const cnt = a.doc_count || a.events || 0
                 const pct = (cnt / maxAgent) * 100
@@ -684,7 +655,7 @@ export default function TscTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Rule ID</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Description</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Fired</th></tr></thead>
             <tbody>
-              {(hasActiveFilter && chartData ? chartData.topRules : data?.topRules || []).slice(0, 5).map((r, i) => {
+              {(data?.topRules || []).slice(0, 5).map((r, i) => {
                 const ruleId = r.ruleId || r.key || r.id || ''
                 return (
                   <tr key={ruleId || i} onClick={() => setFilter('rule', ruleId)}
@@ -705,12 +676,6 @@ export default function TscTab() {
 
       {/* SOC 2 Event Logs */}
       <div className="mb-3">
-        {data?.recentTotal > 1000 && (
-          <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-[#ddf4ff] dark:bg-[#0c2d6b] border border-[#54aeff66] dark:border-[#1f6feb66] text-[11px] text-[#0969da] dark:text-[#58a6ff]">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            <span><strong>{data.recentTotal.toLocaleString()}</strong> events total. Use the <strong>Load 500 more</strong> button below to load additional logs.</span>
-          </div>
-        )}
         <div className="flex items-center justify-between mb-2.5">
           <div className="text-sm font-bold text-[#1f2328] dark:text-[#f0f6fc] tracking-tight">SOC 2 Event Logs</div>
           <div className="flex items-center gap-1.5">
@@ -719,12 +684,21 @@ export default function TscTab() {
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Excel
             </button>
-            <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportPDFReport({ filename: `tsc-report-${ts}.pdf`, title: 'SOC 2 Event Report', dateRange: `${startDate || 'now-24h'} to ${endDate || 'now'}`, metrics: [{ label: 'Events (24h)', value: (data?.count24 || 0).toLocaleString() }, { label: 'Events (7d)', value: (data?.count7d || 0).toLocaleString() }, { label: 'Alert Sources', value: data?.topAgents?.length || 0 }, { label: 'Total Logs', value: filteredLogs.length }], severity: Object.entries(data?.severity || {}).map(([l, c]) => ({ level: l, count: c })), topRules: (data?.topRules || []).map(r => ({ key: r.key || r.ruleId || r.id || '--', count: r.doc_count || r.count || 0 })), topAgents: (data?.topAgents || []).map(a => ({ key: a.key || a.agent || a.name || '--', count: a.doc_count || a.events || 0 })), topArticles: (data?.topControls || []).map(c => ({ key: c.key || c.code || '--', count: c.doc_count || c.count || 0 })), timeline: (data?.timeline || []).map(t => ({ time: t.time, count: t.count })), logHeaders: EXPORT_COLS.map(c => c.header.toLowerCase()), logRows: prepareRows(filteredLogs, EXPORT_COLS) }) }}
+            <button data-ignore-export onClick={() => { const ts = new Date().toISOString().slice(0,10); exportPDFReport({ filename: `tsc-report-${ts}.pdf`, title: 'SOC 2 Event Report', dateRange: `${startDate || 'now-24h'} to ${endDate || 'now'}`, metrics: [{ label: 'Events (24h)', value: (data?.count24 || 0).toLocaleString() }, { label: 'Events (7d)', value: (data?.count7d || 0).toLocaleString() }, { label: 'Active Agents', value: data?.topAgents?.length || 0 }, { label: 'Total Logs', value: filteredLogs.length }], severity: Object.entries(data?.severity || {}).map(([l, c]) => ({ level: l, count: c })), topRules: (data?.topRules || []).map(r => ({ key: r.key || r.ruleId || r.id || '--', count: r.doc_count || r.count || 0 })), topAgents: (data?.topAgents || []).map(a => ({ key: a.key || a.agent || a.name || '--', count: a.doc_count || a.events || 0 })), topArticles: (data?.topControls || []).map(c => ({ key: c.key || c.code || '--', count: c.doc_count || c.count || 0 })), timeline: (data?.timeline || []).map(t => ({ time: t.time, count: t.count })), recentEvents: data?.recent || [], logHeaders: EXPORT_COLS.map(c => c.header.toLowerCase()), logRows: prepareRows(filteredLogs, EXPORT_COLS) }) }}
               className="text-[10px] px-2 py-1 rounded font-medium bg-[#e8eaed] dark:bg-[#2d3140] text-[#1f2328] dark:text-[#f0f6fc] hover:bg-[#d1d5db] dark:hover:bg-[#30363d] transition-all flex items-center gap-1">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
               PDF Report
             </button>
           </div>
+        </div>
+        <div className="flex items-center justify-between mb-2 px-1">
+          <div className="text-[11px] text-[#8b949e]">
+            Showing <span className="font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{filteredLogs.length.toLocaleString()}</span> of <span className="font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{(data?.recentTotal || 0).toLocaleString()}</span> logs
+            {loadedCount < (data?.recentTotal || 0) && (
+              <span className="ml-1.5 text-[#e8681a]">({((data?.recentTotal || 0) - loadedCount).toLocaleString()} remaining)</span>
+            )}
+          </div>
+          <div className="text-[10px] text-[#8b949e]">{logPage} of {totalLogPages} pages</div>
         </div>
         <table className="w-full text-[10px] border-collapse table-fixed">
           <colgroup>
@@ -904,14 +878,14 @@ export default function TscTab() {
             </button>
           </div>
         </div>
-        {logPage === totalLogPages && evExtraOffsetRef.current < (data?.recentTotal || 0) && (
+        {logPage === totalLogPages && loadedCount < (data?.recentTotal || 0) && (
           <div className="flex justify-center py-3 border-t border-[#e5e7eb] dark:border-[#2d3140]">
             <button onClick={loadMoreLogs} disabled={evLoadingMore}
               className="px-4 py-1.5 text-xs font-bold bg-[#e8681a]/10 text-[#e8681a] border border-[#e8681a]/30 rounded-lg hover:bg-[#e8681a]/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-2">
               {evLoadingMore ? (
                 <><svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="32" strokeLinecap="round"/></svg> Loading 500 more...</>
               ) : (
-                <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg> Load 500 more ({Math.min((data?.recentTotal || 0) - evExtraOffsetRef.current, 10000 - evExtraOffsetRef.current)} remaining)</>
+                <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg> Load 500 more ({Math.max(0, (data?.recentTotal || 0) - loadedCount)} remaining)</>
               )}
             </button>
           </div>
@@ -924,7 +898,7 @@ export default function TscTab() {
         open={sidebar === 'agents'}
         onClose={() => setSidebar(null)}
         onSelectItem={(name) => setInclude('agent', name)}
-        items={hasActiveFilter && chartData ? chartData.topAgents : data?.topAgents || []}
+        items={data?.topAgents || []}
         title="All Agents"
         icon="agent"
         itemLabel="agents"
@@ -934,9 +908,9 @@ export default function TscTab() {
         open={sidebar === 'controls'}
         onClose={() => setSidebar(null)}
         onSelectItem={(name) => setInclude('control', name)}
-        items={TSC_CONTROLS.map(c => {
-          const ev = getControlEvents(c.ctrl)
-          return { key: c.ctrl, description: c.desc, doc_count: ev }
+        items={Object.keys(controlEvents).map(ctrl => {
+          const entry = TSC_CONTROLS.find(r => r.ctrl === ctrl)
+          return { key: ctrl, description: entry?.desc || ctrl, doc_count: controlEvents[ctrl] || 0 }
         })}
         title="All Controls"
         icon="control"
@@ -948,7 +922,7 @@ export default function TscTab() {
         open={sidebar === 'rules'}
         onClose={() => setSidebar(null)}
         onSelectItem={(name) => setInclude('rule', name)}
-        items={hasActiveFilter && chartData ? chartData.topRules : data?.topRules || []}
+        items={data?.topRules || []}
         title="All Rule IDs"
         icon="rule"
         itemLabel="rules"
@@ -958,3 +932,4 @@ export default function TscTab() {
     </motion.div>
   )
 }
+
