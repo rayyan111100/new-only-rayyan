@@ -17,10 +17,8 @@ const SEV_ORDER = ['Critical', 'High', 'Medium', 'Low']
 
 const EXPORT_COLS = [
   { header: 'Time', accessor: 'time' }, { header: 'Agent', accessor: 'agent' },
-  { header: 'Rule', accessor: 'rule' }, { header: 'Severity', accessor: 'sev' },
-  { header: 'Description', accessor: 'desc' }, { header: 'Event', accessor: 'event' },
-  { header: 'Control', accessor: 'ctrl' },
-  { header: 'Groups', accessor: 'groups' },
+  { header: 'Control', accessor: 'ctrl' }, { header: 'Description', accessor: 'desc' },
+  { header: 'Level', accessor: 'level' }, { header: 'Rule ID', accessor: 'rule' },
 ]
 
 function toSev(level) {
@@ -79,16 +77,13 @@ export default function HipaaTab() {
       const results = res.results || []
       const mapped = results.map(r => {
         const hipaa = r.rule?.hipaa
-        const ctrl = Array.isArray(hipaa) ? hipaa[0] : (hipaa || r.control || r.hipaa_standard || '--')
+        const ctrl = Array.isArray(hipaa) ? hipaa.join(', ') : (hipaa || r.control || r.hipaa_standard || '--')
         return {
           time: r['@timestamp'] || r.timestamp || '--',
           agent: r.agent?.name || r.agent || '--',
           rule: r.rule?.id || r.rule || '--',
-          sev: (() => { const n = parseInt(r.rule?.level || r.level || 0); return n >= 12 ? 'Critical' : n >= 7 ? 'High' : n >= 4 ? 'Medium' : 'Low' })(),
+          level: String(r.rule?.level ?? r.level ?? '--'),
           desc: r.rule?.description || r.description || '--',
-          event: r.rule?.groups?.[0] || r.event_type || '--',
-          file: r.data?.file || r.file || '--',
-          groups: r.rule?.groups?.join(', ') || '--',
           ctrl,
           raw: r
         }
@@ -220,16 +215,13 @@ export default function HipaaTab() {
   const allLogs = useMemo(() => {
     const initial = (data?.recent || []).map(r => {
       const hipaa = r.rule?.hipaa
-      const ctrl = Array.isArray(hipaa) ? hipaa[0] : (hipaa || r.control || r.hipaa_standard || '--')
+      const ctrl = Array.isArray(hipaa) ? hipaa.join(', ') : (hipaa || r.control || r.hipaa_standard || '--')
       return {
         time: r['@timestamp'] || r.timestamp || '--',
         agent: r.agent?.name || r.agent || '--',
         rule: r.rule?.id || r.rule || '--',
-        sev: (() => { const n = parseInt(r.rule?.level || r.level || 0); return n >= 12 ? 'Critical' : n >= 7 ? 'High' : n >= 4 ? 'Medium' : 'Low' })(),
+        level: String(r.rule?.level ?? r.level ?? '--'),
         desc: r.rule?.description || r.description || '--',
-        event: r.rule?.groups?.[0] || r.event_type || '--',
-        file: r.data?.file || r.file || '--',
-        groups: r.rule?.groups?.join(', ') || '--',
         ctrl,
         raw: r
       }
@@ -243,20 +235,18 @@ export default function HipaaTab() {
       const t = new Date(l.time).getTime()
       if (t < timelineFilter || t >= timelineFilter + DAY_MS) return false
     }
-    if (filters.severity?.length && !filters.severity.includes(l.sev)) return false
+    if (filters.time?.length && !filters.time.includes(l.time)) return false
     if (filters.agent?.length && !filters.agent.includes(l.agent)) return false
-    if (filters.rule?.length && !filters.rule.includes(l.rule)) return false
     if (filters.control?.length && !filters.control.includes(l.ctrl)) return false
     if (filters.desc?.length && !filters.desc.includes(l.desc)) return false
-    if (filters.event?.length && !filters.event.includes(l.event)) return false
-    if (filters.groups?.length && !filters.groups.includes(l.groups)) return false
-    if (excludes.severity?.length && excludes.severity.includes(l.sev)) return false
+    if (filters.level?.length && !filters.level.includes(l.level)) return false
+    if (filters.rule?.length && !filters.rule.includes(l.rule)) return false
+    if (excludes.time?.length && excludes.time.includes(l.time)) return false
     if (excludes.agent?.length && excludes.agent.includes(l.agent)) return false
-    if (excludes.rule?.length && excludes.rule.includes(l.rule)) return false
     if (excludes.control?.length && excludes.control.includes(l.ctrl)) return false
     if (excludes.desc?.length && excludes.desc.includes(l.desc)) return false
-    if (excludes.event?.length && excludes.event.includes(l.event)) return false
-    if (excludes.groups?.length && excludes.groups.includes(l.groups)) return false
+    if (excludes.level?.length && excludes.level.includes(l.level)) return false
+    if (excludes.rule?.length && excludes.rule.includes(l.rule)) return false
     return true
   })
 
@@ -296,12 +286,12 @@ export default function HipaaTab() {
   const getControlEvents = (req) => controlEvents[req] || 0
 
   const FILTER_STYLES = {
-    severity: (v) => ({
-      bg: v === 'Critical' ? '#e0525218' : v === 'High' ? '#e8893a18' : v === 'Medium' ? '#d2992218' : '#3fb95018',
-      color: v === 'Critical' ? '#ff6b6b' : v === 'High' ? '#e8893a' : v === 'Medium' ? '#d29922' : '#3fb950'
-    }),
     agent: () => ({ bg: '#58a6ff1a', color: '#58a6ff' }),
-    rule: () => ({ bg: '#e8681a18', color: '#e8681a' })
+    control: () => ({ bg: '#e8681a18', color: '#e8681a' }),
+    desc: () => ({ bg: '#3fb95018', color: '#3fb950' }),
+    level: () => ({ bg: '#d2992218', color: '#d29922' }),
+    rule: () => ({ bg: '#e8681a18', color: '#e8681a' }),
+    time: () => ({ bg: '#8b949e18', color: '#8b949e' })
   }
 
   const SevBadge = ({ s }) => {
@@ -460,9 +450,15 @@ export default function HipaaTab() {
           {topControlsByCount.slice(0, 5).map(c => {
             const pct = maxControl > 0 ? (c.count / maxControl) * 100 : 0
             return (
-              <div key={c.req} onClick={() => setFilter('control', c.req)}
-                className={`flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] cursor-pointer text-[11px] ${filters.control?.includes(c.req) ? 'bg-[#e8681a]/5 ring-1 ring-inset ring-[#e8681a]/30' : ''}`}>
-                <span className="w-[90px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0">{c.req}</span>
+              <div key={c.req} className="flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] text-[11px]">
+                <InlineFilter field="control" value={c.req}
+                  onInclude={() => setInclude('control', c.req)}
+                  onExclude={() => setExclude('control', c.req)}
+                  isIncluded={filters.control?.includes(c.req)}
+                  isExcluded={excludes.control?.includes(c.req)}
+                  className="w-[90px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0">
+                  <span className="w-[90px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0">{c.req}</span>
+                </InlineFilter>
                 <div className="flex-1 h-2 bg-[#d0d7de] dark:bg-[#30363d] rounded-full overflow-hidden">
                   <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
                 </div>
@@ -486,11 +482,15 @@ export default function HipaaTab() {
             {SEV_ORDER.filter(s => sevDonut.find(x => x.name === s)?.value > 0).map(s => {
               const v = sevDonut.find(x => x.name === s)?.value || 0
               return (
-                <span key={s} onClick={() => setFilter('severity', s)}
-                  className={`flex items-center gap-1.5 text-[11px] cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] ${filters.severity?.includes(s) ? 'ring-1 ring-[#e8681a]/30 bg-[#e8681a]/5' : ''} ${filters.severity?.length && !filters.severity.includes(s) ? 'opacity-40' : ''}`}>
+                <InlineFilter key={s} field="severity" value={s}
+                  onInclude={() => setInclude('severity', s)}
+                  onExclude={() => setExclude('severity', s)}
+                  isIncluded={filters.severity?.includes(s)}
+                  isExcluded={excludes.severity?.includes(s)}
+                  className={`flex items-center gap-1.5 text-[11px] rounded px-1 py-0.5 ${filters.severity?.includes(s) ? 'ring-1 ring-[#e8681a]/30 bg-[#e8681a]/5' : ''} ${filters.severity?.length && !filters.severity.includes(s) ? 'opacity-40' : ''}`}>
                   <span className="w-[10px] h-[10px] rounded flex-shrink-0" style={{ background: SEV_COLORS[s] }} />
                   {s} <span className="text-[#8b949e]">{v} ({Math.round((v / (totalEvents || 1)) * 100)}%)</span>
-                </span>
+                </InlineFilter>
               )
             })}
           </div>
@@ -550,9 +550,18 @@ export default function HipaaTab() {
               {topControlsByCount.slice(0, 5).map((c, i) => {
                 const entry = HIPAA_CONTROLS.find(r => r.req === c.req)
                 return (
-                  <tr key={c.req} onClick={() => setFilter('control', c.req)} className="cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
+                  <tr key={c.req} className="hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]">
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-semibold">{c.req}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <InlineFilter field="control" value={c.req}
+                        onInclude={() => setInclude('control', c.req)}
+                        onExclude={() => setExclude('control', c.req)}
+                        isIncluded={filters.control?.includes(c.req)}
+                        isExcluded={excludes.control?.includes(c.req)}
+                        className="font-semibold text-left">
+                        <span className="text-[#e8681a]">{c.req}</span>
+                      </InlineFilter>
+                    </td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">{entry?.desc || c.req}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{c.count}</td>
                   </tr>
@@ -576,10 +585,18 @@ export default function HipaaTab() {
               {(data?.topAgents || []).slice(0, 5).map((a, i) => {
                 const agentName = a.key || a.agent || 'Unknown'
                 return (
-                  <tr key={a.key || i} onClick={() => setFilter('agent', agentName)}
-                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${filters.agent?.includes(agentName) ? 'bg-[#58a6ff]/5 ring-1 ring-inset ring-[#58a6ff]/30' : ''}`}>
+                  <tr key={a.key || i} className="hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors">
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{agentName}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <InlineFilter field="agent" value={agentName}
+                        onInclude={() => setInclude('agent', agentName)}
+                        onExclude={() => setExclude('agent', agentName)}
+                        isIncluded={filters.agent?.includes(agentName)}
+                        isExcluded={excludes.agent?.includes(agentName)}
+                        className={`font-semibold text-left ${filters.agent?.includes(agentName) ? 'text-[#58a6ff]' : excludes.agent?.includes(agentName) ? 'text-[#f85149]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
+                        {agentName}
+                      </InlineFilter>
+                    </td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
                       <div className="flex items-center justify-end gap-1.5">
                         <div className="w-[70px] h-[6px] bg-[#d0d7de] dark:bg-[#30363d] rounded-full overflow-hidden">
@@ -606,10 +623,18 @@ export default function HipaaTab() {
               {(data?.topRules || []).slice(0, 5).map((r, i) => {
                 const ruleId = r.ruleId || r.key || r.id || ''
                 return (
-                  <tr key={r.ruleId || i} onClick={() => setFilter('rule', ruleId)}
-                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors ${filters.rule?.includes(ruleId) ? 'bg-[#e8681a]/5 ring-1 ring-inset ring-[#e8681a]/30' : ''}`}>
+                  <tr key={r.ruleId || i} className="hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] transition-colors">
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">{i + 1}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#e8681a] font-bold">{ruleId || '--'}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <InlineFilter field="rule" value={ruleId}
+                        onInclude={() => setInclude('rule', ruleId)}
+                        onExclude={() => setExclude('rule', ruleId)}
+                        isIncluded={filters.rule?.includes(ruleId)}
+                        isExcluded={excludes.rule?.includes(ruleId)}
+                        className={`font-bold text-left ${filters.rule?.includes(ruleId) ? 'text-[#e8681a] underline' : excludes.rule?.includes(ruleId) ? 'text-[#f85149]' : 'text-[#e8681a]'}`}>
+                        {ruleId || '--'}
+                      </InlineFilter>
+                    </td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#36454f] dark:text-[#c9d1d9]">{(r.description || 'Event').substring(0, 30)}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{r.count || 0}</td>
                   </tr>
@@ -650,20 +675,18 @@ export default function HipaaTab() {
         </div>
         <table className="w-full text-[10px] border-collapse table-fixed">
           <colgroup>
-            <col style={{ width: '110px' }} /><col style={{ width: '100px' }} /><col style={{ width: '55px' }} />
-            <col style={{ width: '130px' }} /><col style={{ width: '145px' }} /><col style={{ width: '88px' }} />
-            <col style={{ width: '110px' }} /><col style={{ width: '145px' }} />
+            <col style={{ width: '130px' }} /><col style={{ width: '100px' }} />
+            <col style={{ width: '90px' }} /><col style={{ width: '170px' }} />
+            <col style={{ width: '50px' }} /><col style={{ width: '60px' }} />
           </colgroup>
           <thead>
             <tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide bg-[#f0f2f4] dark:bg-[#2d3140]">
               <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Time</th>
               <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Agent</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Rule</th>
               <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Control</th>
               <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Description</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Severity</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Event</th>
-              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Groups</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Level</th>
+              <th className="text-left py-1.5 px-2 border-b-2 border-[#e5e7eb] dark:border-[#2d3140]">Rule ID</th>
             </tr>
           </thead>
           <tbody>
@@ -675,11 +698,16 @@ export default function HipaaTab() {
                 <React.Fragment key={idx}>
                   <tr onClick={() => toggleRow(rowId)}
                     className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] ${isExp ? 'bg-[#f6f8fa] dark:bg-[#16181f]' : ''}`}>
-                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] text-[#8b949e]">
-                      <span className="inline-flex items-center gap-1">
+                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <InlineFilter field="time" value={l.time}
+                        onInclude={() => setInclude('time', l.time)}
+                        onExclude={() => setExclude('time', l.time)}
+                        isIncluded={filters.time?.includes(l.time)}
+                        isExcluded={excludes.time?.includes(l.time)}
+                        className={`inline-flex items-center gap-1 text-[#8b949e] ${filters.time?.includes(l.time) ? 'text-[#58a6ff]' : excludes.time?.includes(l.time) ? 'text-[#f85149]' : ''}`}>
                         <span className="text-[10px] w-3">{isExp ? '▾' : '▸'}</span>
                         {l.time}
-                      </span>
+                      </InlineFilter>
                     </td>
                     <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
                       <InlineFilter field="agent" value={l.agent}
@@ -692,16 +720,15 @@ export default function HipaaTab() {
                       </InlineFilter>
                     </td>
                     <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
-                      <InlineFilter field="rule" value={l.rule}
-                        onInclude={() => setInclude('rule', l.rule)}
-                        onExclude={() => setExclude('rule', l.rule)}
-                        isIncluded={filters.rule?.includes(l.rule)}
-                        isExcluded={excludes.rule?.includes(l.rule)}
-                        className={`font-bold text-left ${filters.rule?.includes(l.rule) ? 'text-[#e8681a] underline' : excludes.rule?.includes(l.rule) ? 'text-[#f85149]' : 'text-[#e8681a]'}`}>
-                        {l.rule}
+                      <InlineFilter field="control" value={l.ctrl}
+                        onInclude={() => setInclude('control', l.ctrl)}
+                        onExclude={() => setExclude('control', l.ctrl)}
+                        isIncluded={filters.control?.includes(l.ctrl)}
+                        isExcluded={excludes.control?.includes(l.ctrl)}
+                        className={`font-semibold text-left ${filters.control?.includes(l.ctrl) ? 'text-[#58a6ff]' : excludes.control?.includes(l.ctrl) ? 'text-[#f85149]' : 'text-[#e8681a]'}`}>
+                        {l.ctrl}
                       </InlineFilter>
                     </td>
-                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d] font-semibold text-[#e8681a]">{l.ctrl}</td>
                     <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
                       <InlineFilter field="desc" value={l.desc}
                         onInclude={() => setInclude('desc', l.desc)}
@@ -713,38 +740,29 @@ export default function HipaaTab() {
                       </InlineFilter>
                     </td>
                     <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
-                      <InlineFilter field="severity" value={l.sev}
-                        onInclude={() => setInclude('severity', l.sev)}
-                        onExclude={() => setExclude('severity', l.sev)}
-                        isIncluded={filters.severity?.includes(l.sev)}
-                        isExcluded={excludes.severity?.includes(l.sev)}>
-                        <SevBadge s={l.sev} />
+                      <InlineFilter field="level" value={l.level}
+                        onInclude={() => setInclude('level', l.level)}
+                        onExclude={() => setExclude('level', l.level)}
+                        isIncluded={filters.level?.includes(l.level)}
+                        isExcluded={excludes.level?.includes(l.level)}
+                        className={`font-semibold text-center ${filters.level?.includes(l.level) ? 'text-[#58a6ff]' : excludes.level?.includes(l.level) ? 'text-[#f85149]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
+                        {l.level}
                       </InlineFilter>
                     </td>
                     <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
-                      <InlineFilter field="event" value={l.event}
-                        onInclude={() => setInclude('event', l.event)}
-                        onExclude={() => setExclude('event', l.event)}
-                        isIncluded={filters.event?.includes(l.event)}
-                        isExcluded={excludes.event?.includes(l.event)}
-                        className={`text-left font-medium ${filters.event?.includes(l.event) ? 'text-[#58a6ff]' : excludes.event?.includes(l.event) ? 'text-[#f85149]' : 'text-[#e8681a]'}`}>
-                        {l.event}
-                      </InlineFilter>
-                    </td>
-                    <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#21262d]">
-                      <InlineFilter field="groups" value={l.groups}
-                        onInclude={() => setInclude('groups', l.groups)}
-                        onExclude={() => setExclude('groups', l.groups)}
-                        isIncluded={filters.groups?.includes(l.groups)}
-                        isExcluded={excludes.groups?.includes(l.groups)}
-                        className={`text-left font-medium ${filters.groups?.includes(l.groups) ? 'text-[#58a6ff]' : excludes.groups?.includes(l.groups) ? 'text-[#f85149]' : 'text-[#e8681a] text-[9px]'}`}>
-                        {l.groups}
+                      <InlineFilter field="rule" value={l.rule}
+                        onInclude={() => setInclude('rule', l.rule)}
+                        onExclude={() => setExclude('rule', l.rule)}
+                        isIncluded={filters.rule?.includes(l.rule)}
+                        isExcluded={excludes.rule?.includes(l.rule)}
+                        className={`font-bold text-left ${filters.rule?.includes(l.rule) ? 'text-[#e8681a] underline' : excludes.rule?.includes(l.rule) ? 'text-[#f85149]' : 'text-[#e8681a]'}`}>
+                        {l.rule}
                       </InlineFilter>
                     </td>
                   </tr>
                   {isExp && l.raw && (
                     <tr>
-                      <td colSpan={8} className="p-0 border-b border-[#f0f2f4] dark:border-[#21262d]">
+                      <td colSpan={6} className="p-0 border-b border-[#f0f2f4] dark:border-[#21262d]">
                         <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} transition={{ duration: 0.15 }}>
                           <div className="bg-[#f6f8fa] dark:bg-[#16181f] border-t border-[#e5e7eb] dark:border-[#2d3140]">
                             <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#e5e7eb] dark:border-[#2d3140]">
@@ -785,7 +803,7 @@ export default function HipaaTab() {
               )
             })}
             {filteredLogs.length === 0 && (
-              <tr><td colSpan={8} className="text-center py-4 text-xs text-[#8b949e]">No matching logs found</td></tr>
+              <tr><td colSpan={6} className="text-center py-4 text-xs text-[#8b949e]">No matching logs found</td></tr>
             )}
           </tbody>
         </table>

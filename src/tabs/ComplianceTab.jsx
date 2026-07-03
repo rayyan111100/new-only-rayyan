@@ -8,10 +8,11 @@ import LogDetailModal from '../components/LogDetailModal'
 import useCompliance from '../hooks/useCompliance'
 import { exportExcel, exportPDFReport, prepareRows } from '../utils/exportLogs'
 import { PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import InlineFilter from '../components/InlineFilter'
 import { api } from '../api'
 import { parseDateStr } from '../utils'
 
-const FRAMEWORKS = ['PCI-DSS', 'HIPAA', 'GDPR', 'TSC (SOC 2)', 'NIST 800-53', 'MITRE ATT&CK']
+const FRAMEWORKS = ['PCI-DSS', 'HIPAA', 'GDPR', 'TSC (SOC 2)', 'NIST 800-53']
 const SEV_COLORS = { Critical: '#f85149', High: '#e8681a', Medium: '#d29922', Low: '#3fb950' }
 const SEV_ORDER = ['Critical', 'High', 'Medium', 'Low']
 const QUICK_TIMES = [
@@ -43,20 +44,23 @@ const FRAMEWORK_TO_FIELD = {
   'MITRE ATT&CK': 'rule.mitre'
 }
 
-function buildFilterQuery(filters) {
+function buildFilterQuery(filters, excludes) {
   const parts = []
-  if (filters.framework && FRAMEWORK_TO_FIELD[filters.framework]) {
-    parts.push('_exists_:' + FRAMEWORK_TO_FIELD[filters.framework])
+  if (filters.framework?.length && FRAMEWORK_TO_FIELD[filters.framework[0]]) {
+    parts.push('_exists_:' + FRAMEWORK_TO_FIELD[filters.framework[0]])
   }
-  if (filters.severity) {
-    const sevRanges = { Critical: 'rule.level:[12 TO *]', High: '(rule.level:[7 TO 11])', Medium: '(rule.level:[4 TO 6])', Low: '(rule.level:[1 TO 3])' }
-    if (sevRanges[filters.severity]) parts.push(sevRanges[filters.severity])
+  const sevRanges = { Critical: 'rule.level:[12 TO *]', High: '(rule.level:[7 TO 11])', Medium: '(rule.level:[4 TO 6])', Low: '(rule.level:[1 TO 3])' }
+  for (const s of (filters.severity || [])) {
+    if (sevRanges[s]) parts.push(sevRanges[s])
   }
-  if (filters.agent) {
-    parts.push('agent.name:"' + filters.agent.replace(/"/g, '\\"') + '"')
+  for (const s of (excludes.severity || [])) {
+    if (sevRanges[s]) parts.push('NOT ' + sevRanges[s])
   }
-  if (filters.rule) {
-    parts.push('rule.id:"' + filters.rule.replace(/"/g, '\\"') + '"')
+  for (const a of (filters.agent || [])) {
+    parts.push('agent.name:"' + a.replace(/"/g, '\\"') + '"')
+  }
+  for (const r of (filters.rule || [])) {
+    parts.push('rule.id:"' + r.replace(/"/g, '\\"') + '"')
   }
   return parts.join(' AND ')
 }
@@ -95,6 +99,7 @@ export default function ComplianceTab() {
   const [modal, setModal] = useState(null)
   const [assetSidebarOpen, setAssetSidebarOpen] = useState(false)
   const [filters, setFilters] = useState({})
+  const [excludes, setExcludes] = useState({})
   const [timeRange, setTimeRange] = useState('now-7d')
   const [expandedRow, setExpandedRow] = useState({})
   const [jsonView, setJsonView] = useState({})
@@ -106,11 +111,12 @@ export default function ComplianceTab() {
   const [evExtraLogs, setEvExtraLogs] = useState([])
   const evExtraOffsetRef = useRef(0)
   const [evLoadingMore, setEvLoadingMore] = useState(false)
-  const evFilterQuery = buildFilterQuery(filters)
+  const evFilterQuery = buildFilterQuery(filters, excludes)
   const evFilterOffsetRef = useRef(0)
 
   const handleRefresh = useCallback(() => {
     setFilters({})
+    setExcludes({})
     setLogPage(1)
     setExpandedRow({})
     setJsonView({})
@@ -197,41 +203,119 @@ export default function ComplianceTab() {
 
   const setFilter = (key, value) => {
     setFilters(prev => {
-      if (prev[key] === value) {
-        const next = { ...prev }
-        delete next[key]
-        return next
+      const arr = prev[key] || []
+      const next = { ...prev }
+      if (arr.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[key] = filtered
+        else delete next[key]
+      } else {
+        next[key] = [...arr, value]
       }
-      return { ...prev, [key]: value }
+      return next
+    })
+    setExcludes(prev => {
+      const next = { ...prev }
+      const arr = next[key]
+      if (arr?.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[key] = filtered
+        else delete next[key]
+      }
+      return next
     })
   }
 
-  const clearFilter = (key) => setFilters(prev => {
-    const next = { ...prev }
-    delete next[key]
-    return next
-  })
+  const setInclude = (field, value) => {
+    setFilters(prev => {
+      const arr = prev[field] || []
+      const next = { ...prev }
+      if (arr.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[field] = filtered
+        else delete next[field]
+      } else {
+        next[field] = [...arr, value]
+      }
+      return next
+    })
+    setExcludes(prev => {
+      const next = { ...prev }
+      const arr = next[field]
+      if (arr?.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[field] = filtered
+        else delete next[field]
+      }
+      return next
+    })
+  }
+
+  const setExclude = (field, value) => {
+    setExcludes(prev => {
+      const arr = prev[field] || []
+      const next = { ...prev }
+      if (arr.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[field] = filtered
+        else delete next[field]
+      } else {
+        next[field] = [...arr, value]
+      }
+      return next
+    })
+    setFilters(prev => {
+      const next = { ...prev }
+      const arr = next[field]
+      if (arr?.includes(value)) {
+        const filtered = arr.filter(v => v !== value)
+        if (filtered.length) next[field] = filtered
+        else delete next[field]
+      }
+      return next
+    })
+  }
+
+  const clearFilter = (key, value) => { setFilters(prev => { const next = { ...prev }; const arr = next[key]; if (arr) { const f = arr.filter(v => v !== value); if (f.length) next[key] = f; else delete next[key] } return next }); setExcludes(prev => { const next = { ...prev }; const arr = next[key]; if (arr) { const f = arr.filter(v => v !== value); if (f.length) next[key] = f; else delete next[key] } return next }) }
+
+  const clearAllFilters = () => { setFilters({}); setExcludes({}) }
 
   const activeFilters = Object.keys(filters)
+  const activeExcludes = Object.keys(excludes)
 
   const filteredRecent = useMemo(() => {
     const all = [...(data?.recent || []), ...evExtraLogs]
     return all.filter(r => {
       const level = parseInt(r.rule?.level || r.level || 0)
       const sev = toSev(level)
-      if (filters.severity && sev !== filters.severity) return false
-      if (filters.agent) {
-        const agentName = r.agent?.name || r.agent || ''
-        if (agentName !== filters.agent) return false
-      }
-      if (filters.rule) {
-        const ruleId = r.rule?.id || r.rule || ''
-        if (ruleId !== filters.rule) return false
-      }
-      if (filters.framework) {
+      const agentName = r.agent?.name || r.agent || ''
+      const ruleId = r.rule?.id || r.rule || ''
+      const desc = r.rule?.description || r.description || '--'
+      const event = r.rule?.groups?.[0] || r.event_type || '--'
+      const frameworks = (r._frameworks || []).join(', ') || '--'
+      const control = r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || '--'
+      const file = r.data?.file || r.file || '--'
+      if (filters.severity?.length && !filters.severity.includes(sev)) return false
+      if (excludes.severity?.length && excludes.severity.includes(sev)) return false
+      if (filters.agent?.length && !filters.agent.includes(agentName)) return false
+      if (excludes.agent?.length && excludes.agent.includes(agentName)) return false
+      if (filters.rule?.length && !filters.rule.includes(ruleId)) return false
+      if (excludes.rule?.length && excludes.rule.includes(ruleId)) return false
+      if (filters.desc?.length && !filters.desc.includes(desc)) return false
+      if (excludes.desc?.length && excludes.desc.includes(desc)) return false
+      if (filters.event?.length && !filters.event.includes(event)) return false
+      if (excludes.event?.length && excludes.event.includes(event)) return false
+      if (filters.frameworks?.length && !filters.frameworks.includes(frameworks)) return false
+      if (excludes.frameworks?.length && excludes.frameworks.includes(frameworks)) return false
+      if (filters.control?.length && !filters.control.includes(control)) return false
+      if (excludes.control?.length && excludes.control.includes(control)) return false
+      if (filters.file?.length && !filters.file.includes(file)) return false
+      if (excludes.file?.length && excludes.file.includes(file)) return false
+      if (filters.framework?.length) {
         const fws = r._frameworks || []
-        if (fws.includes(filters.framework)) return true
-        const field = FRAMEWORK_TO_FIELD[filters.framework]
+        const fw = filters.framework[0]
+        if (fws.includes(fw)) return true
+        const field = FRAMEWORK_TO_FIELD[fw]
         if (field) {
           const parts = field.split('.')
           let val = r
@@ -242,7 +326,7 @@ export default function ComplianceTab() {
       }
       return true
     })
-  }, [data?.recent, evExtraLogs, filters])
+  }, [data?.recent, evExtraLogs, filters, excludes])
 
   const totalLogPages = Math.max(1, Math.ceil(filteredRecent.length / LOG_PAGE_SIZE))
 
@@ -331,7 +415,7 @@ export default function ComplianceTab() {
       {/* Metric Cards */}
       <div className="grid grid-cols-6 gap-2.5 mb-3">
         {[
-          { key: 'm-events', label: 'Compliance Events', val: totalEvents.toLocaleString(), sub: `24h: ${(data?.count24 || 0).toLocaleString()} · 7d: ${(data?.count7d || 0).toLocaleString()}`, icon: 'certificate', iconBg: '#a371f71a', iconColor: '#a371f7' },
+          { key: 'm-events', label: 'Compliance Events', val: totalEvents.toLocaleString(), icon: 'certificate', iconBg: '#a371f71a', iconColor: '#a371f7' },
           { key: 'm-crit', label: 'Critical Violations', val: (data?.severity?.Critical || 0).toLocaleString(), icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b' },
           { key: 'm-high', label: 'High Severity Violations', val: (data?.severity?.High || 0).toLocaleString(), icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a' },
           { key: 'm-med', label: 'Medium Severity Violations', val: (data?.severity?.Medium || 0).toLocaleString(), icon: 'alert-circle', iconBg: '#d2992218', iconColor: '#d29922', valColor: '#d29922' },
@@ -363,9 +447,15 @@ export default function ComplianceTab() {
         <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2.5">Framework Event Distribution</div>
           {fwCounts.map(fw => (
-            <div key={fw.framework} onClick={() => setFilter('framework', fw.framework)}
-              className={`flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] cursor-pointer text-[11px] ${filters.framework === fw.framework ? 'bg-[#a371f7]/5 ring-1 ring-inset ring-[#a371f7]/30' : ''}`}>
-              <span className="w-[90px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0">{fw.framework}</span>
+            <div key={fw.framework} className="flex items-center gap-2 mb-1.5 py-1 px-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] text-[11px]">
+              <InlineFilter field="framework" value={fw.framework}
+                onInclude={() => setInclude('framework', fw.framework)}
+                onExclude={() => setExclude('framework', fw.framework)}
+                isIncluded={filters.framework?.includes(fw.framework)}
+                isExcluded={excludes.framework?.includes(fw.framework)}
+                className="w-[90px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0">
+                <span className="w-[90px] text-[#36454f] dark:text-[#c9d1d9] font-medium shrink-0">{fw.framework}</span>
+              </InlineFilter>
               <div className="flex-1 h-2 bg-[#d0d7de] dark:bg-[#1d2432] rounded-full overflow-hidden">
                 <div className="h-full rounded-full" style={{ width: `${(fw.count / maxFw) * 100}%`, background: 'linear-gradient(90deg,#e8681a,#ff7b2e)' }} />
               </div>
@@ -383,11 +473,15 @@ export default function ComplianceTab() {
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2">Severity Distribution</div>
           <div className="grid grid-cols-2 gap-1 mb-2">
             {SEV_ORDER.filter(s => (sevData[s] || 0) > 0).map(s => (
-              <span key={s} onClick={() => setFilter('severity', s)}
-                className={`flex items-center gap-1.5 text-[11px] cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] ${filters.severity === s ? 'ring-1 ring-[#e8681a]/30 bg-[#e8681a]/5' : ''} ${filters.severity && filters.severity !== s ? 'opacity-40' : ''}`}>
+              <InlineFilter key={s} field="severity" value={s}
+                onInclude={() => setInclude('severity', s)}
+                onExclude={() => setExclude('severity', s)}
+                isIncluded={filters.severity?.includes(s)}
+                isExcluded={excludes.severity?.includes(s)}
+                className={`flex items-center gap-1.5 text-[11px] rounded px-1 py-0.5 ${filters.severity?.includes(s) ? 'ring-1 ring-[#e8681a]/30 bg-[#e8681a]/5' : ''} ${filters.severity?.length && !filters.severity.includes(s) ? 'opacity-40' : ''}`}>
                 <span className="w-[10px] h-[10px] rounded flex-shrink-0" style={{ background: SEV_COLORS[s] }} />
                 {s} <span className="text-[#8b949e]">{sevData[s] || 0} ({Math.round(((sevData[s] || 0) / (totalEvents || 1)) * 100)}%)</span>
-              </span>
+              </InlineFilter>
             ))}
           </div>
           <div className="flex-1 min-h-[120px] relative">
@@ -447,10 +541,18 @@ export default function ComplianceTab() {
               {(data?.topRules || []).slice(0, 5).map((r, i) => {
                 const ruleId = r.ruleId || r.key || r.rule || r.id || ''
                 return (
-                  <tr key={r.key || i} onClick={() => setFilter('rule', ruleId)}
-                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors ${filters.rule === ruleId ? 'bg-[#e8681a]/5 ring-1 ring-inset ring-[#e8681a]/30' : ''}`}>
+                  <tr key={r.key || i} className="hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-[#8b949e]">{i + 1}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-[#e8681a] font-semibold">{ruleId}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140]">
+                      <InlineFilter field="rule" value={ruleId}
+                        onInclude={() => setInclude('rule', ruleId)}
+                        onExclude={() => setExclude('rule', ruleId)}
+                        isIncluded={filters.rule?.includes(ruleId)}
+                        isExcluded={excludes.rule?.includes(ruleId)}
+                        className="font-semibold text-left">
+                        <span className="text-[#e8681a] font-semibold">{ruleId}</span>
+                      </InlineFilter>
+                    </td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9]">{r.control || r.description?.substring(0, 30) || 'Control violation'}</td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{r.doc_count || r.count || 0}</td>
                   </tr>
@@ -471,10 +573,18 @@ export default function ComplianceTab() {
               {agentsData.slice(0, 5).map((a, i) => {
                 const agentName = a.key || a.agent || 'Unknown'
                 return (
-                  <tr key={a.key || i} onClick={() => setFilter('agent', agentName)}
-                    className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors ${filters.agent === agentName ? 'bg-[#58a6ff]/5 ring-1 ring-inset ring-[#58a6ff]/30' : ''}`}>
+                  <tr key={a.key || i} className="hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-[#8b949e]">{i + 1}</td>
-                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{agentName}</td>
+                    <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140]">
+                      <InlineFilter field="agent" value={agentName}
+                        onInclude={() => setInclude('agent', agentName)}
+                        onExclude={() => setExclude('agent', agentName)}
+                        isIncluded={filters.agent?.includes(agentName)}
+                        isExcluded={excludes.agent?.includes(agentName)}
+                        className={`font-semibold text-left ${filters.agent?.includes(agentName) ? 'text-[#58a6ff]' : excludes.agent?.includes(agentName) ? 'text-[#f85149]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
+                        {agentName}
+                      </InlineFilter>
+                    </td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140]">
                       <div className="flex items-center justify-end gap-1.5">
                         <div className="w-[70px] h-[6px] bg-[#d0d7de] dark:bg-[#1d2432] rounded-full overflow-hidden">
@@ -528,9 +638,17 @@ export default function ComplianceTab() {
             {fwCounts.map(fw => {
               const pct = maxFw ? (fw.count / maxFw) * 100 : 0
               return (
-                <tr key={fw.framework} onClick={() => setFilter('framework', fw.framework)}
-                  className={`hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] cursor-pointer transition-colors ${filters.framework === fw.framework ? 'bg-[#a371f7]/5 ring-1 ring-inset ring-[#a371f7]/30' : ''}`}>
-                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{fw.framework}</td>
+                <tr key={fw.framework} className="hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
+                  <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] font-semibold text-[#1f2328] dark:text-[#f0f6fc]">
+                    <InlineFilter field="framework" value={fw.framework}
+                      onInclude={() => setInclude('framework', fw.framework)}
+                      onExclude={() => setExclude('framework', fw.framework)}
+                      isIncluded={filters.framework?.includes(fw.framework)}
+                      isExcluded={excludes.framework?.includes(fw.framework)}
+                      className="font-semibold text-left">
+                      <span className="font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{fw.framework}</span>
+                    </InlineFilter>
+                  </td>
                   <td className="text-center py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] font-bold text-[#1f2328] dark:text-[#f0f6fc]">{fw.count}</td>
                   <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140]">
                     <div className="h-2 bg-[#d0d7de] dark:bg-[#1d2432] rounded-full overflow-hidden w-32">
@@ -603,34 +721,97 @@ export default function ComplianceTab() {
                       className={`cursor-pointer hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors ${isExp ? 'bg-[#f6f8fa] dark:bg-[#16181f]' : ''}`}>
                       <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-[#8b949e] overflow-hidden text-ellipsis whitespace-nowrap">
                         <span className="inline-flex items-center gap-1">
-                          <span className="text-[10px] w-3 shrink-0">{isExp ? '▾' : '▸'}</span>
-                          <span className="truncate">{(r['@timestamp'] || r.timestamp) ? new Date(r['@timestamp'] || r.timestamp).toLocaleString() : '--'}</span>
+                          <span className="text-[10px] w-3 shrink-0">{isExp ? '\u25BE' : '\u25B8'}</span>
+                          <InlineFilter field="time" value={r['@timestamp'] || r.timestamp || ''}
+                            onInclude={() => setInclude('time', r['@timestamp'] || r.timestamp || '')}
+                            onExclude={() => setExclude('time', r['@timestamp'] || r.timestamp || '')}
+                            isIncluded={filters.time?.includes(r['@timestamp'] || r.timestamp || '')}
+                            isExcluded={excludes.time?.includes(r['@timestamp'] || r.timestamp || '')}>
+                            <span className="truncate">{(r['@timestamp'] || r.timestamp) ? new Date(r['@timestamp'] || r.timestamp).toLocaleString() : '--'}</span>
+                          </InlineFilter>
                         </span>
                       </td>
                       <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap">
-                        <button onClick={(e) => { e.stopPropagation(); setFilter('agent', agentName) }}
-                          className={`font-semibold text-left hover:underline truncate max-w-full ${filters.agent === agentName ? 'text-[#58a6ff]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
+                        <InlineFilter field="agent" value={agentName}
+                          onInclude={() => setInclude('agent', agentName)}
+                          onExclude={() => setExclude('agent', agentName)}
+                          isIncluded={filters.agent?.includes(agentName)}
+                          isExcluded={excludes.agent?.includes(agentName)}
+                          className={`font-semibold text-left truncate max-w-full ${filters.agent?.includes(agentName) ? 'text-[#58a6ff]' : excludes.agent?.includes(agentName) ? 'text-[#f85149]' : 'text-[#1f2328] dark:text-[#f0f6fc]'}`}>
                           {agentName}
-                        </button>
+                        </InlineFilter>
                       </td>
                       <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap">
-                        <button onClick={(e) => { e.stopPropagation(); setFilter('rule', ruleId) }}
-                          className={`font-bold text-left hover:underline truncate max-w-full ${filters.rule === ruleId ? 'text-[#e8681a] underline' : 'text-[#e8681a]'}`}>
+                        <InlineFilter field="rule" value={ruleId}
+                          onInclude={() => setInclude('rule', ruleId)}
+                          onExclude={() => setExclude('rule', ruleId)}
+                          isIncluded={filters.rule?.includes(ruleId)}
+                          isExcluded={excludes.rule?.includes(ruleId)}
+                          className={`font-bold text-left truncate max-w-full ${filters.rule?.includes(ruleId) ? 'text-[#e8681a] underline' : excludes.rule?.includes(ruleId) ? 'text-[#f85149]' : 'text-[#e8681a]'}`}>
                           {ruleId}
-                        </button>
+                        </InlineFilter>
                       </td>
                       <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140]">{
-                        (() => { const lv = parseInt(r.rule?.level || r.level || 0); return <span className="inline-flex items-center justify-center w-[22px] h-[18px] rounded text-[10px] font-semibold" style={{ background: lv >= 7 ? '#450a0a' : lv >= 4 ? '#3d1a00' : '#0d1117', color: lv >= 7 ? '#fca5a5' : lv >= 4 ? '#fdba74' : '#8b949e' }}>{lv}</span> })()
+                        (() => { const lv = parseInt(r.rule?.level || r.level || 0); return <InlineFilter field="level" value={String(lv)}
+                          onInclude={() => setInclude('level', String(lv))}
+                          onExclude={() => setExclude('level', String(lv))}
+                          isIncluded={filters.level?.includes(String(lv))}
+                          isExcluded={excludes.level?.includes(String(lv))}
+                          className="inline-flex items-center justify-center w-[22px] h-[18px] rounded text-[10px] font-semibold"
+                          style={{ background: lv >= 7 ? '#450a0a' : lv >= 4 ? '#3d1a00' : '#0d1117', color: lv >= 7 ? '#fca5a5' : lv >= 4 ? '#fdba74' : '#8b949e' }}>
+                          {lv}
+                        </InlineFilter> })()
                       }</td>
                       <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap text-[#36454f] dark:text-[#c9d1d9] max-w-0">
-                        {r.rule?.description || r.description || '--'}
+                        <InlineFilter field="desc" value={r.rule?.description || r.description || '--'}
+                          onInclude={() => setInclude('desc', r.rule?.description || r.description || '--')}
+                          onExclude={() => setExclude('desc', r.rule?.description || r.description || '--')}
+                          isIncluded={filters.desc?.includes(r.rule?.description || r.description || '--')}
+                          isExcluded={excludes.desc?.includes(r.rule?.description || r.description || '--')}
+                          className="text-[#36454f] dark:text-[#c9d1d9]">
+                          {r.rule?.description || r.description || '--'}
+                        </InlineFilter>
                       </td>
-                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap text-[#e8681a] font-medium">
-                        {r.rule?.groups?.[0] || r.event_type || '--'}
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap">
+                        <InlineFilter field="event" value={r.rule?.groups?.[0] || r.event_type || '--'}
+                          onInclude={() => setInclude('event', r.rule?.groups?.[0] || r.event_type || '--')}
+                          onExclude={() => setExclude('event', r.rule?.groups?.[0] || r.event_type || '--')}
+                          isIncluded={filters.event?.includes(r.rule?.groups?.[0] || r.event_type || '--')}
+                          isExcluded={excludes.event?.includes(r.rule?.groups?.[0] || r.event_type || '--')}
+                          className="text-[#e8681a] font-medium">
+                          {r.rule?.groups?.[0] || r.event_type || '--'}
+                        </InlineFilter>
                       </td>
-                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap text-[#8b949e] font-medium">{(r._frameworks || []).join(', ') || '--'}</td>
-                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap text-[#8b949e]">{r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || '--'}</td>
-                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap text-[#8b949e]">{r.data?.file || r.file || '--'}</td>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap">
+                        <InlineFilter field="frameworks" value={(r._frameworks || []).join(', ') || '--'}
+                          onInclude={() => setInclude('frameworks', (r._frameworks || []).join(', ') || '--')}
+                          onExclude={() => setExclude('frameworks', (r._frameworks || []).join(', ') || '--')}
+                          isIncluded={filters.frameworks?.includes((r._frameworks || []).join(', ') || '--')}
+                          isExcluded={excludes.frameworks?.includes((r._frameworks || []).join(', ') || '--')}
+                          className="text-[#8b949e] font-medium">
+                          {(r._frameworks || []).join(', ') || '--'}
+                        </InlineFilter>
+                      </td>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap">
+                        <InlineFilter field="control" value={r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || '--'}
+                          onInclude={() => setInclude('control', r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || '--')}
+                          onExclude={() => setExclude('control', r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || '--')}
+                          isIncluded={filters.control?.includes(r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || '--')}
+                          isExcluded={excludes.control?.includes(r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || '--')}
+                          className="text-[#8b949e]">
+                          {r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || '--'}
+                        </InlineFilter>
+                      </td>
+                      <td className="py-1.5 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] overflow-hidden text-ellipsis whitespace-nowrap">
+                        <InlineFilter field="file" value={r.data?.file || r.file || '--'}
+                          onInclude={() => setInclude('file', r.data?.file || r.file || '--')}
+                          onExclude={() => setExclude('file', r.data?.file || r.file || '--')}
+                          isIncluded={filters.file?.includes(r.data?.file || r.file || '--')}
+                          isExcluded={excludes.file?.includes(r.data?.file || r.file || '--')}
+                          className="text-[#8b949e]">
+                          {r.data?.file || r.file || '--'}
+                        </InlineFilter>
+                      </td>
                     </tr>
                     {isExp && (
                       <tr>
@@ -675,7 +856,7 @@ export default function ComplianceTab() {
                 )
               })}
               {filteredRecent.length === 0 && (
-                <tr><td colSpan={9} className="text-center py-4 text-xs text-[#8b949e]">No {activeFilters.length > 0 ? 'matching' : ''} logs found</td></tr>
+                <tr><td colSpan={9} className="text-center py-4 text-xs text-[#8b949e]">No {(activeFilters.length > 0 || activeExcludes.length > 0) ? 'matching' : ''} logs found</td></tr>
               )}
             </tbody>
           </table>

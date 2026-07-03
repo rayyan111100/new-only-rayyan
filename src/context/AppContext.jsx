@@ -1,8 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { api, apiPost } from '../api'
 import { applyClientFilters, buildDqlText, parseDateStr, COMMON_FIELDS, inferFieldTypes, extractTotal, extractResults } from '../utils'
-import { getRule, getAllRules, updateRule, deleteRule, toggleRuleEnabled } from '../services/ruleStorage'
-import { addRulesToGroup, moveRulesToGroup, removeRulesFromGroup } from '../services/ruleGroupManager'
 import useRealtime from '../hooks/useRealtime'
 
 const AppContext = createContext()
@@ -35,10 +33,7 @@ export function AppProvider({ children }) {
   const [refreshValue, setRefreshValue] = useState(0)
   const [refreshUnit, setRefreshUnit] = useState('s')
   const [refreshActive, setRefreshActive] = useState(false)
-  const [pendingRuleId, setPendingRuleId] = useState(null)
-  const [activeGroup, setActiveGroup] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [selectedRules, setSelectedRules] = useState([])
   const [filterMatch, setFilterMatch] = useState('and')
   const [warning, setWarning] = useState(null)
   const [page, setPageState] = useState(1)
@@ -331,55 +326,7 @@ export function AppProvider({ children }) {
     else if (refreshValue > 0) { doSearch({ keepPage: true }); setRefreshActive(true) }
   }, [refreshActive, refreshValue, doSearch])
 
-  const selectRule = useCallback(id => {
-    setSelectedRules(prev => prev.includes(id) ? prev : [...prev, id])
-  }, [])
 
-  const deselectRule = useCallback(id => {
-    setSelectedRules(prev => prev.filter(x => x !== id))
-  }, [])
-
-  const selectAllRules = useCallback(() => {
-    setSelectedRules(getAllRules().map(r => r.id))
-  }, [])
-
-  const deselectAllRules = useCallback(() => {
-    setSelectedRules([])
-  }, [])
-
-  const bulkAddToGroup = useCallback(groupId => {
-    const ids = selectedRules
-    if (ids.length === 0) return
-    addRulesToGroup(groupId, ids)
-  }, [selectedRules])
-
-  const bulkMoveToGroup = useCallback((sourceGroupId, targetGroupId) => {
-    const ids = selectedRules
-    if (ids.length === 0) return
-    moveRulesToGroup(sourceGroupId, targetGroupId, ids)
-    setSelectedRules([])
-  }, [selectedRules])
-
-  const bulkRemoveFromGroup = useCallback(groupId => {
-    const ids = selectedRules
-    if (ids.length === 0) return
-    removeRulesFromGroup(groupId, ids)
-    setSelectedRules([])
-  }, [selectedRules])
-
-  const bulkDeleteRules = useCallback(() => {
-    const ids = selectedRules
-    if (ids.length === 0) return
-    for (const id of ids) deleteRule(id)
-    setSelectedRules([])
-  }, [selectedRules])
-
-  const bulkToggleRules = useCallback(enabled => {
-    const ids = selectedRules
-    if (ids.length === 0) return
-    for (const id of ids) updateRule(id, { enabled })
-    setSelectedRules([])
-  }, [selectedRules])
 
   const value = {
     theme, setTheme, isDark, tab, setTab,
@@ -392,16 +339,9 @@ export function AppProvider({ children }) {
     fields, setFields, histogram,
     doSearch, loadFields, resolveTimeRange,
     refreshValue, setRefreshValue, refreshUnit, setRefreshUnit, refreshActive, toggleRefresh,
-    pendingRuleId, setPendingRuleId,
-    activeGroup, setActiveGroup,
-    selectedRules, setSelectedRules,
     filterMatch, setFilterMatch,
     sidebarOpen, setSidebarOpen,
     warning, setWarning, clearAllFilters,
-    selectRule, deselectRule,
-    selectAllRules, deselectAllRules,
-    bulkAddToGroup, bulkMoveToGroup, bulkRemoveFromGroup,
-    bulkDeleteRules, bulkToggleRules,
     realtimeConnected, realtimeMatches, realtimeStats, realtimeClearMatches
   }
 

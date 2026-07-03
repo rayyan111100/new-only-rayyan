@@ -406,32 +406,64 @@ export default function MitreAttackTab() {
     setSortDir(1)
     try {
       const tp = timeParams()
-      if (sec === 'tactics' || sec === 'techniques') {
-        const field = sec === 'tactics' ? 'rule.mitre.tactic' : 'rule.mitre.technique'
-        const agg = await api('aggregate', { index: 'unishield360-alerts-4.x-*', field, type: 'terms', start_date: tp.start_date, end_date: tp.end_date, limit: 50 })
+      if (sec === 'tactics') {
+        const agg = await api('aggregate', { index: 'unishield360-alerts-4.x-*', field: 'rule.mitre.tactic', type: 'terms', start_date: tp.start_date, end_date: tp.end_date, limit: 50 })
         const buckets = agg.buckets || []
+        const liveCounts = {}
+        buckets.forEach(b => { liveCounts[b.key] = b.doc_count })
+        const allTactics = (mitreKnowledge.tactics || []).map(t => ({
+          ...t, count24: liveCounts[t.name] || 0
+        }))
+        buckets.filter(b => !mitreKnowledge.tactics.some(t => t.name === b.key)).forEach(b => {
+          allTactics.push({ id: `TA-${b.key.replace(/\s+/g, '-')}`, name: b.key, shortDesc: b.key, order: 99, count24: b.doc_count })
+        })
+        setSectionData(allTactics.sort((a, b) => (a.order || 99) - (b.order || 99)))
+      } else if (sec === 'techniques') {
+        const [techIdAgg, techNameAgg] = await Promise.all([
+          api('aggregate', { index: 'unishield360-alerts-4.x-*', field: 'rule.mitre.id', type: 'terms', start_date: tp.start_date, end_date: tp.end_date, limit: 200 }),
+          api('aggregate', { index: 'unishield360-alerts-4.x-*', field: 'rule.mitre.technique', type: 'terms', start_date: tp.start_date, end_date: tp.end_date, limit: 200 })
+        ])
+        const idBuckets = techIdAgg.buckets || []
+        const nameBuckets = techNameAgg.buckets || []
+        const idCount = {}; idBuckets.forEach(b => { idCount[b.key] = b.doc_count })
+        const nameCount = {}; nameBuckets.forEach(b => { nameCount[b.key] = b.doc_count })
 
-        if (sec === 'tactics') {
-          const liveTactics = buckets.map(b => b.key)
-          const enriched = (mitreKnowledge.tactics || []).filter(t => liveTactics.includes(t.name) || !liveTactics.length).map(t => ({
-            ...t,
-            count24: buckets.find(b => b.key === t.name)?.doc_count || 0
-          }))
-          const extraFromAgg = buckets.filter(b => !mitreKnowledge.tactics.some(t => t.name === b.key)).map(b => ({
-            id: `TA-${b.key.replace(/\s+/g, '-')}`, name: b.key, shortDesc: b.key, techniqueCount: b.doc_count, order: 99, count24: b.doc_count
-          }))
-          setSectionData([...enriched, ...extraFromAgg].sort((a, b) => (b.count24 || b.techniqueCount || 0) - (a.count24 || a.techniqueCount || 0)))
-        } else {
-          const liveTechs = buckets.map(b => b.key)
-          const enriched = (mitreKnowledge.techniques || []).filter(t => liveTechs.includes(t.name)).map(t => ({
-            ...t,
-            count24: buckets.find(b => b.key === t.name)?.doc_count || 0
-          }))
-          const extraFromAgg = buckets.filter(b => !mitreKnowledge.techniques.some(t => t.name === b.key)).map(b => ({
-            id: `T-${b.key.replace(/\s+/g, '-')}`, name: b.key, tactic: 'Unknown', platforms: [], subCount: 0, count24: b.doc_count, desc: `${b.key} — ${b.doc_count.toLocaleString()} alerts`
-          }))
-          setSectionData([...enriched, ...extraFromAgg].sort((a, b) => (b.count24 || 0) - (a.count24 || 0)))
-        }
+        const knwTechs = mitreKnowledge.techniques || []
+        const seenKeys = new Set()
+        const allTechniques = []
+
+        // Build from live ID data first — this ensures ALL techniques from Wazuh appear
+        const liveById = {}
+        idBuckets.forEach(b => {
+          const id = b.key
+          const kb = knwTechs.find(t => t.id === id)
+          const name = kb ? kb.name : id
+          const tactic = kb ? kb.tactic : ''
+          if (!liveById[id]) liveById[id] = { id, name, tactic, count24: 0 }
+          liveById[id].count24 += b.doc_count
+          if (kb) seenKeys.add(id)
+        })
+
+        // Add counts from name-based aggregation for techniques not captured by ID
+        nameBuckets.forEach(b => {
+          const kb = knwTechs.find(t => t.name === b.key)
+          const id = kb ? kb.id : b.key
+          if (!liveById[id]) {
+            const tactic = kb ? kb.tactic : ''
+            liveById[id] = { id, name: kb ? kb.name : b.key, tactic, count24: 0 }
+          }
+          liveById[id].count24 += b.doc_count
+          if (kb) seenKeys.add(kb.id)
+        })
+
+        // Add knowledge base techniques with 0 count if they weren't in live data
+        knwTechs.forEach(t => {
+          if (!liveById[t.id]) {
+            liveById[t.id] = { id: t.id, name: t.name, tactic: t.tactic || '', count24: 0 }
+          }
+        })
+
+        setSectionData(Object.values(liveById).sort((a, b) => (b.count24 || 0) - (a.count24 || 0)))
       } else {
         setSectionData(mitreKnowledge[sec] || [])
       }
@@ -490,17 +522,15 @@ export default function MitreAttackTab() {
       { key: 'techniquesUsed', label: 'Techniques', sort: true }
     ],
     tactics: [
-      { key: 'id', label: 'ID', render: r => <span className="font-mono text-[#EF843C] font-bold text-xs">{r.id}</span> },
+      { key: 'id', label: 'ID', sort: true, render: r => <span className="font-mono text-[#EF843C] font-bold text-xs">{r.id}</span> },
       { key: 'name', label: 'Name', sort: true, render: r => <span className="font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">{r.name}</span> },
-      { key: 'shortDesc', label: 'Description' },
-      { key: 'techniqueCount', label: 'Alerts', sort: true }
+      { key: 'shortDesc', label: 'Description' }
     ],
     techniques: [
-      { key: 'id', label: 'ID', render: r => <span className="font-mono text-[#EF843C] font-bold text-xs">{r.id}</span> },
+      { key: 'id', label: 'ID', sort: true, render: r => <span className="font-mono text-[#EF843C] font-bold text-xs">{r.id}</span> },
       { key: 'name', label: 'Name', sort: true, render: r => <span className="font-semibold text-[#1a1c23] dark:text-[#e4e6eb]">{r.name}</span> },
-      { key: 'tactic', label: 'Tactic' },
-      { key: 'platforms', label: 'Platforms', render: r => r.platforms?.join(', ') || '—' },
-      { key: 'subCount', label: 'Alerts', sort: true }
+      { key: 'tactic', label: 'Tactic', sort: true },
+      { key: 'platforms', label: 'Platforms', render: r => r.platforms?.join(', ') || '—' }
     ]
   }
 

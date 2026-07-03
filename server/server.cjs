@@ -105,15 +105,6 @@ const ENDPOINTS = ['health', 'indices', 'index-stats', 'fields', 'search', 'coun
 for (const ep of ENDPOINTS) {
   app.get(`/api/${ep}`, (req, res) => proxy('GET', `/${ep}`, req.query, res));
 }
-// UniShield360 Manager rules/decoders (separate prefix from local DB CRUD)
-const UNISHIELD360_ENDPOINTS = { 'wazuh-rules': 'rules', 'wazuh-decoders': 'decoders' };
-for (const [local, remote] of Object.entries(UNISHIELD360_ENDPOINTS)) {
-  app.get(`/api/${local}`, (req, res) => proxy('GET', `/${remote}`, req.query, res));
-  app.post(`/api/${local}`, (req, res) => proxy('POST', `/${remote}`, req.body, res));
-  app.put(`/api/${local}/:id`, (req, res) => proxy('PUT', `/${remote}/${req.params.id}`, req.body, res));
-  app.delete(`/api/${local}/:id`, (req, res) => proxy('DELETE', `/${remote}/${req.params.id}`, {}, res));
-}
-
 app.post('/api/scan', (req, res) => proxy('POST', '/scan', req.body, res));
 app.post('/api/search', (req, res) => proxy('POST', '/search', req.body, res));
 
@@ -122,88 +113,11 @@ const db = require('./db.cjs');
 db.initDB();
 console.log('✔ SQLite database initialized');
 
-// ─── Rule Engine (server-side) ───
-const re = require('./ruleEngine.cjs');
-
-// ─── Groups API (MUST be before /:id routes) ───
-app.get('/api/rules/groups', (req, res) => res.json(db.getAllGroups()));
-app.post('/api/rules/groups', (req, res) => { try { const g = db.createGroup(req.body); res.status(201).json(g) } catch (e) { res.status(400).json({ error: e.message }) } });
-app.put('/api/rules/groups/:id', (req, res) => { const g = db.updateGroup(req.params.id, req.body); g ? res.json(g) : res.status(404).json({ error: 'Group not found' }) });
-app.delete('/api/rules/groups/:id', (req, res) => { db.deleteGroup(req.params.id); res.json({ ok: true }) });
-
-// ─── Decoders API ───
-app.get('/api/decoders', (req, res) => res.json(db.getAllDecoders()));
-app.get('/api/decoders/:id', (req, res) => { const d = db.getDecoder(req.params.id); d ? res.json(d) : res.status(404).json({ error: 'Decoder not found' }) });
-app.post('/api/decoders', (req, res) => { try { const d = db.createDecoder(req.body); res.status(201).json(d) } catch (e) { res.status(400).json({ error: e.message }) } });
-app.put('/api/decoders/:id', (req, res) => { const d = db.updateDecoder(req.params.id, req.body); d ? res.json(d) : res.status(404).json({ error: 'Decoder not found' }) });
-app.delete('/api/decoders/:id', (req, res) => { db.deleteDecoder(req.params.id); res.json({ ok: true }) });
-
-// ─── Rules CRUD (groups/export routes already defined above — these use :id param) ───
-app.get('/api/rules/export-wazuh', (req, res) => {
-  const ids = req.query.ids ? req.query.ids.split(',') : []
-  const rules = ids.length ? ids.map(id => db.getRule(id)).filter(Boolean) : db.getAllRules()
-  if (!rules.length) return res.status(404).json({ error: 'No rules to export' })
-  const xml = xmlConv.rulesToUnishield360Xml(rules)
-  res.setHeader('Content-Type', 'application/xml')
-  res.setHeader('Content-Disposition', `attachment; filename="custom-rules-${Date.now()}.xml"`)
-  res.send(xml)
-})
-app.post('/api/rules/import-wazuh', (req, res) => {
-  try {
-    const xmlStr = req.body.xml || req.body
-    if (!xmlStr || typeof xmlStr !== 'string') return res.status(400).json({ error: 'XML string required' })
-    const rules = xmlConv.parseUnishield360Xml(xmlStr)
-    const created = rules.map(r => db.createRule(r))
-    res.status(201).json({ imported: created.length, rules: created })
-  } catch (e) { res.status(400).json({ error: e.message }) }
-})
-app.get('/api/rules', (req, res) => res.json(db.getAllRules()));
-app.post('/api/rules', (req, res) => { try { const r = db.createRule(req.body); res.status(201).json(r) } catch (e) { res.status(400).json({ error: e.message }) } });
-app.get('/api/rules/:id', (req, res) => { const r = db.getRule(req.params.id); r ? res.json(r) : res.status(404).json({ error: 'Rule not found' }) });
-app.get('/api/rules/:id/export-wazuh', (req, res) => { const rule = db.getRule(req.params.id); if (!rule) return res.status(404).json({ error: 'Rule not found' }); const xml = xmlConv.ruleToUnishield360Xml(rule); res.setHeader('Content-Type', 'application/xml'); res.send(xml) });
-app.put('/api/rules/:id', (req, res) => { const r = db.updateRule(req.params.id, req.body); r ? res.json(r) : res.status(404).json({ error: 'Rule not found' }) });
-app.delete('/api/rules/:id', (req, res) => { db.deleteRule(req.params.id); res.json({ ok: true }) });
-app.post('/api/rules/:id/toggle', (req, res) => { const r = db.toggleRuleEnabled(req.params.id); r ? res.json(r) : res.status(404).json({ error: 'Rule not found' }) });
-app.get('/api/rules/:id/versions', (req, res) => res.json(db.getVersionHistory(req.params.id)));
-app.post('/api/rules/:id/versions', (req, res) => { const v = db.saveVersion(req.params.id, req.body.comment); v ? res.status(201).json(v) : res.status(404).json({ error: 'Rule not found' }) });
-app.post('/api/rules/:id/rollback/:version', (req, res) => { const r = db.rollbackToVersion(req.params.id, parseInt(req.params.version)); r ? res.json(r) : res.status(404).json({ error: 'Version or rule not found' }) });
-app.post('/api/rules/:id/evaluate', (req, res) => { const rule = db.getRule(req.params.id); if (!rule) return res.status(404).json({ error: 'Rule not found' }); const result = re.evalRule(rule, req.body.doc || {}); res.json({ rule: rule.name, ...result }) });
-app.post('/api/rules/evaluate-all', (req, res) => { const rules = db.getAllRules().filter(r => r.enabled); const result = re.evaluateAllRules(rules, req.body.doc || {}); res.json(result) });
-app.post('/api/rules/batch-evaluate', (req, res) => {
-  const rules = db.getAllRules().filter(r => r.enabled);
-  const docs = req.body.docs || [];
-  const results = docs.map((doc, i) => { const result = re.evaluateAllRules(rules, doc); return { index: i, matched: result.matched, matches: result.matches.map(m => ({ ruleId: m.rule.id, ruleName: m.rule.name })) } });
-  res.json({ total: docs.length, matched: results.filter(r => r.matched).length, results });
-});
-
-// ─── Decoder Engine (server-side) ───
-const de = require('./decoderEngine.cjs');
-
-// Enriched search: fetch + decode full_log + evaluate rules
-app.post('/api/search/enriched', async (req, res) => {
-  try {
-    const query = { ...req.body, limit: req.body.limit || 50, sort: req.body.sort || '@timestamp', order: req.body.order || 'desc' }
-    const [searchRes, countRes] = await Promise.all([
-      api.get('/search', { params: query }).catch(() => ({ data: { results: [], total: 0 } })),
-      api.get('/count', { params: { index: query.index, q: query.q || '*', start_date: query.start_date, end_date: query.end_date } }).catch(() => ({ data: { count: 0 } }))
-    ])
-    let results = searchRes.data.results || []
-    const total = countRes.data.count || searchRes.data.total || 0
-    results = results.map(doc => { const fullLog = doc.full_log || ''; const decoded = de.decodeLog(fullLog); return { ...doc, decoded: decoded.fields, decoded_format: decoded.format, decoded_raw: decoded.raw } })
-    const rules = db.getAllRules().filter(r => r.enabled)
-    const evaluation = rules.length > 0 ? results.map((doc, i) => { const result = re.evaluateAllRules(rules, doc); return result.matched ? { index: i, matched: true, ruleIds: result.matches.map(m => m.rule.id), ruleNames: result.matches.map(m => m.rule.name) } : null }).filter(Boolean) : []
-    res.json({ total, results, decoded: true, evaluated: evaluation.length, ruleMatches: evaluation })
-  } catch (e) { res.status(500).json({ error: e.message }) }
-})
-
 // Map UniShield360 index names to actual Wazuh index names for API calls
 function mapIndex(idx) {
   if (!idx) return idx;
   return idx.replace(/^unishield360-/i, 'wazuh-');
 }
-
-// ─── UniShield360 XML Converter ───
-const xmlConv = require('./unishield360Xml.cjs');
 
 // SOC Dashboard Aggregation Endpoint
 app.get('/api/dashboard', async (req, res) => {
@@ -763,7 +677,7 @@ app.get('/api/mitre-data', async (req, res) => {
 
     const tactics = Object.values(tacticsLookup).sort((a, b) => a.order - b.order)
 
-    const techniques = objects.filter(o => o.type === 'attack-pattern').map(o => ({
+    const techniques = objects.filter(o => o.type === 'attack-pattern' && !o.x_mitre_is_subtechnique).map(o => ({
       id: o.external_references?.find(r => r.source_name === 'mitre-attack')?.external_id || '',
       name: o.name,
       tactic: shortToName[o.kill_chain_phases?.[0]?.phase_name] || o.kill_chain_phases?.[0]?.phase_name || '',
@@ -813,7 +727,7 @@ function startServer(port) {
       console.log(`✔ UniShield360 Dashboard at http://localhost:${addr.port}`);
       console.log(`✔ Proxy → ${API}`);
 
-      const rt = new RealtimeEngine(server, api, db, re, de);
+      const rt = new RealtimeEngine(server, api, db);
       const pollInterval = parseInt(process.env.UNISHIELD360_POLL_INTERVAL || '15000');
       rt.startPolling(pollInterval);
       console.log(`✔ Realtime engine polling every ${pollInterval}ms`);
