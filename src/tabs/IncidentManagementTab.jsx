@@ -11,9 +11,9 @@ const SEV_COLORS = {
 }
 
 function getSeverity(level) {
-  if (level >= 12) return 'critical'
-  if (level >= 7) return 'high'
-  if (level >= 4) return 'medium'
+  if (level >= 15) return 'critical'
+  if (level >= 12) return 'high'
+  if (level >= 7) return 'medium'
   return 'low'
 }
 
@@ -40,9 +40,9 @@ export default function IncidentManagementTab() {
       const base = { index: 'unishield360-alerts-4.x-*', start_date: timeRange, end_date: 'now' }
       let query
       if (searchQ) {
-        query = `(rule.groups:*incident* OR rule.groups:*response* OR rule.groups:*security_incident* OR rule.level:>=12) AND (${searchQ})`
+        query = `(rule.groups:*incident* OR rule.groups:*response* OR rule.groups:*security_incident* OR rule.level:>=15) AND (${searchQ})`
       } else {
-        query = 'rule.groups:*incident* OR rule.groups:*response* OR rule.groups:*security_incident* OR rule.level:>=12'
+        query = 'rule.groups:*incident* OR rule.groups:*response* OR rule.groups:*security_incident* OR rule.level:>=15'
       }
       const [d, sevAgg, agentAgg] = await Promise.all([
         api('search', { ...base, q: query, limit: 100, sort: '@timestamp', order: 'desc' }),

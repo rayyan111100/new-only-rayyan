@@ -8,7 +8,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, 
 
 
 
-const SEV_LABELS = { Critical: { color: '#dc2626', min: 12 }, High: { color: '#ea580c', min: 7 }, Medium: { color: '#ca8a04', min: 3 }, Low: { color: '#16a34a', min: 1 } }
+const SEV_LABELS = { Critical: { color: '#dc2626', min: 15 }, High: { color: '#ea580c', min: 12 }, Medium: { color: '#ca8a04', min: 7 }, Low: { color: '#16a34a', min: 1 } }
 const SEV_ORDER = ['Critical', 'High', 'Medium', 'Low']
 const SEV_ICONS = {
   Critical: <svg className="w-3 h-3 inline" viewBox="0 0 24 24" fill="#dc2626"><circle cx="12" cy="12" r="10"/></svg>,
@@ -19,10 +19,10 @@ const SEV_ICONS = {
 const CHART_COLORS = ['#EF843C', '#8b5cf6', '#06b6d4', '#22c55e', '#eab308', '#f97316']
 
 const SEV_RANGES = {
-  Critical: 'rule.level:>=12',
-  High: 'rule.level:[7 TO 11]',
-  Medium: 'rule.level:[3 TO 6]',
-  Low: 'rule.level:[1 TO 2]'
+  Critical: 'rule.level:>=15',
+  High: 'rule.level:[12 TO 14]',
+  Medium: 'rule.level:[7 TO 11]',
+  Low: 'rule.level:[0 TO 6]'
 }
 
 const CustomTooltip = ({ active, payload, label }) => {

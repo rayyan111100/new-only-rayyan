@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="64" viewBox="0 0 320 64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#EF843C"/>
+      <stop offset="100%" stop-color="#D46A1F"/>
+    </linearGradient>
+  </defs>
+  <path d="M8 16l24-10v32c0 14-8.4 21.6-24 24V16z" fill="url(#g)"/>
+  <path d="M8 20l20-8v28c0 11.2-6.8 17.6-20 20V20z" fill="none" stroke="#FFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M17 30l5 5 9-9" fill="none" stroke="#FFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="52" y="42" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" fill="#EF843C" letter-spacing="1">UniShield360</text>
+</svg>

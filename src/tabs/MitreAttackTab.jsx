@@ -25,9 +25,9 @@ const CustomTip = ({ active, payload, label }) => {
 
 function toSev(level) {
   const n = parseInt(level) || 0
-  if (n >= 12) return 'Critical'
-  if (n >= 7) return 'High'
-  if (n >= 4) return 'Medium'
+  if (n >= 15) return 'Critical'
+  if (n >= 12) return 'High'
+  if (n >= 7) return 'Medium'
   return 'Low'
 }
 
@@ -216,16 +216,29 @@ export default function MitreAttackTab() {
       }))
       const fwTactics = [...allTactics, ...extraTacs].sort((a, b) => (b.count || 0) - (a.count || 0))
 
+      // Build a tactic lookup: name -> name (normalized)
+      const tacticNameSet = new Set(fwTactics.map(t => t.name))
+
       const seenKeys = new Set()
       const allTechniques = (mitreKnowledge.techniques || []).map(t => {
         const count = idCount[t.id] || nameCount[t.name] || 0
         if (count > 0) seenKeys.add(t.id)
-        return { ...t, count }
+        // Normalize tactic field: normalize hyphens to spaces and compare case-insensitively
+        let techTactic = t.tactic || ''
+        const norm = s => s.toLowerCase().replace(/[-_]/g, ' ')
+        const exactMatch = fwTactics.find(ft => norm(ft.name) === norm(techTactic))
+        if (exactMatch) techTactic = exactMatch.name
+        return { ...t, tactic: techTactic, count }
       })
 
       const extraFromId = (techIdAgg.buckets || []).filter(b => !seenKeys.has(b.key) && !mitreKnowledge.techniques?.some(t => t.id === b.key)).map(b => {
         const nameMatch = (mitreKnowledge.techniques || []).find(t => t.id === b.key)
-        return nameMatch ? { ...nameMatch, count: b.doc_count } : null
+        if (!nameMatch) return null
+        let techTactic = nameMatch.tactic || ''
+        const norm = s => s.toLowerCase().replace(/[-_]/g, ' ')
+        const exactMatch = fwTactics.find(ft => norm(ft.name) === norm(techTactic))
+        if (exactMatch) techTactic = exactMatch.name
+        return { ...nameMatch, tactic: techTactic, count: b.doc_count }
       }).filter(Boolean)
       extraFromId.forEach(e => seenKeys.add(e.id))
 
@@ -239,6 +252,16 @@ export default function MitreAttackTab() {
         if (!extraTechsLookup[k] || e.count > extraTechsLookup[k].count) extraTechsLookup[k] = e
       })
       const fwTechniques = [...allTechniques, ...Object.values(extraTechsLookup)]
+
+      // Recalculate tactic counts from actual technique totals (covers tactics not in rule.mitre.tactic)
+      const techCountByTactic = {}
+      fwTechniques.forEach(t => {
+        const tac = t.tactic
+        if (tac) techCountByTactic[tac] = (techCountByTactic[tac] || 0) + (t.count || 0)
+      })
+      fwTactics.forEach(t => {
+        if (techCountByTactic[t.name]) t.count = techCountByTactic[t.name]
+      })
 
       setFwData({ tactics: fwTactics, techniques: fwTechniques })
       setFwSelectedTactics(prev => prev.filter(p => fwTactics.some(t => t.name === p)))
@@ -333,11 +356,18 @@ export default function MitreAttackTab() {
     setLoading(false)
   }, [timeParams])
 
+  const [mitreLoaded, setMitreLoaded] = useState(false)
+
   useEffect(() => {
     api('mitre-data').then(d => {
-      if (d?.groups) setMitreKnowledge(d)
-    }).catch(() => {})
+      if (d?.groups) { setMitreKnowledge(d); setMitreLoaded(true) }
+    }).catch(() => setMitreLoaded(true))
   }, [])
+
+  // Re-fetch framework data when MITRE knowledge finishes loading
+  useEffect(() => {
+    if (mitreLoaded && view === 'framework') fetchFrameworkData()
+  }, [mitreLoaded, view, fetchFrameworkData])
 
   useEffect(() => {
     handleRefresh()
@@ -1307,3 +1337,4 @@ export default function MitreAttackTab() {
     </motion.div>
   )
 }
+

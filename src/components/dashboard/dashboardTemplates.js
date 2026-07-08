@@ -10,10 +10,10 @@ export const DASHBOARD_TEMPLATES = {
       // Row 1: Alert Metrics (h=4 = 100px)
       { id: 'tpl_soc_total', title: 'Total Alerts', type: 'metric', x: 0, y: 0, w: 2, h: 4, query: { language: 'lucene', query: '', aggregation: { type: 'count' } }, vizConfig: { suffix: 'alerts', accent: '#8b5cf6' } },
       { id: 'tpl_soc_agents', title: 'Active Agents', type: 'metric', x: 2, y: 0, w: 2, h: 4, query: { language: 'lucene', query: '', aggregation: { field: 'agent.name', type: 'cardinality' } }, vizConfig: { suffix: 'agents', accent: '#10b981' } },
-      { id: 'tpl_soc_crit', title: 'Critical', type: 'metric', x: 4, y: 0, w: 2, h: 4, query: { language: 'lucene', query: 'rule.level:[12 TO 15]', aggregation: { type: 'count' } }, vizConfig: { suffix: 'alerts', accent: '#ef4444' } },
-      { id: 'tpl_soc_high', title: 'High', type: 'metric', x: 6, y: 0, w: 2, h: 4, query: { language: 'lucene', query: 'rule.level:[7 TO 11]', aggregation: { type: 'count' } }, vizConfig: { suffix: 'alerts', accent: '#f59e0b' } },
-      { id: 'tpl_soc_med', title: 'Medium', type: 'metric', x: 8, y: 0, w: 2, h: 4, query: { language: 'lucene', query: 'rule.level:[4 TO 6]', aggregation: { type: 'count' } }, vizConfig: { suffix: 'alerts', accent: '#d29922' } },
-      { id: 'tpl_soc_low', title: 'Low', type: 'metric', x: 10, y: 0, w: 2, h: 4, query: { language: 'lucene', query: 'rule.level:[1 TO 3]', aggregation: { type: 'count' } }, vizConfig: { suffix: 'alerts', accent: '#3fb950' } },
+      { id: 'tpl_soc_crit', title: 'Critical', type: 'metric', x: 4, y: 0, w: 2, h: 4, query: { language: 'lucene', query: 'rule.level:[15 TO *]', aggregation: { type: 'count' } }, vizConfig: { suffix: 'alerts', accent: '#ef4444' } },
+      { id: 'tpl_soc_high', title: 'High', type: 'metric', x: 6, y: 0, w: 2, h: 4, query: { language: 'lucene', query: 'rule.level:[12 TO 14]', aggregation: { type: 'count' } }, vizConfig: { suffix: 'alerts', accent: '#f59e0b' } },
+      { id: 'tpl_soc_med', title: 'Medium', type: 'metric', x: 8, y: 0, w: 2, h: 4, query: { language: 'lucene', query: 'rule.level:[7 TO 11]', aggregation: { type: 'count' } }, vizConfig: { suffix: 'alerts', accent: '#d29922' } },
+      { id: 'tpl_soc_low', title: 'Low', type: 'metric', x: 10, y: 0, w: 2, h: 4, query: { language: 'lucene', query: 'rule.level:[0 TO 6]', aggregation: { type: 'count' } }, vizConfig: { suffix: 'alerts', accent: '#3fb950' } },
       // Row 2: EPS & Ingestion (h=4 = 100px)
       { id: 'tpl_soc_eps', title: 'EPS Count', type: 'metric', dataSource: 'eps-stats', x: 0, y: 4, w: 3, h: 4, query: {}, vizConfig: { metricKey: 'eps60', accent: '#06b6d4', suffix: 'eps' } },
       { id: 'tpl_soc_ingest', title: 'Ingestion Volume', type: 'metric', dataSource: 'eps-stats', x: 3, y: 4, w: 3, h: 4, query: {}, vizConfig: { metricKey: 'totalIngestGB', accent: '#10b981', suffix: 'GB' } },

@@ -19,7 +19,6 @@ function getStoredToken() {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [showLogin, setShowLogin] = useState(false)
 
   const checkAuth = useCallback(async () => {
     const token = getStoredToken()
@@ -39,7 +38,6 @@ export function AuthProvider({ children }) {
       if (result.ok) {
         storeToken(result.token)
         setUser(result.user)
-        setShowLogin(false)
       }
       return result
     } catch (e) {
@@ -58,7 +56,7 @@ export function AuthProvider({ children }) {
   }, [user])
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, showLogin, setShowLogin, hasRole }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, hasRole }}>
       {children}
     </AuthContext.Provider>
   )

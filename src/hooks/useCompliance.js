@@ -10,9 +10,9 @@ const pollSubs = new Set()
 
 function toSev(level) {
   const n = parseInt(level) || 0
-  if (n >= 12) return 'Critical'
-  if (n >= 7) return 'High'
-  if (n >= 4) return 'Medium'
+  if (n >= 15) return 'Critical'
+  if (n >= 12) return 'High'
+  if (n >= 7) return 'Medium'
   return 'Low'
 }
 
@@ -89,7 +89,7 @@ export default function useCompliance(framework, filters = {}) {
       const sd = parseDateStr(startDate)
       const ed = parseDateStr(endDate)
       const params = {
-        index: 'unishield360-alerts-4.x-*',
+        index: 'unishield360-alerts-*',
         start_date: sd.toISOString(),
         end_date: ed.toISOString(),
       }

@@ -4,21 +4,9 @@ import { jsPDF } from 'jspdf'
 import { autoTable } from 'jspdf-autotable'
 
 let logoData = null
-fetch('/unishield-mark.svg')
-  .then(r => r.text()).then(svg => {
-    svg = svg.replace(/#444545/g, '#000000').replace(/#f06925/g, '#000000')
-    const blob = new Blob([svg], { type: 'image/svg+xml' })
-    const url = URL.createObjectURL(blob)
-    const img = new Image()
-    img.onload = () => {
-      const c = document.createElement('canvas')
-      c.width = 250; c.height = Math.round(250 * 1597.46 / 3926.73)
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
-      URL.revokeObjectURL(url)
-      logoData = c.toDataURL('image/png')
-    }
-    img.src = url
-  }).catch(() => {})
+const logoImg = new Image()
+logoImg.onload = () => { logoData = logoImg }
+logoImg.src = '/unishield-logo.png'
 
 function getValue(obj, accessor) {
   if (typeof accessor === 'function') return accessor(obj)
@@ -151,7 +139,7 @@ export function exportPDFReport({
     function checkPage(needed) {
       if (y + needed > pageH - m) {
         doc.addPage()
-        y = m
+        y = m + 4
       }
     }
 
@@ -170,22 +158,24 @@ export function exportPDFReport({
       doc.roundedRect(cx, cy, cw, ch, 2, 2, 'FD')
     }
 
-    // ── Branded Header ──
+    // ── Orange Header Bar ──
+    doc.setFillColor(...orange)
+    doc.rect(0, 0, pageW, 22, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFont('helvetica', 'bold')
     doc.setFillColor(255, 255, 255)
-    doc.rect(0, 0, pageW, 20, 'F')
-    doc.setDrawColor(...orange)
-    doc.line(m, 20, pageW - m, 20)
+    doc.circle(m + 9, 11, 9, 'F')
     if (logoData) {
-      doc.addImage(logoData, 'PNG', m, 6, 20, 8)
-      doc.setFontSize(16)
-      doc.setTextColor(...orange)
-      doc.setFont('helvetica', 'bold')
-      doc.text('360', m + 22, 12)
+      doc.addImage(logoData, 'PNG', m + 3, 5, 12, 12)
     }
-    doc.setFontSize(7)
-    doc.setTextColor(...gray)
+    doc.setFontSize(14)
+    doc.text('UniShield 360', m + 21, 11)
+    doc.setFontSize(6)
     doc.setFont('helvetica', 'normal')
-    doc.text(new Date().toLocaleString(), pageW - m, 13, { align: 'right' })
+    doc.text('SOC Dashboard Report · ' + new Date().toLocaleString(), pageW - m, 11, { align: 'right' })
+    doc.setDrawColor(255, 255, 255)
+    doc.setLineWidth(0.5)
+    doc.line(m, 22, pageW - m, 22)
 
     // ── Report title block ──
     y = 30

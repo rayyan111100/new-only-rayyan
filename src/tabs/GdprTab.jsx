@@ -67,7 +67,7 @@ export default function GdprTab() {
       const sd = parseDateStr(startDate).toISOString()
       const ed = parseDateStr(endDate).toISOString()
       const offset = (data?.recent?.length || 0) + evExtraLogs.length
-      const res = await api('search', { index: 'unishield360-alerts-4.x-*', start_date: sd, end_date: ed, q: '_exists_:rule.gdpr', limit: 500, offset, sort: '@timestamp', order: 'desc' })
+      const res = await api('search', { index: 'unishield360-alerts-*', start_date: sd, end_date: ed, q: '_exists_:rule.gdpr', limit: 10000, offset, sort: '@timestamp', order: 'desc' })
       const results = res.results || []
       const mapped = results.map(r => {
         const entry = toLogEntry(r)
@@ -234,7 +234,10 @@ export default function GdprTab() {
 
   const totalLogPages = Math.ceil(filteredLogs.length / LOG_PAGE_SIZE)
 
-  const totalEvents = data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
+  const totalEvents = data
+    ? (activeFilters.length > 0 || activeExcludes.length > 0 ? (data.count24 || 0) : Object.values(data.severity).reduce((a, b) => a + b, 0))
+    : 0
+  const logTotal = (activeFilters.length > 0 || activeExcludes.length > 0) ? (data?.count24 || 0) : (data?.recentTotal || 0)
   const maxAgent = data ? Math.max(...data.topAgents.map(a => a.doc_count || 0), 1) : 1
 
   const articleEvents = useMemo(() => {
@@ -725,9 +728,9 @@ export default function GdprTab() {
         </div>
         <div className="flex items-center justify-between mb-2 px-1">
           <div className="text-[11px] text-[#8b949e]">
-            Showing <span className="font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{filteredLogs.length.toLocaleString()}</span> of <span className="font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{(data?.recentTotal || 0).toLocaleString()}</span> logs
-            {loadedCount < (data?.recentTotal || 0) && (
-              <span className="ml-1.5 text-[#e8681a]">({((data?.recentTotal || 0) - loadedCount).toLocaleString()} remaining)</span>
+            Showing <span className="font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{filteredLogs.length.toLocaleString()}</span> of <span className="font-semibold text-[#1f2328] dark:text-[#f0f6fc]">{logTotal.toLocaleString()}</span> logs
+            {loadedCount < logTotal && (
+              <span className="ml-1.5 text-[#e8681a]">({(logTotal - loadedCount).toLocaleString()} remaining)</span>
             )}
           </div>
           <div className="text-[10px] text-[#8b949e]">{logPage} of {totalLogPages} pages</div>
@@ -866,42 +869,47 @@ export default function GdprTab() {
             )}
           </tbody>
         </table>
-        <div className="flex items-center justify-between mt-2.5 flex-wrap gap-2">
+        <div className="flex items-center justify-end mt-2.5 border-t border-[#e5e7eb] dark:border-[#2d3140] pt-2.5">
           <div className="flex items-center gap-1 text-[11px] text-[#8b949e]">
-            <span className="mr-1">{(logPage - 1) * LOG_PAGE_SIZE + 1}-{Math.min(logPage * LOG_PAGE_SIZE, filteredLogs.length)} of {filteredLogs.length}</span>
+            <span className="mr-1.5 text-[#8b949e]">{(logPage - 1) * LOG_PAGE_SIZE + 1}-{Math.min(logPage * LOG_PAGE_SIZE, filteredLogs.length)} of {filteredLogs.length}</span>
             <button onClick={() => setLogPage(p => Math.max(1, p - 1))} disabled={logPage === 1}
-              className="bg-transparent border border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+              className="p-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] disabled:opacity-30 transition-all">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10.843 13.069 6.232 8.384a.546.546 0 0 1 0-.768l4.61-4.685"/></svg>
             </button>
-            {Array.from({ length: Math.min(totalLogPages, 5) }, (_, i) => {
-              const pn = totalLogPages <= 5 ? i + 1 : Math.max(1, Math.min(logPage - 2, totalLogPages - 4)) + i
-              if (pn > totalLogPages) return null
-              return (
-                <button key={pn} onClick={() => setLogPage(pn)}
-                  className={`bg-transparent border px-2 py-0.5 rounded text-[11px] min-w-[28px] transition-all ${
-                    pn === logPage ? 'bg-[#e8681a] text-white border-[#e8681a]' : 'border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a]'
-                  }`}>{pn}</button>
-              )
-            })}
-            {totalLogPages > 5 && logPage < totalLogPages - 2 && <span className="px-0.5 text-[#8b949e]">...</span>}
-            {totalLogPages > 5 && (
-              <button onClick={() => setLogPage(totalLogPages)}
-                className="bg-transparent border border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] transition-all">{totalLogPages}</button>
-            )}
+            <div className="flex items-center gap-0.5">
+              {(() => {
+                const pages = []
+                const addPage = (n) => { if (n >= 1 && n <= totalLogPages) pages.push({ type: 'page', n }) }
+                const addEllipsis = () => { const last = pages[pages.length-1]; if (last && last.type !== 'ellipsis') pages.push({ type: 'ellipsis' }) }
+                addPage(1)
+                if (logPage > 3) addEllipsis()
+                for (let i = Math.max(2, logPage - 1); i <= Math.min(totalLogPages - 1, logPage + 1); i++) addPage(i)
+                if (logPage < totalLogPages - 2) addEllipsis()
+                if (totalLogPages > 1) addPage(totalLogPages)
+                return pages.map((p, i) =>
+                  p.type === 'ellipsis'
+                    ? <span key={`e${i}`} className="px-1 text-[#8b949e]">...</span>
+                    : <button key={p.n} onClick={() => setLogPage(p.n)}
+                        className={`min-w-[24px] h-6 px-1 rounded text-[11px] font-medium transition-all ${
+                          p.n === logPage ? 'bg-[#e8681a] text-white' : 'text-[#36454f] dark:text-[#c9d1d9] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]'
+                        }`}>{p.n}</button>
+                )
+              })()}
+            </div>
             <button onClick={() => setLogPage(p => Math.min(totalLogPages, p + 1))} disabled={logPage === totalLogPages}
-              className="bg-transparent border border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[11px] min-w-[28px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+              className="p-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] disabled:opacity-30 transition-all">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="m5.157 13.069 4.611-4.685a.546.546 0 0 0 0-.768L5.158 2.93"/></svg>
             </button>
           </div>
         </div>
-        {logPage === totalLogPages && loadedCount < (data?.recentTotal || 0) && (
+        {logPage === totalLogPages && loadedCount < logTotal && (
           <div className="flex justify-center py-3 border-t border-[#e5e7eb] dark:border-[#2d3140]">
             <button onClick={loadMoreLogs} disabled={evLoadingMore}
               className="px-4 py-1.5 text-xs font-bold bg-[#e8681a]/10 text-[#e8681a] border border-[#e8681a]/30 rounded-lg hover:bg-[#e8681a]/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-2">
               {evLoadingMore ? (
                 <><svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="32" strokeLinecap="round"/></svg> Loading 500 more...</>
               ) : (
-                <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg> Load 500 more ({Math.max(0, (data?.recentTotal || 0) - loadedCount)} remaining)</>
+                <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg> Load 500 more ({Math.min(10000, Math.max(0, logTotal - loadedCount))} remaining)</>
               )}
             </button>
           </div>
@@ -948,4 +956,5 @@ export default function GdprTab() {
     </motion.div>
   )
 }
+
 

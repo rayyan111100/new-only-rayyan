@@ -17,14 +17,14 @@ export default function AlertsTab() {
     setLoading(true)
     try {
       const params = { limit: 50, sort: '@timestamp', order: 'desc', start_date: filters.timeRange || 'now-24h', end_date: 'now' }
-      if (filters.severity) params.q = `rule.level:${filters.severity === 'critical' ? 12 : filters.severity === 'high' ? 10 : filters.severity === 'medium' ? 7 : 5}`
+      if (filters.severity) params.q = `rule.level:${filters.severity === 'critical' ? 15 : filters.severity === 'high' ? 13 : filters.severity === 'medium' ? 9 : 4}`
       if (filters.search) params.q = params.q ? `(${params.q}) AND ${filters.search}` : filters.search
       const res = await axios.get('/api/realtime/alerts', { params, timeout: 15000 })
       const items = (res.data.results || []).map(d => ({
         id: d._id || d.id || Math.random().toString(36),
         timestamp: d.timestamp || d['@timestamp'] || new Date().toISOString(),
         title: d.title || d.rule?.description || 'Alert',
-        severity: d.severity || (d.level >= 12 ? 'critical' : d.level >= 8 ? 'high' : d.level >= 5 ? 'medium' : 'low'),
+        severity: d.severity || (d.level >= 15 ? 'critical' : d.level >= 12 ? 'high' : d.level >= 7 ? 'medium' : 'low'),
         level: d.level || 0,
         source: d.source || d.decoder?.name || d.location || 'unknown',
         ruleId: d.ruleId || d.rule?.id || '',

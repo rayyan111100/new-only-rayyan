@@ -128,7 +128,7 @@ export const alertService = {
             const alert = alertService.add({
               title: data.title || data.rule?.description || 'Alert',
               description: data.full_log || data.description || '',
-              severity: data.rule?.level >= 12 ? 'critical' : data.rule?.level >= 8 ? 'high' : data.rule?.level >= 5 ? 'medium' : 'low',
+              severity: data.rule?.level >= 15 ? 'critical' : data.rule?.level >= 12 ? 'high' : data.rule?.level >= 7 ? 'medium' : 'low',
               level: data.rule?.level || 0,
               source: data.decoder?.name || data.location || 'unknown',
               ruleId: String(data.rule?.id || ''),

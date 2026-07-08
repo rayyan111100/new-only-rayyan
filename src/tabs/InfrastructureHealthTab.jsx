@@ -46,7 +46,7 @@ export default function InfrastructureHealthTab() {
           ip: hit.agent?.ip || '-',
           os: hit.agent?.os?.name || '-',
           lastSeen: hit['@timestamp'] || '',
-          status: level >= 12 ? 'critical' : level >= 7 ? 'warning' : 'healthy',
+          status: level >= 15 ? 'critical' : level >= 12 ? 'warning' : 'healthy',
           events: 1
         })
       }

@@ -294,7 +294,7 @@ async function fetchPanelData(panel, globalFilters, page = 0, perPage = 10, time
     }
 
     // Severity counts via range queries on /count
-    const SEV_RANGES = { critical: '[12 TO 15]', high: '[7 TO 11]', medium: '[4 TO 6]', low: '[1 TO 3]' }
+    const SEV_RANGES = { critical: '[15 TO *]', high: '[12 TO 14]', medium: '[7 TO 11]', low: '[0 TO 6]' }
     if (SEV_RANGES[metricKey]) {
       const baseQuery = addRangeToQuery(base.q, rangeFilters)
       const rangeQ = baseQuery ? baseQuery + ` AND rule.level:${SEV_RANGES[metricKey]}` : `rule.level:${SEV_RANGES[metricKey]}`

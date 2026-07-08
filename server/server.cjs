@@ -138,7 +138,7 @@ app.get('/api/dashboard', async (req, res) => {
       api.get('/aggregate', { params: { index: idx, field: 'rule.id', type: 'terms', start_date: sd, end_date: ed, limit: 10 } }).catch(() => ({ data: { buckets: [] } })),
       api.get('/aggregate', { params: { index: idx, field: 'agent.name', type: 'terms', start_date: sd, end_date: ed, limit: 10 } }).catch(() => ({ data: { buckets: [] } })),
       api.get('/aggregate', { params: { index: idx, field: '@timestamp', type: 'date_histogram', interval: '1h', start_date: sd, end_date: ed, limit: 48 } }).catch(() => ({ data: { buckets: [] } })),
-      api.get('/aggregate', { params: { index: idx, field: 'rule.category', type: 'terms', start_date: sd, end_date: ed, limit: 10 } }).catch(() => ({ data: { buckets: [] } })),
+      api.get('/aggregate', { params: { index: idx, field: 'rule.groups', type: 'terms', start_date: sd, end_date: ed, limit: 10 } }).catch(() => ({ data: { buckets: [] } })),
       api.get('/search', { params: { index: idx, limit: 10, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed, q: '' } }).catch(() => ({ data: { results: [], total: 0 } }))
     ]);
     res.json({
@@ -241,15 +241,15 @@ function classifyDocFrameworks(doc) {
   return fws;
 }
 
-const SEV_LEVELS = { Critical: { gte: 12 }, High: { gte: 7, lte: 11 }, Medium: { gte: 4, lte: 6 }, Low: { gte: 1, lte: 3 } };
+const SEV_LEVELS = { Critical: { gte: 15 }, High: { gte: 12, lte: 14 }, Medium: { gte: 7, lte: 11 }, Low: { gte: 0, lte: 6 } };
 
 // Compliance Dashboard Aggregation Endpoint
 app.get('/api/compliance', async (req, res) => {
   const { index, start_date, end_date, framework, severity } = req.query;
-  const idx = index || 'unishield360-alerts-4.x-*';
+  const idx = index || 'unishield360-alerts-*';
   const sd = start_date || 'now-24h';
   const ed = end_date || 'now';
-  const cacheKey = `compliance:${framework || '__all__'}:${sd}:${ed}`;
+  const cacheKey = `compliance:${framework || '__all__'}:${sd}:${ed}:severity=${severity || ''}`;
 
   const skipCache = req.query._t;
   const cached = complianceCache.get(cacheKey);
@@ -295,7 +295,7 @@ app.get('/api/compliance', async (req, res) => {
             }
             return { data: { buckets: Object.entries(map).map(([key, doc_count]) => ({ key, doc_count })).sort((a, b) => a.key - b.key) } };
           }),
-          Promise.all(overviewQ.map(q => aggOne(q, 'rule.category'))).then(mergeBuckets).then(buckets => ({ data: { buckets } })),
+          Promise.all(overviewQ.map(q => aggOne(q, 'rule.groups'))).then(mergeBuckets).then(buckets => ({ data: { buckets } })),
           Promise.all(overviewQ.map(q => api.get('/search', { params: { index: idx, q, limit: 200, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } })))).then(responses => {
             const seen = new Set();
             const merged = [];
@@ -315,8 +315,8 @@ app.get('/api/compliance', async (req, res) => {
           aggOne(fwQ, 'rule.id'),
           aggOne(fwQ, 'agent.name', 10),
           api.get('/aggregate', { params: { index: idx, q: fwQ, field: '@timestamp', type: 'date_histogram', interval: '1h', start_date: sd, end_date: ed, limit: 48 } }).catch(() => ({ data: { buckets: [] } })),
-          aggOne(fwQ, 'rule.category'),
-          api.get('/search', { params: { index: idx, q: fwQ, limit: 500, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } })),
+          aggOne(fwQ, 'rule.groups'),
+          api.get('/search', { params: { index: idx, q: fwQ, limit: 10000, sort: '@timestamp', order: 'desc', start_date: sd, end_date: ed } }).catch(() => ({ data: { results: [], total: 0 } })),
           frameworkField ? aggOne(fwQ, frameworkField) : Promise.resolve({ data: { buckets: [] } }),
         ]);
 
@@ -333,8 +333,9 @@ app.get('/api/compliance', async (req, res) => {
 
     const severityMap = {};
     for (const b of (byLevel.data?.buckets || [])) {
+      if (b.key === '_missing') continue; // skip docs without rule.level — they inflate counts
       const level = parseInt(b.key) || 0;
-      const cat = level >= 12 ? 'Critical' : level >= 7 ? 'High' : level >= 4 ? 'Medium' : 'Low';
+      const cat = level >= 15 ? 'Critical' : level >= 12 ? 'High' : level >= 7 ? 'Medium' : 'Low';
       severityMap[cat] = (severityMap[cat] || 0) + b.doc_count;
     }
 
@@ -387,7 +388,7 @@ app.get('/api/compliance', async (req, res) => {
           const lvl = parseInt(doc.rule?.level) || 0;
           return levelSets.some(({ gte, lte }) => lvl >= gte && (lte === undefined || lvl <= lte));
         });
-        finalRecentTotal = finalRecent.length;
+        finalRecentTotal = finalCount24; // use actual aggregated count, not limited to 10k recent docs
       }
     }
 
@@ -452,11 +453,12 @@ app.get('/api/gdpr-dashboard', async (req, res) => {
 
     let sevCritical = 0, sevHigh = 0, sevMedium = 0, sevLow = 0;
     for (const b of sevBuckets) {
+      if (b.key === '_missing') continue;
       const lvl = parseInt(b.key) || 0;
       const cnt = b.doc_count || 0;
-      if (lvl >= 12) sevCritical += cnt;
-      else if (lvl >= 7) sevHigh += cnt;
-      else if (lvl >= 4) sevMedium += cnt;
+      if (lvl >= 15) sevCritical += cnt;
+      else if (lvl >= 12) sevHigh += cnt;
+      else if (lvl >= 7) sevMedium += cnt;
       else sevLow += cnt;
     }
 

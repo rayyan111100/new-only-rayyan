@@ -2,7 +2,6 @@ import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 const NAV_SECTIONS = [
-  { key: 'windowsevent', label: 'Windows Event', icon: 'create' },
   {
     key: 'compliance', label: 'Compliance Management / Frameworks', icon: 'compliance',
     children: [

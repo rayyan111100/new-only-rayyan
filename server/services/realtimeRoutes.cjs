@@ -39,7 +39,7 @@ router.get('/alerts', async (req, res) => {
       timestamp: doc['@timestamp'] || doc.timestamp,
       title: doc.rule?.description || 'Alert',
       level: doc.rule?.level || 0,
-      severity: doc.rule?.level >= 12 ? 'critical' : doc.rule?.level >= 8 ? 'high' : doc.rule?.level >= 5 ? 'medium' : 'low',
+      severity: doc.rule?.level >= 15 ? 'critical' : doc.rule?.level >= 12 ? 'high' : doc.rule?.level >= 7 ? 'medium' : 'low',
       agent: doc.agent?.name || 'unknown',
       agentId: doc.agent?.id || '',
       source: doc.decoder?.name || doc.location || '',

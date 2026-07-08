@@ -82,9 +82,9 @@ function resolveArticle(code) {
 }
 
 function mapSev(level) {
-  return level >= 12 ? 'Critical'
-    : level >= 7 ? 'High'
-    : level >= 4 ? 'Medium'
+  return level >= 15 ? 'Critical'
+    : level >= 12 ? 'High'
+    : level >= 7 ? 'Medium'
     : 'Low'
 }
 
@@ -115,7 +115,7 @@ function normalizeDoc(doc) {
 function buildEventQ(filters) {
   const parts = [GDPR_Q]
   if (filters.severity) {
-    const sevMap = { Critical: 'rule.level:[12 TO 9999]', High: 'rule.level:[7 TO 11]', Medium: 'rule.level:[4 TO 6]', Low: 'rule.level:[1 TO 3]' }
+    const sevMap = { Critical: 'rule.level:[15 TO 9999]', High: 'rule.level:[12 TO 14]', Medium: 'rule.level:[7 TO 11]', Low: 'rule.level:[0 TO 6]' }
     if (sevMap[filters.severity]) parts.push(sevMap[filters.severity])
   }
   if (filters.q) {
@@ -398,9 +398,9 @@ export async function fetchGdprStats(opts = {}) {
   for (const b of sevBuckets) {
     const lvl = parseInt(b.key) || 0
     const cnt = b.doc_count || 0
-    if (lvl >= 12) critical += cnt
-    else if (lvl >= 7) high += cnt
-    else if (lvl >= 4) medium += cnt
+    if (lvl >= 15) critical += cnt
+    else if (lvl >= 12) high += cnt
+    else if (lvl >= 7) medium += cnt
     else low += cnt
   }
 

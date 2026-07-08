@@ -58,7 +58,7 @@ const SEV_RANGES = {
   Critical: 'rule.level:>=15',
   High: 'rule.level:[12 TO 14]',
   Medium: 'rule.level:[7 TO 11]',
-  Low: 'rule.level:[1 TO 6]',
+  Low: 'rule.level:[0 TO 6]',
   Info: 'rule.level:[0 TO 0]'
 }
 

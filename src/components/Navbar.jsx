@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { jsPDF } from 'jspdf'
 import { autoTable } from 'jspdf-autotable'
@@ -46,7 +47,8 @@ const Navbar = React.memo(function Navbar() {
   const [savedList, setSavedList] = useState([])
   const [showAlerts, setShowAlerts] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
-  const { user, setShowLogin, logout, hasRole } = useAuth()
+  const navigate = useNavigate()
+  const { user, logout, hasRole } = useAuth()
   const rt = useRealtime(true)
 
   useEffect(() => {
@@ -121,6 +123,8 @@ const Navbar = React.memo(function Navbar() {
     } catch (e) { console.error('PDF download failed:', e) }
   }
 
+  const handleLogout = () => { logout(); navigate('/login') }
+
   const handleDeleteSaved = (idx) => {
     const list = JSON.parse(localStorage.getItem('savedFilters') || '[]')
     list.splice(idx, 1); localStorage.setItem('savedFilters', JSON.stringify(list)); setSavedList(list)
@@ -132,8 +136,8 @@ const Navbar = React.memo(function Navbar() {
     <header className="gcard rounded-none flex items-center justify-between px-4 h-11 shrink-0 border-b border-soc-border/50 dark:border-soc-darkborder/50 relative z-10">
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
-          <img src="https://unishield360.com/wp-content/uploads/2024/08/Unishield-logo-Favicon-e1723102667824.png"
-            alt="UniShield" className="w-6 h-6 rounded-full ring-1 ring-soc-accent/30" />
+          <img src="/unishield-logo.png"
+            alt="UniShield" className="w-6 h-6 rounded-full ring-1 ring-soc-accent/30 hover:ring-soc-accent hover:shadow-[0_0_12px_rgba(232,104,26,0.5)] transition-all duration-200" />
           <span className="text-sm font-bold text-soc-text tracking-tight">UniShield</span>
         </div>
         <a href="https://unishield360.com" target="_blank" rel="noopener noreferrer"
@@ -286,7 +290,7 @@ const Navbar = React.memo(function Navbar() {
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
                 </button>
               )}
-              <button onClick={logout} title="Sign out"
+              <button onClick={handleLogout} title="Sign out"
                 className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-white/60 dark:hover:bg-[#2d3140]/60 transition-colors">
                 <div className="w-5 h-5 rounded-full bg-[#EF843C]/10 dark:bg-[#EF843C]/10 flex items-center justify-center text-[9px] font-bold text-[#EF843C] dark:text-[#EF843C] uppercase">
                   {user.displayName?.[0] || user.username?.[0] || 'U'}
@@ -295,7 +299,7 @@ const Navbar = React.memo(function Navbar() {
               </button>
             </div>
           ) : (
-            <button onClick={() => setShowLogin(true)} title="Sign in"
+            <button onClick={() => navigate('/login')} title="Sign in"
               className="p-1.5 rounded-md hover:bg-white/60 dark:hover:bg-[#2d3140]/60 transition-colors text-soc-stext/60 dark:text-soc-darkstext/60">
               <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M13 12H3"/></svg>
             </button>

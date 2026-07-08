@@ -11,9 +11,9 @@ const SEV_COLORS = {
 }
 
 function getSeverity(level) {
-  if (level >= 12) return 'critical'
-  if (level >= 7) return 'high'
-  if (level >= 4) return 'medium'
+  if (level >= 15) return 'critical'
+  if (level >= 12) return 'high'
+  if (level >= 7) return 'medium'
   return 'low'
 }
 

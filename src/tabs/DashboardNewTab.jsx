@@ -99,7 +99,7 @@ function DeviceDetail({ device }) {
             (device.severityBuckets || []).slice(0, 6).map((b, i) => {
               const lvl = parseInt(b.key) || 0
               const pct = device.totalEvents > 0 ? ((b.doc_count || 0) / device.totalEvents * 100) : 0
-              const color = lvl >= 12 ? '#f85149' : lvl >= 7 ? '#e8681a' : lvl >= 4 ? '#d29922' : '#3fb950'
+              const color = lvl >= 15 ? '#f85149' : lvl >= 12 ? '#e8681a' : lvl >= 7 ? '#d29922' : '#3fb950'
               return (
                 <div key={i} className="mb-1.5">
                   <div className="flex justify-between text-xs mb-0.5">

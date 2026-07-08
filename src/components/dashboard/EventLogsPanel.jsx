@@ -93,7 +93,7 @@ export default function EventLogsPanel({ panel, data, loading, error, onFilter }
     return raw.map(r => {
       if (isFlat) {
         const level = parseInt(r['rule.level'] || r.level || 0)
-        const sev = level >= 12 ? 'Critical' : level >= 7 ? 'High' : level >= 4 ? 'Medium' : 'Low'
+        const sev = level >= 15 ? 'Critical' : level >= 12 ? 'High' : level >= 7 ? 'Medium' : 'Low'
         const g = fmt(r['rule.groups'])
         return {
           time: fmt(r['@timestamp'] || r.timestamp),
@@ -111,7 +111,7 @@ export default function EventLogsPanel({ panel, data, loading, error, onFilter }
         time: r['@timestamp'] || r.timestamp || '--',
         agent: getField(r, 'agent.name', 'agent.name') || '--',
         rule: getField(r, 'rule.id', 'rule.id') || '--',
-        sev: (() => { const l = parseInt(getField(r, 'rule.level', 'rule.level') || 0); if (l >= 12) return 'Critical'; if (l >= 7) return 'High'; if (l >= 4) return 'Medium'; return 'Low' })(),
+        sev: (() => { const l = parseInt(getField(r, 'rule.level', 'rule.level') || 0); if (l >= 15) return 'Critical'; if (l >= 12) return 'High'; if (l >= 7) return 'Medium'; return 'Low' })(),
         desc: getField(r, 'rule.description', 'rule.description') || '--',
         event: getField(r, 'rule.groups', 'rule.groups') || '--',
         groups: (Array.isArray(r.rule?.groups) ? r.rule.groups.join(', ') : r.rule?.groups) || '--',

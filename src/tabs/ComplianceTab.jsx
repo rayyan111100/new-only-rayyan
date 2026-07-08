@@ -27,7 +27,7 @@ const COMPLIANCE_EXPORT_COLS = [
   { header: 'Agent', accessor: r => r.agent?.name || r.agent || '--' },
   { header: 'Rule', accessor: r => r.rule?.id || r.rule || '--' },
   { header: 'Level', accessor: r => r.rule?.level || r.level || 0 },
-  { header: 'Severity', accessor: r => { const lv = parseInt(r.rule?.level || r.level || 0); return lv >= 12 ? 'Critical' : lv >= 7 ? 'High' : lv >= 4 ? 'Medium' : 'Low' } },
+  { header: 'Severity', accessor: r => { const lv = parseInt(r.rule?.level || r.level || 0); return lv >= 15 ? 'Critical' : lv >= 12 ? 'High' : lv >= 7 ? 'Medium' : 'Low' } },
   { header: 'Description', accessor: r => r.rule?.description || r.description || '--' },
   { header: 'Event', accessor: r => r.rule?.groups?.[0] || r.event_type || '--' },
   { header: 'Frameworks', accessor: r => (r._frameworks || []).join(', ') || '--' },
@@ -49,7 +49,7 @@ function buildFilterQuery(filters, excludes) {
   if (filters.framework?.length && FRAMEWORK_TO_FIELD[filters.framework[0]]) {
     parts.push('_exists_:' + FRAMEWORK_TO_FIELD[filters.framework[0]])
   }
-  const sevRanges = { Critical: 'rule.level:[12 TO *]', High: '(rule.level:[7 TO 11])', Medium: '(rule.level:[4 TO 6])', Low: '(rule.level:[1 TO 3])' }
+  const sevRanges = { Critical: 'rule.level:[15 TO *]', High: '(rule.level:[12 TO 14])', Medium: '(rule.level:[7 TO 11])', Low: '(rule.level:[0 TO 6])' }
   for (const s of (filters.severity || [])) {
     if (sevRanges[s]) parts.push(sevRanges[s])
   }
@@ -79,9 +79,9 @@ const CustomTip = ({ active, payload, label }) => {
 
 function toSev(level) {
   const n = parseInt(level) || 0
-  if (n >= 12) return 'Critical'
-  if (n >= 7) return 'High'
-  if (n >= 4) return 'Medium'
+  if (n >= 15) return 'Critical'
+  if (n >= 12) return 'High'
+  if (n >= 7) return 'Medium'
   return 'Low'
 }
 
@@ -100,6 +100,7 @@ export default function ComplianceTab() {
   const [assetSidebarOpen, setAssetSidebarOpen] = useState(false)
   const [filters, setFilters] = useState({})
   const [excludes, setExcludes] = useState({})
+  const [timelineFilter, setTimelineFilter] = useState(null)
   const [timeRange, setTimeRange] = useState('now-7d')
   const [expandedRow, setExpandedRow] = useState({})
   const [jsonView, setJsonView] = useState({})
@@ -107,7 +108,8 @@ export default function ComplianceTab() {
   const [logPage, setLogPage] = useState(1)
   const LOG_PAGE_SIZE = 50
   const MAX_LOG_PAGES = 10
-  const { data, loading, error, refresh } = useCompliance(filters.framework)
+  const fwFilter = Array.isArray(filters.framework) ? filters.framework[0] : filters.framework
+  const { data, loading, error, refresh } = useCompliance(fwFilter)
   const [evExtraLogs, setEvExtraLogs] = useState([])
   const evExtraOffsetRef = useRef(0)
   const [evLoadingMore, setEvLoadingMore] = useState(false)
@@ -117,6 +119,7 @@ export default function ComplianceTab() {
   const handleRefresh = useCallback(() => {
     setFilters({})
     setExcludes({})
+    setTimelineFilter(null)
     setLogPage(1)
     setExpandedRow({})
     setJsonView({})
@@ -133,7 +136,7 @@ export default function ComplianceTab() {
       const sd = parseDateStr(startDate).toISOString()
       const ed = parseDateStr(endDate).toISOString()
       const offset = append ? evFilterOffsetRef.current : 0
-      const res = await api('search', { index: 'unishield360-alerts-4.x-*', start_date: sd, end_date: ed, q: evFilterQuery, limit: 500, offset, sort: '@timestamp', order: 'desc' })
+      const res = await api('search', { index: 'unishield360-alerts-*', start_date: sd, end_date: ed, q: evFilterQuery, limit: 10000, offset, sort: '@timestamp', order: 'desc' })
       const results = res.results || []
       if (append) {
         setEvExtraLogs(prev => [...prev, ...results])
@@ -158,7 +161,7 @@ export default function ComplianceTab() {
       const sd = parseDateStr(startDate).toISOString()
       const ed = parseDateStr(endDate).toISOString()
       const q = ''
-      const res = await api('search', { index: 'unishield360-alerts-4.x-*', start_date: sd, end_date: ed, q, limit: 500, offset: evExtraOffsetRef.current, sort: '@timestamp', order: 'desc' })
+      const res = await api('search', { index: 'unishield360-alerts-*', start_date: sd, end_date: ed, q, limit: 10000, offset: evExtraOffsetRef.current, sort: '@timestamp', order: 'desc' })
       const results = res.results || []
       setEvExtraLogs(prev => [...prev, ...results])
       evExtraOffsetRef.current += results.length
@@ -278,7 +281,7 @@ export default function ComplianceTab() {
 
   const clearFilter = (key, value) => { setFilters(prev => { const next = { ...prev }; const arr = next[key]; if (arr) { const f = arr.filter(v => v !== value); if (f.length) next[key] = f; else delete next[key] } return next }); setExcludes(prev => { const next = { ...prev }; const arr = next[key]; if (arr) { const f = arr.filter(v => v !== value); if (f.length) next[key] = f; else delete next[key] } return next }) }
 
-  const clearAllFilters = () => { setFilters({}); setExcludes({}) }
+  const clearAllFilters = () => { setFilters({}); setExcludes({}); setTimelineFilter(null) }
 
   const activeFilters = Object.keys(filters)
   const activeExcludes = Object.keys(excludes)
@@ -324,21 +327,78 @@ export default function ComplianceTab() {
         }
         return false
       }
+      if (timelineFilter) {
+        const t = new Date(r['@timestamp'] || r.timestamp).getTime()
+        if (t < timelineFilter || t >= timelineFilter + 86400000) return false
+      }
       return true
     })
-  }, [data?.recent, evExtraLogs, filters, excludes])
+  }, [data?.recent, evExtraLogs, filters, excludes, timelineFilter])
 
   const totalLogPages = Math.max(1, Math.ceil(filteredRecent.length / LOG_PAGE_SIZE))
 
-  const totalEvents = data ? Object.values(data.severity).reduce((a, b) => a + b, 0) : 0
-  const fwCounts = data?.frameworkCounts || []
+  const hasFilters = activeFilters.length > 0 || activeExcludes.length > 0 || timelineFilter
+
+  const filteredSummary = useMemo(() => {
+    const sevCounts = {}
+    const fwCountsMap = {}
+    const ctrlCounts = {}
+    const agentCounts = {}
+    const catCounts = {}
+    for (const r of filteredRecent) {
+      const level = parseInt(r.rule?.level || r.level || 0)
+      const sev = level >= 15 ? 'Critical' : level >= 12 ? 'High' : level >= 7 ? 'Medium' : 'Low'
+      sevCounts[sev] = (sevCounts[sev] || 0) + 1
+      const fws = r._frameworks || []
+      for (const fw of fws) {
+        if (fw !== 'MITRE ATT&CK') fwCountsMap[fw] = (fwCountsMap[fw] || 0) + 1
+      }
+      const agentName = r.agent?.name || r.agent || '--'
+      agentCounts[agentName] = (agentCounts[agentName] || 0) + 1
+      const ctrl = r.rule?.gdpr || r.rule?.tsc || r.rule?.hipaa || r.rule?.pci_dss || r.rule?.nist_800_53 || r.control || '--'
+      ctrlCounts[ctrl] = (ctrlCounts[ctrl] || 0) + 1
+      const groups = r.rule?.groups || []
+      for (const g of groups) {
+        catCounts[g] = (catCounts[g] || 0) + 1
+      }
+    }
+    const ruleCounts = {}
+    for (const r of filteredRecent) {
+      const rid = r.rule?.id || r.rule || '--'
+      ruleCounts[rid] = (ruleCounts[rid] || 0) + 1
+    }
+    return { sevCounts, fwCountsMap, ctrlCounts, agentCounts, catCounts, ruleCounts }
+  }, [filteredRecent])
+
+  const totalEvents = data
+    ? (hasFilters ? (data.count24 || 0) : Object.values(data.severity).reduce((a, b) => a + b, 0))
+    : 0
+  const logTotal = hasFilters ? (data?.count24 || 0) : (data?.recentTotal || 0)
+
+  const fwCounts = hasFilters
+    ? Object.entries(filteredSummary.fwCountsMap).map(([framework, count]) => ({ framework, count })).sort((a, b) => b.count - a.count)
+    : (data?.frameworkCounts || []).filter(f => f.framework !== 'MITRE ATT&CK')
+
   const maxFw = fwCounts.length > 0 ? Math.max(...fwCounts.map(f => f.count), 1) : 1
-  const agentsData = data?.topAgents || []
+
+  const agentsData = hasFilters
+    ? Object.entries(filteredSummary.agentCounts).map(([key, doc_count]) => ({ key, doc_count })).sort((a, b) => b.doc_count - a.doc_count)
+    : (data?.topAgents || [])
+
   const maxAgent = agentsData.length > 0 ? Math.max(...agentsData.map(a => a.doc_count || 0), 1) : 1
-  const sevData = data?.severity || {}
+
+  const sevData = hasFilters ? filteredSummary.sevCounts : (data?.severity || {})
   const sevDonut = SEV_ORDER.filter(s => (sevData[s] || 0) > 0).map(s => ({
-    name: s, value: sevData[s], color: SEV_COLORS[s]
+    name: s, value: sevData[s] || 0, color: SEV_COLORS[s]
   }))
+
+  const categoriesData = hasFilters
+    ? Object.entries(filteredSummary.catCounts).map(([key, doc_count]) => ({ key, doc_count })).sort((a, b) => b.doc_count - a.doc_count)
+    : (data?.categories || [])
+
+  const topRulesData = hasFilters
+    ? Object.entries(filteredSummary.ruleCounts).map(([rule, count]) => ({ key: rule, doc_count: count, ruleId: rule, control: '', description: '' })).sort((a, b) => (b.doc_count || 0) - (a.doc_count || 0))
+    : (data?.topRules || [])
 
   const FILTER_STYLES = {
     severity: (v) => ({
@@ -347,7 +407,14 @@ export default function ComplianceTab() {
     }),
     framework: () => ({ bg: '#a371f71a', color: '#a371f7' }),
     agent: () => ({ bg: '#58a6ff1a', color: '#58a6ff' }),
-    rule: () => ({ bg: '#e8681a18', color: '#e8681a' })
+    rule: () => ({ bg: '#e8681a18', color: '#e8681a' }),
+    desc: () => ({ bg: '#3fb95018', color: '#3fb950' }),
+    control: () => ({ bg: '#e8681a18', color: '#e8681a' }),
+    event: () => ({ bg: '#d2992218', color: '#d29922' }),
+    frameworks: () => ({ bg: '#a371f71a', color: '#a371f7' }),
+    file: () => ({ bg: '#8b949e18', color: '#8b949e' }),
+    level: () => ({ bg: '#d2992218', color: '#d29922' }),
+    time: () => ({ bg: '#8b949e18', color: '#8b949e' })
   }
   const SevBadge = ({ s }) => {
     const BG = { Critical: '#4a0a0e', High: '#3d1a00', Medium: '#2d1f00', Low: '#052e16' }
@@ -412,13 +479,62 @@ export default function ComplianceTab() {
         </div>
       </div>
 
+      {(activeFilters.length > 0 || activeExcludes.length > 0 || timelineFilter) && (
+        <div className="flex items-center gap-2 mb-2.5 px-1 flex-wrap">
+          <span className="text-xs text-[#8b949e]">Filters:</span>
+          {Object.entries(filters).flatMap(([key, vals]) =>
+            vals.map(val => {
+              const st = FILTER_STYLES[key]?.(val) || { bg: '#3fb95018', color: '#3fb950' }
+              return (
+                <span key={key + val} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: st.bg, color: st.color }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                  {key === 'severity' ? '' : key + ': '}{val}
+                  <button onClick={() => clearFilter(key, val)} className="hover:opacity-70">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </span>
+              )
+            })
+          )}
+          {Object.entries(excludes).flatMap(([key, vals]) =>
+            vals.map(val => (
+              <span key={'ex-' + key + val} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: '#f8514918', color: '#f85149' }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                Exclude {key === 'severity' ? '' : key + ': '}{val}
+                <button onClick={() => clearFilter(key, val)} className="hover:opacity-70">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </span>
+            ))
+          )}
+          {timelineFilter && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: '#e8681a18', color: '#e8681a' }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+              Time: {data?.timeline?.find(t => t.rawTime === timelineFilter)?.time || 'Selected'}
+              <button onClick={() => setTimelineFilter(null)} className="hover:opacity-70">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </span>
+          )}
+          {((activeFilters.length + activeExcludes.length) > 0 || timelineFilter) && (
+            <button onClick={clearAllFilters} className="text-[10px] px-2 py-0.5 rounded border border-[#e5e7eb] dark:border-[#2d3140] text-[#8b949e] hover:text-[#f85149] hover:border-[#f85149] transition-all">
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Metric Cards */}
       <div className="grid grid-cols-6 gap-2.5 mb-3">
         {[
           { key: 'm-events', label: 'Compliance Events', val: totalEvents.toLocaleString(), icon: 'certificate', iconBg: '#a371f71a', iconColor: '#a371f7' },
-          { key: 'm-crit', label: 'Critical Violations', val: (data?.severity?.Critical || 0).toLocaleString(), icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b' },
-          { key: 'm-high', label: 'High Severity Violations', val: (data?.severity?.High || 0).toLocaleString(), icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a' },
-          { key: 'm-med', label: 'Medium Severity Violations', val: (data?.severity?.Medium || 0).toLocaleString(), icon: 'alert-circle', iconBg: '#d2992218', iconColor: '#d29922', valColor: '#d29922' },
+          { key: 'm-crit', label: 'Critical Violations', val: (sevData.Critical || 0).toLocaleString(), icon: 'alert-triangle', iconBg: '#e0525218', iconColor: '#ff6b6b', valColor: '#ff6b6b' },
+          { key: 'm-high', label: 'High Severity Violations', val: (sevData.High || 0).toLocaleString(), icon: 'alert-circle', iconBg: '#e8893a18', iconColor: '#e8893a', valColor: '#e8893a' },
+          { key: 'm-med', label: 'Medium Severity Violations', val: (sevData.Medium || 0).toLocaleString(), icon: 'alert-circle', iconBg: '#d2992218', iconColor: '#d29922', valColor: '#d29922' },
           { key: 'm-assets', label: 'Monitored Assets', val: data?.topAgents?.length || 0, sub: 'Active agents', icon: 'device-desktop', iconBg: '#58a6ff1a', iconColor: '#58a6ff' },
           { key: 'm-frameworks', label: 'Active Frameworks', val: FRAMEWORKS.length, sub: FRAMEWORKS.join(', '), icon: 'layout-grid', iconBg: '#7c3aed1a', iconColor: '#7c3aed' },
         ].map(card => (
@@ -507,25 +623,27 @@ export default function ComplianceTab() {
         <div className="bg-white dark:bg-[#16181f] border border-[#e5e7eb] dark:border-[#2d3140] rounded-xl p-3 shadow-lg dark:shadow-[0_4px_16px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[2px] dark:hover:shadow-[0_8px_30px_rgba(232,104,26,0.12)] hover:border-[#e8681a]/30 dark:hover:border-[#e8681a]/40">
           <div className="text-[11px] font-bold text-[#1f2328] dark:text-[#f0f6fc] uppercase tracking-wide mb-2 flex items-center justify-between">
             <span>Compliance Trend</span>
-            <span onClick={() => setTimeRange(t => t === 'now-24h' ? 'now-7d' : t === 'now-7d' ? 'now-30d' : t === 'now-30d' ? 'now-90d' : 'now-24h')} className="text-[10px] text-[#8b949e] bg-[#f0f2f4] dark:bg-[#2d3140] px-2 py-0.5 rounded font-medium normal-case cursor-pointer hover:bg-[#e5e7eb] dark:hover:bg-[#2d3140]">
-              {timeRange === 'now-24h' ? 'Last 24 Hours' : timeRange === 'now-7d' ? 'Last 7 Days' : timeRange === 'now-30d' ? 'Last 30 Days' : 'Last 90 Days'} <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="inline ml-0.5"><polyline points="6 9 12 15 18 9"/></svg>
-            </span>
+
           </div>
           <div className="h-[150px]">
-            {data?.timeline?.length > 0 && (
+            {data?.timeline?.length > 0 ? (
               <ResponsiveContainer width="100%" height={150}>
                 <AreaChart data={data.timeline}>
                   <defs><linearGradient id="compGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e8681a" stopOpacity={0.12} /><stop offset="95%" stopColor="#e8681a" stopOpacity={0} /></linearGradient></defs>
-                  <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={40} />
                   <YAxis tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
                   <Tooltip content={<CustomTip />} />
-                  <Area type="monotone" dataKey="count" stroke="#e8681a" fill="url(#compGrad)" strokeWidth={2.5} dot={{ r: 3, fill: '#e8681a', stroke: isDark ? '#0d1117' : '#ffffff', strokeWidth: 2 }} />
+                  <Area type="monotone" dataKey="count" stroke="#e8681a" fill="url(#compGrad)" strokeWidth={2.5} dot={{ r: 3, fill: '#e8681a', stroke: isDark ? '#161b22' : '#ffffff', strokeWidth: 2 }} />
                 </AreaChart>
               </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center">
+                <svg width="200" height="120" viewBox="0 0 200 120" className="opacity-40">
+                  <polyline points="10,90 30,75 50,78 70,60 90,50 110,40 130,45 150,30 170,35 190,20" fill="none" stroke="#e8681a" strokeWidth="2.5" />
+                  <rect x="10" y="90" width="180" height="40" fill="url(#compGrad)" opacity="0.1" />
+                </svg>
+              </div>
             )}
-          </div>
-          <div className="flex justify-between text-[9px] text-[#8b949e] mt-1 px-0.5">
-            {data?.timeline?.slice(0, 7).map((t, i) => <span key={i}>{t.time}</span>)}
           </div>
         </div>
       </div>
@@ -538,7 +656,7 @@ export default function ComplianceTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Framework</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Control</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Events</th></tr></thead>
             <tbody>
-              {(data?.topRules || []).slice(0, 5).map((r, i) => {
+              {topRulesData.slice(0, 5).map((r, i) => {
                 const ruleId = r.ruleId || r.key || r.rule || r.id || ''
                 return (
                   <tr key={r.key || i} className="hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
@@ -549,8 +667,8 @@ export default function ComplianceTab() {
                         onExclude={() => setExclude('rule', ruleId)}
                         isIncluded={filters.rule?.includes(ruleId)}
                         isExcluded={excludes.rule?.includes(ruleId)}
-                        className="font-semibold text-left">
-                        <span className="text-[#e8681a] font-semibold">{ruleId}</span>
+                        className="font-bold text-left">
+                        <span style={{ color: '#e8681a' }}>{ruleId}</span>
                       </InlineFilter>
                     </td>
                     <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9]">{r.control || r.description?.substring(0, 30) || 'Control violation'}</td>
@@ -608,14 +726,14 @@ export default function ComplianceTab() {
           <table className="w-full text-[11px] border-collapse">
             <thead><tr className="text-[10px] text-[#8b949e] font-bold uppercase tracking-wide"><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">#</th><th className="text-left py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Category</th><th className="text-right py-1 px-2 border-b border-[#e5e7eb] dark:border-[#2d3140]">Events</th></tr></thead>
             <tbody>
-              {(data?.categories || []).slice(0, 7).map((c, i) => (
+              {categoriesData.slice(0, 7).map((c, i) => (
                 <tr key={c.key || i} className="hover:bg-[#f0f2f4] dark:hover:bg-[#161b22] transition-colors">
                   <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-[#8b949e]">{i + 1}</td>
                   <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9]">{c.key || '--'}</td>
                   <td className="py-1 px-2 border-b border-[#f0f2f4] dark:border-[#2d3140] text-right font-bold text-[#1f2328] dark:text-[#f0f6fc]">{(c.doc_count || 0).toLocaleString()}</td>
                 </tr>
               ))}
-              {(!data?.categories || data.categories.length === 0) && (
+              {categoriesData.length === 0 && (
                 <tr><td colSpan={3} className="text-center py-4 text-xs text-[#8b949e]">No categories data</td></tr>
               )}
             </tbody>
@@ -758,7 +876,7 @@ export default function ComplianceTab() {
                           isIncluded={filters.level?.includes(String(lv))}
                           isExcluded={excludes.level?.includes(String(lv))}
                           className="inline-flex items-center justify-center w-[22px] h-[18px] rounded text-[10px] font-semibold"
-                          style={{ background: lv >= 7 ? '#450a0a' : lv >= 4 ? '#3d1a00' : '#0d1117', color: lv >= 7 ? '#fca5a5' : lv >= 4 ? '#fdba74' : '#8b949e' }}>
+                          style={{ background: lv >= 15 ? '#450a0a' : lv >= 12 ? '#3d1a00' : lv >= 7 ? '#0d1117' : '#0d1117', color: lv >= 15 ? '#fca5a5' : lv >= 12 ? '#fdba74' : lv >= 7 ? '#8b949e' : '#8b949e' }}>
                           {lv}
                         </InlineFilter> })()
                       }</td>
@@ -862,39 +980,44 @@ export default function ComplianceTab() {
           </table>
         </div>
         {totalLogPages > 1 && (
-          <div className="flex items-center justify-between mt-2.5 flex-wrap gap-2">
+          <div className="flex items-center justify-end mt-2.5 border-t border-[#e5e7eb] dark:border-[#2d3140] pt-2.5">
             <div className="flex items-center gap-1 text-[11px] text-[#8b949e]">
-              <span className="mr-1 text-[10px]">{(logPage - 1) * LOG_PAGE_SIZE + 1}-{Math.min(logPage * LOG_PAGE_SIZE, filteredRecent.length)} of {filteredRecent.length}</span>
-              <div className="flex items-center gap-1">
-                <button onClick={() => setLogPage(p => Math.max(1, p - 1))} disabled={logPage === 1}
-                  className="bg-transparent border border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[10px] min-w-[26px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                </button>
-                {Array.from({ length: Math.min(totalLogPages, 5) }, (_, i) => {
-                  const pn = totalLogPages <= 5 ? i + 1 : Math.max(1, Math.min(logPage - 2, totalLogPages - 4)) + i
-                  if (pn > totalLogPages) return null
-                  return (
-                    <button key={pn} onClick={() => setLogPage(pn)}
-                      className={`bg-transparent border px-2 py-0.5 rounded text-[10px] min-w-[26px] transition-all ${pn === logPage ? 'bg-[#e8681a] text-white border-[#e8681a]' : 'border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a]'}`}>{pn}</button>
+              <span className="mr-1.5 text-[#8b949e]">{(logPage - 1) * LOG_PAGE_SIZE + 1}-{Math.min(logPage * LOG_PAGE_SIZE, filteredRecent.length)} of {filteredRecent.length}</span>
+              <button onClick={() => setLogPage(p => Math.max(1, p - 1))} disabled={logPage === 1}
+                className="p-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] disabled:opacity-30 transition-all">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10.843 13.069 6.232 8.384a.546.546 0 0 1 0-.768l4.61-4.685"/></svg>
+              </button>
+              <div className="flex items-center gap-0.5">
+                {(() => {
+                  const pages = []
+                  const addPage = (n) => { if (n >= 1 && n <= totalLogPages) pages.push({ type: 'page', n }) }
+                  const addEllipsis = () => { const last = pages[pages.length-1]; if (last && last.type !== 'ellipsis') pages.push({ type: 'ellipsis' }) }
+                  addPage(1)
+                  if (logPage > 3) addEllipsis()
+                  for (let i = Math.max(2, logPage - 1); i <= Math.min(totalLogPages - 1, logPage + 1); i++) addPage(i)
+                  if (logPage < totalLogPages - 2) addEllipsis()
+                  if (totalLogPages > 1) addPage(totalLogPages)
+                  return pages.map((p, i) =>
+                    p.type === 'ellipsis'
+                      ? <span key={`e${i}`} className="px-1 text-[#8b949e]">...</span>
+                      : <button key={p.n} onClick={() => setLogPage(p.n)}
+                          className={`min-w-[24px] h-6 px-1 rounded text-[11px] font-medium transition-all ${
+                            p.n === logPage ? 'bg-[#e8681a] text-white' : 'text-[#36454f] dark:text-[#c9d1d9] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d]'
+                          }`}>{p.n}</button>
                   )
-                })}
-                {totalLogPages > 5 && logPage < totalLogPages - 2 && <span className="px-0.5 text-[#8b949e]">...</span>}
-                {totalLogPages > 5 && (
-                  <button onClick={() => setLogPage(totalLogPages)}
-                    className="bg-transparent border border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[10px] min-w-[26px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] transition-all">{totalLogPages}</button>
-                )}
-                <button onClick={() => setLogPage(p => Math.min(totalLogPages, p + 1))} disabled={logPage === totalLogPages}
-                  className="bg-transparent border border-[#e5e7eb] dark:border-[#2d3140] text-[#36454f] dark:text-[#c9d1d9] px-2 py-0.5 rounded text-[10px] min-w-[26px] hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] hover:border-[#e8681a] disabled:opacity-35 disabled:cursor-default transition-all">
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                </button>
+                })()}
               </div>
-              {logPage === totalLogPages && (evFilterQuery ? evFilterOffsetRef.current < 10000 : evExtraOffsetRef.current < (data?.recentTotal || 0)) && (
+              <button onClick={() => setLogPage(p => Math.min(totalLogPages, p + 1))} disabled={logPage === totalLogPages}
+                className="p-1 rounded hover:bg-[#f0f2f4] dark:hover:bg-[#21262d] disabled:opacity-30 transition-all">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="m5.157 13.069 4.611-4.685a.546.546 0 0 0 0-.768L5.158 2.93"/></svg>
+              </button>
+              {logPage === totalLogPages && (evFilterQuery ? evFilterOffsetRef.current < 10000 : evExtraOffsetRef.current < logTotal) && (
                 <button onClick={loadMoreLogs} disabled={evLoadingMore}
                   className="ml-auto px-3 py-1 text-xs font-bold bg-[#e8681a]/10 text-[#e8681a] border border-[#e8681a]/30 rounded-lg hover:bg-[#e8681a]/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-2">
                   {evLoadingMore ? (
                     <><svg className="animate-spin" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="32" strokeLinecap="round"/></svg> Loading...</>
                   ) : (
-                    <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg> Load 500 more ({evFilterQuery ? Math.min(10000 - evFilterOffsetRef.current, 10000 - evFilterOffsetRef.current) : Math.min((data?.recentTotal || 0) - evExtraOffsetRef.current, 10000 - evExtraOffsetRef.current)} remaining)</>
+                    <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg> Load 500 more ({Math.min(10000, Math.max(0, logTotal - (evFilterQuery ? evFilterOffsetRef.current : evExtraOffsetRef.current)))} remaining)</>
                   )}
                 </button>
               )}
@@ -909,3 +1032,4 @@ export default function ComplianceTab() {
     </motion.div>
   )
 }
+

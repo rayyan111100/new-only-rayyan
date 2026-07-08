@@ -6,9 +6,9 @@ const SEV_ORDER = ['Critical', 'High', 'Medium', 'Low']
 
 function toSeverity(level) {
   const n = parseInt(level) || 0
-  if (n >= 12) return 'Critical'
-  if (n >= 7) return 'High'
-  if (n >= 4) return 'Medium'
+  if (n >= 15) return 'Critical'
+  if (n >= 12) return 'High'
+  if (n >= 7) return 'Medium'
   return 'Low'
 }
 
